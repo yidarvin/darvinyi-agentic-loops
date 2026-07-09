@@ -23,7 +23,7 @@
 #   -m, --model MODEL    model passed to claude    (default: claude-opus-4-8[1m])
 #   -p, --prompt TEXT    per-item prompt           (default below)
 #   -q, --queue PATH     queue file to read        (default: prompts/queue.md)
-#   -s, --settings NAME  value for claude --settings (default: ultracode; "" omits it)
+#   -e, --effort LEVEL   value for claude --effort (default: ultracode; "" omits it)
 #   -t, --timeout SEC    kill a single claude run after SEC seconds (needs `timeout`
 #                        or `gtimeout`; default: 0 = no limit)
 #       --no-push        build and commit but do not push (adjusts the default prompt)
@@ -41,7 +41,7 @@ set -uo pipefail
 
 # --- defaults ---------------------------------------------------------------
 MODEL='claude-opus-4-8[1m]'
-SETTINGS='ultracode'
+EFFORT='ultracode'
 QUEUE='prompts/queue.md'
 PROMPT=''            # resolved after parsing so --no-push can adjust the default
 PROMPT_SET=0
@@ -79,7 +79,7 @@ while [ $# -gt 0 ]; do
     -m|--model)     [ $# -ge 2 ] || die "$1 needs a value"; MODEL="$2"; shift 2 ;;
     -p|--prompt)    [ $# -ge 2 ] || die "$1 needs a value"; PROMPT="$2"; PROMPT_SET=1; shift 2 ;;
     -q|--queue)     [ $# -ge 2 ] || die "$1 needs a value"; QUEUE="$2"; shift 2 ;;
-    -s|--settings)  [ $# -ge 2 ] || die "$1 needs a value"; SETTINGS="$2"; shift 2 ;;
+    -e|--effort)    [ $# -ge 2 ] || die "$1 needs a value"; EFFORT="$2"; shift 2 ;;
     -t|--timeout)   [ $# -ge 2 ] || die "$1 needs a value"; TIMEOUT="$(parse_count "$1" "$2")"; shift 2 ;;
     --no-push)      NO_PUSH=1; shift ;;
     --no-check)     RUN_CHECK=0; shift ;;
@@ -148,7 +148,7 @@ count_processed() { echo $(( $(count_status DONE) + $(count_status SKIPPED) )); 
 
 # --- build the claude command ----------------------------------------------
 CLAUDE_ARGS=( -p "$PROMPT" --model "$MODEL" --dangerously-skip-permissions )
-[ -n "$SETTINGS" ] && CLAUDE_ARGS+=( --settings "$SETTINGS" )
+[ -n "$EFFORT" ] && CLAUDE_ARGS+=( --effort "$EFFORT" )
 
 # --- announce the plan ------------------------------------------------------
 pending_now="$(count_pending)"
@@ -159,7 +159,7 @@ printf '\033[1m%s\033[0m\n' "runqueue plan"
 printf '  queue:    %s\n' "$QUEUE"
 printf '  items:    %s\n' "$limit_desc"
 printf '  model:    %s\n' "$MODEL"
-printf '  settings: %s\n' "${SETTINGS:-<none>}"
+printf '  effort:   %s\n' "${EFFORT:-<none>}"
 printf '  timeout:  %s\n' "$([ "$TIMEOUT" -gt 0 ] && echo "${TIMEOUT}s per item (${TIMEOUT_BIN})" || echo 'none')"
 printf '  gate:     %s\n' "$([ "$RUN_CHECK" -eq 1 ] && echo 'npm run check after each item' || echo 'skipped (--no-check)')"
 printf '  command:  claude %s\n' "$(printf '%q ' "${CLAUDE_ARGS[@]}")"
