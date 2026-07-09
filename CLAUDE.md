@@ -9,11 +9,11 @@ Agentic Loops is an expert-level reference/textbook site on building with AI cod
 ## How to build it
 
 1. Use the refsite-runner skill for the build procedure. That skill is the source of truth for mechanics: how to generate a chapter, run the queue, wire navigation, and validate. This file does not restate it.
-2. registry.json is the chapter manifest (5 parts, 22 chapters, each with an artifact spec and a widget).
-3. queue.md is the work order and the definition of done.
+2. content/registry.json is the chapter manifest (5 parts, 22 chapters). It uses the template's flat schema (num, slug, title, subtitle, part, routes, status). The richer per-chapter intent from the seed (summary, runnable-artifact spec, widget, depends_on) lives in prompts/notes/<slug>.md, which the runner reads when it builds a chapter.
+3. prompts/queue.md is the work order; scripts/check.sh (npm run check) is the definition of mechanical done.
 4. docs/research/ is the knowledge base, and it is COMPLETE. It holds one research doc per chapter (chNN-slug.md), a cross-cutting survey (00-survey-overview.md), and a MANIFEST.md index. Before authoring a chapter, open its matching doc (see MANIFEST.md for the filename), treat it as the factual backbone (numbers, citations, caveats, staged recommendations), then write the chapter in house style. The 00-survey doc is shared context for the whole book. No further research is required to build; verify only genuinely version-sensitive claims (MCP spec revisions, model and tool releases, framework APIs) against current sources where web access is available, and do not contradict a doc without reason.
 
-On first run, reconcile registry.json and queue.md against the actual refsite-runner skill and the darvinyi-refsite-template contract. These seed files encode intent using a schema aligned with prior refsites; adapt field names and structure to whatever the skill actually expects. Do not assume the schema here is authoritative over the skill.
+Reconciliation is done. The seed files that shipped at the repo root (registry.json, queue.md, in the prior-refsite schema) have been migrated into the template's contract: content/registry.json and prompts/queue.md now hold the 22 chapters in the flat template schema, and the per-chapter artifact/widget/summary/depends_on intent lives in prompts/notes/. The root seed files have been removed; do not resurrect them. content/registry.json and prompts/queue.md are the only state files, and the refsite-runner skill owns the mechanics.
 
 ## Stack
 
@@ -42,7 +42,7 @@ This is the distinguishing feature of this site versus prior refsites. The topic
 
 ## Standing commands
 
-- "Run the next one" — build the topmost unchecked chapter to the definition of done, update queue.md and registry.json, commit.
+- "Run the next one" — build the topmost unchecked chapter to the definition of done, update prompts/queue.md and content/registry.json (via scripts/mark.py), commit.
 - "Add X to the queue" — insert a new chapter in the right part with a seeded registry entry.
 
 ## Conventions

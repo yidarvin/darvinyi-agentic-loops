@@ -1,27 +1,204 @@
 {
-  "title": "refsite",
-  "subtitle": "a queue-built reference site --- replace this with your subject",
+  "title": "Agentic Loops",
+  "subtitle": "Building with AI coding tools: MCP, skills, multi-agent workflows, memory, and your own agent from scratch.",
   "mode": "book",
   "chapters": [
     {
-      "num": 0,
-      "slug": "how-this-book-is-built",
-      "title": "How this book is built",
-      "subtitle": "the grammar and the queue",
-      "part": "Part 0 --- The system",
-      "routes": [
-        "meta",
-        "workflow"
-      ],
-      "status": "done"
+      "num": 1,
+      "slug": "the-loop",
+      "title": "The Loop",
+      "subtitle": "perceive, decide, act, observe",
+      "part": "Part I --- Foundations of the Agentic Loop",
+      "routes": ["the-loop"],
+      "status": "pending"
     },
     {
-      "num": 1,
-      "slug": "the-first-real-chapter",
-      "title": "Your first real chapter",
-      "subtitle": "written by the runner",
-      "part": "Part I --- Begin here",
-      "routes": [],
+      "num": 2,
+      "slug": "anatomy-of-a-tool-call",
+      "title": "Anatomy of a Tool Call",
+      "subtitle": "from token to execution and back",
+      "part": "Part I --- Foundations of the Agentic Loop",
+      "routes": ["the-loop"],
+      "status": "pending"
+    },
+    {
+      "num": 3,
+      "slug": "context-window-economics",
+      "title": "Context-Window Economics",
+      "subtitle": "the master constraint",
+      "part": "Part I --- Foundations of the Agentic Loop",
+      "routes": ["context", "economics"],
+      "status": "pending"
+    },
+    {
+      "num": 4,
+      "slug": "the-landscape",
+      "title": "The Landscape",
+      "subtitle": "Claude Code, Codex, and opencode as a design space",
+      "part": "Part I --- Foundations of the Agentic Loop",
+      "routes": ["landscape"],
+      "status": "pending"
+    },
+    {
+      "num": 5,
+      "slug": "mcp-from-the-wire-up",
+      "title": "MCP from the Wire Up",
+      "subtitle": "JSON-RPC, the handshake, capability negotiation",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["mcp"],
+      "status": "pending"
+    },
+    {
+      "num": 6,
+      "slug": "transports",
+      "title": "Transports",
+      "subtitle": "stdio, SSE, and Streamable HTTP",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["mcp"],
+      "status": "pending"
+    },
+    {
+      "num": 7,
+      "slug": "resources-tools-and-prompts",
+      "title": "Resources, Tools, and Prompts",
+      "subtitle": "the three MCP primitives",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["mcp"],
+      "status": "pending"
+    },
+    {
+      "num": 8,
+      "slug": "building-a-real-mcp-server",
+      "title": "Building a Real MCP Server",
+      "subtitle": "beyond the toy: lifecycle and error handling",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["mcp"],
+      "status": "pending"
+    },
+    {
+      "num": 9,
+      "slug": "mcp-security-surface",
+      "title": "The MCP Security Surface",
+      "subtitle": "injection, confused deputy, token theft",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["mcp", "security"],
+      "status": "pending"
+    },
+    {
+      "num": 10,
+      "slug": "skills",
+      "title": "Skills",
+      "subtitle": "SKILL.md, frontmatter, progressive disclosure",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["skills"],
+      "status": "pending"
+    },
+    {
+      "num": 11,
+      "slug": "skill-or-server",
+      "title": "Skill or Server",
+      "subtitle": "when each wins, and the hybrid",
+      "part": "Part II --- Extending the Agent: MCP and Skills",
+      "routes": ["skills", "mcp"],
+      "status": "pending"
+    },
+    {
+      "num": 12,
+      "slug": "delegation",
+      "title": "Delegation",
+      "subtitle": "subagents, context isolation, orchestrator-worker",
+      "part": "Part III --- Multi-Agent Systems",
+      "routes": ["multi-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 13,
+      "slug": "coordination-patterns",
+      "title": "Coordination Patterns",
+      "subtitle": "supervisor, handoff, fan-out and aggregation",
+      "part": "Part III --- Multi-Agent Systems",
+      "routes": ["multi-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 14,
+      "slug": "when-multi-agent-fails",
+      "title": "When Multi-Agent Fails",
+      "subtitle": "coordination cost and the MAST taxonomy",
+      "part": "Part III --- Multi-Agent Systems",
+      "routes": ["multi-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 15,
+      "slug": "memory-taxonomy",
+      "title": "The Memory Taxonomy",
+      "subtitle": "working, short-term, long-term, episodic, semantic",
+      "part": "Part IV --- Memory",
+      "routes": ["memory", "context"],
+      "status": "pending"
+    },
+    {
+      "num": 16,
+      "slug": "prompt-caching-economics",
+      "title": "Prompt Caching and the Economics of Remembering",
+      "subtitle": "breakpoints, TTL, and the cost curve",
+      "part": "Part IV --- Memory",
+      "routes": ["memory", "economics"],
+      "status": "pending"
+    },
+    {
+      "num": 17,
+      "slug": "retrieval-as-memory",
+      "title": "Retrieval as Memory",
+      "subtitle": "vector stores, embeddings, RAG, and its limits",
+      "part": "Part IV --- Memory",
+      "routes": ["memory", "retrieval"],
+      "status": "pending"
+    },
+    {
+      "num": 18,
+      "slug": "self-managed-memory",
+      "title": "Self-Managed Memory",
+      "subtitle": "the memory tool, compaction, summarization",
+      "part": "Part IV --- Memory",
+      "routes": ["memory"],
+      "status": "pending"
+    },
+    {
+      "num": 19,
+      "slug": "stage-one-thin-wrapper",
+      "title": "Stage One: The Thin Wrapper",
+      "subtitle": "a CLI over the API with a REPL",
+      "part": "Part V --- Build Your Own Coding Agent",
+      "routes": ["diy-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 20,
+      "slug": "stage-two-real-loop",
+      "title": "Stage Two: The Real Loop",
+      "subtitle": "tool dispatch, planning, error handling and retries",
+      "part": "Part V --- Build Your Own Coding Agent",
+      "routes": ["diy-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 21,
+      "slug": "stage-three-production-grade",
+      "title": "Stage Three: Production-Grade",
+      "subtitle": "MCP client, subagents, streaming, sandboxing",
+      "part": "Part V --- Build Your Own Coding Agent",
+      "routes": ["diy-agent", "mcp", "multi-agent"],
+      "status": "pending"
+    },
+    {
+      "num": 22,
+      "slug": "evaluating-agents",
+      "title": "Evaluating Agents",
+      "subtitle": "SWE-bench, harness design, failure modes",
+      "part": "Part V --- Build Your Own Coding Agent",
+      "routes": ["diy-agent", "evaluation"],
       "status": "pending"
     }
   ]

@@ -19,7 +19,16 @@ const mdxModules = import.meta.glob("../chapters/*.mdx") as Record<
 const published = registry.chapters.filter((c) => c.status !== "pending");
 
 describe("every MDX module renders directly", () => {
-  for (const [path, load] of Object.entries(mdxModules)) {
+  const entries = Object.entries(mdxModules);
+  // Before the first chapter is built the book is all-pending and there is nothing
+  // on disk to render. Keep the suite non-empty so vitest does not fail it; this
+  // guard is inert the moment any chapter exists.
+  if (entries.length === 0) {
+    it("no chapters built yet, nothing to render", () => {
+      expect(entries).toHaveLength(0);
+    });
+  }
+  for (const [path, load] of entries) {
     it(`renders ${path}`, async () => {
       const mod = await load();
       const Body = mod.default;
@@ -38,6 +47,12 @@ describe("every MDX module renders directly", () => {
 });
 
 describe("every published chapter renders at its route", () => {
+  // Same guard: no published (draft/done) chapters yet means an empty suite.
+  if (published.length === 0) {
+    it("no published chapters yet", () => {
+      expect(published).toHaveLength(0);
+    });
+  }
   for (const chapter of published) {
     it(`route /${chapter.slug}`, async () => {
       render(

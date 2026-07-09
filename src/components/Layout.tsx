@@ -14,7 +14,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <span className="text-comment"> */</span>
           </Link>
           <a
-            href="https://github.com/yidarvin"
+            href="https://github.com/yidarvin/darvinyi-agentic-loops"
             className="font-mono text-xs text-muted hover:text-accent"
           >
             source

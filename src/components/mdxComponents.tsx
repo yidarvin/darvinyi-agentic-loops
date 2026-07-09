@@ -4,12 +4,14 @@ import { Figure } from "./Figure";
 import { Widget } from "./Widget";
 import { ExerciseCard } from "./ExerciseCard";
 import { Callout } from "./Callout";
+import { RunnableArtifact } from "./RunnableArtifact";
 
 // mdxComponents --- how markdown renders, in one place.
 // Every chapter's prose flows through these via the <MDXProvider> in App.tsx.
-// The four shared primitives (Figure, Widget, ExerciseCard, Callout) are exposed
-// here too, so a chapter can use <Figure> without importing it. Chapter-specific
-// components (a bespoke figure or the signature widget) are imported in the .mdx.
+// The shared primitives (Figure, Widget, ExerciseCard, Callout, RunnableArtifact)
+// are exposed here too, so a chapter can use <Figure> without importing it.
+// Chapter-specific components (a bespoke figure or the signature widget) are
+// imported in the .mdx.
 export const mdxComponents: MDXComponents = {
   h1: (props: ComponentPropsWithoutRef<"h1">) => (
     <h1 className="mb-2 mt-0 font-mono text-2xl font-bold tracking-tight text-fg" {...props} />
@@ -58,4 +60,5 @@ export const mdxComponents: MDXComponents = {
   Widget,
   ExerciseCard,
   Callout,
+  RunnableArtifact,
 };
