@@ -1,6 +1,14 @@
 /* tokens.css: the house style, single source of truth.
    Every color and font in the site resolves to a variable defined here.
-   Keep this file small. If a chapter needs a new color, add it here first. */
+   Keep this file small. If a chapter needs a new color, add it here first.
+
+   Each palette color is defined twice, on purpose:
+   - --x      the full hex, for direct CSS and SVG use (fill/stroke, inline styles,
+              color-mix in index.css).
+   - --x-rgb  the same color as space-separated channels, so Tailwind utilities can
+              apply an opacity modifier: colors map to rgb(var(--x-rgb) / <alpha-value>)
+              in tailwind.config.js, which makes bg-accent/10, border-accent/30, and
+              text-fg/90 render correctly. Keep the two in sync. */
 
 :root {
   /* palette: near-black ground, one teal accent, restrained. */
@@ -14,6 +22,18 @@
   --accent-dim: #1c8577;  /* pressed or subdued accent */
   --comment: #55707b;     /* text for the code-comment motif */
   --danger: #f2757f;      /* used sparingly, e.g. crisis callouts */
+
+  /* channel forms of the palette, for Tailwind opacity modifiers. */
+  --bg-rgb: 10 14 15;
+  --surface-rgb: 16 23 26;
+  --surface-2-rgb: 20 29 33;
+  --border-rgb: 30 42 48;
+  --fg-rgb: 230 237 240;
+  --fg-muted-rgb: 125 145 155;
+  --accent-rgb: 45 212 191;
+  --accent-dim-rgb: 28 133 119;
+  --comment-rgb: 85 112 123;
+  --danger-rgb: 242 117 127;
 
   /* type: JetBrains Mono is structural (labels, headings, data).
      Inter carries prose. This split is the signature. */
