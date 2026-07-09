@@ -1,0 +1,263 @@
+import { ResourcesToolsAndPromptsFigure } from "./_figures/ResourcesToolsAndPromptsFigure";
+import { ResourcesToolsAndPromptsWidget } from "./_widgets/ResourcesToolsAndPromptsWidget";
+
+An MCP server has exactly three things it can expose, and you already met their names
+in the capabilities object during the handshake: tools, resources, and prompts. The
+tempting way to tell them apart is by what they return, but that road is a dead end,
+because all three can hand back the same bytes. A tool can return your database schema;
+so can a resource; so can a prompt that embeds it. The distinction that actually decides
+which one to build is not the payload. It is control: who gets to decide when the thing
+runs. Tools are model-controlled, resources are application-controlled, and prompts are
+user-controlled. Get that question right and every other design choice follows from it.
+
+## The control taxonomy
+
+Every capability decision on a server reduces to one question: who should decide when
+this happens? The specification answers it three ways, one per primitive. Tools are
+"designed to be model-controlled," meaning the language model discovers them and invokes
+them on its own from its read of the conversation. Resources are "application-driven,"
+meaning the host application decides when to pull them into context, and the spec is
+explicit that the model does not read a resource spontaneously. Prompts are
+"user-controlled," meaning a human explicitly selects one, usually as a slash command.
+Three primitives, three controllers.
+
+There is a familiar analogy that makes the taxonomy click, and it holds up better than
+most. Tools are the POST of MCP: they act, they can have side effects, the model sends
+one when it wants something to happen. Resources are the GET: read-only, idempotent,
+addressed by a URI, safe to fetch again and again. Prompts are stored templates, macros
+the user triggers by name. The analogy even predicts the details. A tool marked
+read-only behaves like a GET; a resource template with a variable in its path behaves
+like a parameterized GET route. The point of naming the controller first is that the
+control model dictates everything downstream: how the primitive is surfaced in the UI,
+what guarantees it has to offer, and how much the client trusts it.
+
+<Figure id="7.1" caption="The three server-side primitives, sorted by the one axis that separates them: the controller. Each column names who decides when the primitive fires (the accent line at top), the two wire methods that discover and then invoke it, and its REST analogy. All three reach the same dataset below. What differs is never the data. It is who is allowed to open the door.">
+  <ResourcesToolsAndPromptsFigure />
+</Figure>
+
+## Tools: the model decides
+
+Tools are the primitive that matters most, because they are the only one with
+near-universal client support and the only one the model can reach for by itself. A tool
+definition, returned from `tools/list`, is a `name`, a `description`, an `inputSchema`
+in JSON Schema, and optionally a `title`, an `outputSchema`, and `annotations`. The
+model calls one with `tools/call`, passing arguments that match the schema, and gets
+back a `CallToolResult`: a `content` array of text, image, audio, or embedded-resource
+blocks, an optional `structuredContent` object, and an `isError` flag.
+
+Two things about tools trip up everyone eventually. The first is that the model selects
+a tool almost entirely from its `name` and `description`. Those two fields are not
+documentation, they are the interface the model reasons over, and small changes to them
+move evals hard. Anthropic reported that precise refinements to tool descriptions took
+an upgraded Claude Sonnet from 33.4% to 49.0% on SWE-bench Verified without touching the
+model. Name parameters so a stranger could guess their meaning: `user_id`, not `user`.
+Namespace across a large tool set: `asana_search`, not a bare `search` that collides
+with three others. Tool design is evaluation-driven, not something you get right by
+reading the schema once.
+
+The second is that there are two entirely separate error channels, and confusing them is
+a classic bug. A protocol error, an unknown tool or malformed arguments, comes back as a
+JSON-RPC `error` and the model never sees it as content. A tool execution error, the
+query failed or the file was missing, rides inside a normal result with `isError` set to
+`true`, precisely so the model does read it and can self-correct on the next turn. The
+rule the spec states plainly: report execution failures as results, not as protocol
+errors, or you deny the model the feedback it needs.
+
+Then there are annotations, four hints plus a title that tell the client how much to
+trust a call. `readOnlyHint` (default false) says the tool changes nothing.
+`destructiveHint` (default true) says it may make irreversible updates. `idempotentHint`
+(default false) says repeating the call is safe. `openWorldHint` (default true) says it
+touches the outside world. The defaults are deliberately pessimistic: an unannotated tool
+is treated as destructive, non-idempotent, and open-world, which is maximum confirmation
+friction. Two cautions. Annotations are hints, never security: the spec says clients
+"MUST consider tool annotations to be untrusted unless they come from trusted servers,"
+so drive your confirmation UI with them and never your access control. And set them
+explicitly, because leaving them off is not free. Anthropic reports that absent
+annotations alone account for roughly 30% of tool-directory rejections.
+
+## Resources: the application decides
+
+A resource is a read-only, addressable interface to data, identified by a URI and meant
+to be side-effect-free. Where a tool is invoked by the model, a resource is pulled in by
+the host: a file picker, an attach menu, a mention, or an automatic inclusion the
+application decides on. `resources/list` enumerates the direct resources, each with a
+`uri`, a `name`, and usually a `mimeType`. `resources/read` returns a `contents` array
+whose items are either UTF-8 `text` or base64 `blob`. Correct MIME types matter here,
+because they are how the client decides whether it can parse what you sent.
+
+The reach comes from templates. Rather than enumerate ten thousand files, a server
+exposes a parameterized URI through `resources/templates/list` using RFC 6570 template
+syntax: `db://tables/{table}/schema`, `file:///{path}`. The client fills in the variable
+and reads the concrete URI. A direct resource is one addressable thing; a template is a
+family of them described in a single line.
+
+The honest question every server author asks is why bother, since a read-only tool
+returns the same data. The only real difference is the control model. A tool is
+model-invoked and costs description tokens on every request; a resource is
+application-invoked and costs nothing until the host decides to read it. For static
+reference context the user knows they want, a project's schema or a style guide, a
+resource is more token-efficient and needs no model round trip. That is the case for
+resources. The case against is blunt: they demand real product UX to be useful, a
+browse-and-select surface, and client support for them is thin and buggy, which we come
+back to below. This chapter's artifact makes the debate literal: it exposes the schema
+both as the `db://schema` resource and as a read-only `get_schema` tool. The bytes are
+identical; the only difference is who makes the call. When you are unsure, ask that
+control question. If the model should decide when to pull the data, it is a tool. If the
+app or the user should, it is a resource.
+
+## Prompts: the user decides
+
+A prompt is a server-authored, parameterized message template the user explicitly
+invokes, the artifact a workflow author hands to an end user. `prompts/list` returns each
+prompt's `name`, `description`, and `arguments`, a simpler named list than a tool's full
+JSON Schema because these are user-facing form fields, not a machine-validated contract.
+`prompts/get`, with the arguments filled in, returns the payload: a `messages` array.
+
+Two features make prompts more than string templates. Each message has a `role` of
+`user` or `assistant`, so a prompt can prime an assistant turn to steer tone, and there
+is no `system` role available. And a message's content can be an embedded resource, so a
+prompt can pull a schema or a document straight into the conversation it starts. The
+strongest pattern built on this is the hybrid: the server does the deterministic work,
+runs the query, computes the exact total, and hands the model a message that already
+contains the precise numbers with one instruction, "write this up." Precision stays in
+code where it belongs; language stays with the model. Prompts are how you package a
+repeatable workflow, a weekly report or an incident triage, as a discoverable slash
+command instead of a paragraph the user retypes every time.
+
+The widget below is a primitive explorer. Pick one and watch the controller flip first,
+then the two exchanges every primitive shares: discover, then invoke. The server is the
+same and the dataset is the same. The only thing that really changes between the three is
+who is allowed to make the call.
+
+<Widget name="primitive_explorer" hint="Switch between tools, resources, and prompts. Watch the controller change at the top, then the discover and invoke request/response shapes below it. Same server, same data; a different hand on each door.">
+  <ResourcesToolsAndPromptsWidget />
+</Widget>
+
+## How the three compose
+
+The primitives are not rivals, they are three views of one server, and the canonical
+example is a database server that exposes all three at once. The schema is a resource at
+`db://schema`, semi-static, read-only, needed for nearly every query, so the application
+loads it as context at session start. Reading and writing are tools: `run_query` with
+`readOnlyHint: true` that a client can auto-run, and `insert_order` with
+`destructiveHint: true` that a client should confirm first. The model decides when to
+call them and builds the arguments from what the user asked. And the workflow is a
+prompt: a `weekly_report` the user triggers, which embeds the schema resource and applies
+the hybrid pattern, the server totalling the revenue exactly and the model only writing
+the paragraph. One dataset, three doors, one controller each. This chapter's artifact is
+that server, and running it prints the request and response for each primitive side by
+side.
+
+## Which one to build, and the reality of client support
+
+The clean taxonomy runs into a messy fact: support is wildly uneven. Tools work
+everywhere. Resources and prompts are inconsistent, lagging, and in places outright
+broken. The bugs are useful to know because Anthropic authored both the spec and the
+client: Claude Desktop lists a server's resources in Settings but does not read them when
+answering a question, and will often run a web search instead; its dynamic resource
+templates are broken and tracked as a priority issue, so only static resources work.
+Cursor and VS Code have advanced further, with VS Code plus Copilot currently the most
+complete implementation of all three, but the community support matrix is stale and you
+should re-verify against the actual clients you target. The architectural conclusion is
+simple: if a capability must work on every client, make it a tool. Reserve resources and
+prompts for clients you have verified, and degrade gracefully everywhere else.
+
+There is one caveat that pushes back the other way, and it is about the context window.
+Every tool definition is injected into the system prompt on every single request. A large
+server is expensive before the user types anything: measurements of GitHub's official
+server, around 93 to 94 tools, range from roughly 18,000 to 55,000 tokens of definitions
+depending on who counted, a meaningful slice of a 200K window spent on tools the model
+may never call. Read those numbers as order-of-magnitude, not gospel, but the direction
+is real, and it degrades decision quality as much as it costs tokens. Anthropic's Tool
+Search Tool, which loads definitions lazily instead of all at once, lifted Opus 4.5 from
+79.5% to 88.1% on a tool-use eval while cutting token usage by about 85%. This is the one
+place resources earn their keep even on weak clients: a directly attached resource costs
+no tool-description tokens and needs no model round trip. Past ten or fifteen tools, reach
+for namespacing, lazy loading, or a second server before your tool list eats the context
+you were trying to protect.
+
+<Callout kind="note">
+The temptation to make everything a tool is strong, because tools are the only universal,
+model-invokable primitive, and giving in is often pragmatically correct. But it inflates
+the tool list, burns context on every request, and quietly hands the model control over
+data access that a user or an application arguably should hold. Ask the control question
+first. Fall back to a tool only when client support genuinely forces your hand, and know
+that is the trade you are making.
+</Callout>
+
+## Run it
+
+The artifact is one Python file with no dependencies: a real MCP server, `DatabaseServer`,
+that exposes all three primitives over the composition above, plus a driver that walks
+each in turn and prints the wire request and response. Run it and you see `initialize`
+declare all three capabilities in one breath, then three sections, tools then resources
+then prompts, each a discover-then-invoke walk so the shapes line up. You see read-only
+and destructive tools carry different annotations, including a `get_schema` tool that
+returns the exact bytes the schema resource does, one primitive apart only in who controls
+the call. Then a resource read by its URI and another read by filling a template, and a
+prompt whose messages embed the schema and carry a precomputed total. The server is
+genuine, not a mock: run it with `--serve-stdio` and a real client can speak
+newline-delimited JSON to it. No key, no SDK, no network.
+
+<RunnableArtifact
+  name="primitive_explorer_artifact"
+  path="artifacts/ch07-resources-tools-and-prompts/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch07-resources-tools-and-prompts", "python3 primitives.py"]}>
+One MCP server exposing tools, resources, and prompts over a single dataset, with a driver
+that prints the discover and invoke exchange for each so the three request/response shapes
+sit side by side. Standard library only.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Sort by controller, not by payload">
+Take three things a coding-agent server might expose: the contents of a file, running the
+test suite, and a "summarize this PR" workflow. For each, answer only the control
+question, should the model, the application, or the user decide when it fires, then name
+the primitive that follows. Notice you never had to look at what any of them returns.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Annotate a tool honestly">
+In the artifact's `tools()` method, add a `delete_order` tool. Give it the annotations it
+actually deserves and predict, before you run it, how a careful client should treat a call
+to it versus a call to `run_query`. Then remove the annotations entirely and say what the
+client must now assume by default, and why that default is the safe one.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Read the same data three ways">
+Run the artifact and find where the orders schema appears in each of the three sections:
+in the `get_schema` tool result, as the `db://schema` resource read by URI, and embedded
+in the `weekly_report` prompt message. The bytes are nearly identical every time. Write
+one sentence on why the server still offers all three routes to it rather than picking one.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Make the client-support call">
+Pick a server you would actually ship and a client you must support. If that client is
+Claude Desktop, decide what happens to a feature you wanted to build as a resource: does
+it survive as a resource, become a read-only tool, or get dropped? Justify the choice in
+terms of what that client can and cannot do today, not what the spec allows.
+</ExerciseCard>
+
+## Sources
+
+- The Model Context Protocol specification (`2025-11-25`), for the control taxonomy
+  (model-controlled tools, application-driven resources, user-controlled prompts), the
+  `tools/list` and `tools/call` shapes, the `CallToolResult` structure and the two error
+  channels, tool annotations and their defaults, the `resources/list`, `resources/read`,
+  and `resources/templates/list` methods with RFC 6570 templates, and the `prompts/list`
+  and `prompts/get` message payload with its `user`/`assistant` roles and embedded
+  resources.
+- Anthropic's *Writing effective tools for AI agents* and *advanced tool use* posts, for
+  the description-driven selection guidance, the SWE-bench Verified jump from 33.4% to
+  49.0% after tool-description refinement, the Tool Search Tool results (Opus 4.5 from
+  79.5% to 88.1% with roughly 85% fewer tokens), and the reported share of directory
+  rejections caused by missing annotations.
+- Reported measurements of large-server context cost (StackOne, Nebulagg, and others) for
+  the GitHub-server token figures, read as order-of-magnitude rather than exact, and the
+  documented Claude Desktop resource and template bugs (corroborated by the Python and
+  TypeScript SDK issue trackers).
+- The chapters on [MCP from the Wire Up](/mcp-from-the-wire-up), for the handshake and the
+  capabilities object these primitives are declared in, [Transports](/transports), for how
+  their messages travel, and [Context-Window Economics](/context-window-economics), for why
+  the per-request cost of tool definitions is the dominant constraint on how many you expose.
