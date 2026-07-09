@@ -1,0 +1,111 @@
+# Evaluating Agents
+
+Research reference for *Agentic Loops*, Chapter 22 — the FINAL/capstone chapter, closing Part V (Build Your Own Coding Agent) and the whole book. The three preceding Part V chapters built a coding agent in three stages (thin wrapper → robust loop → production-grade). This chapter answers: now that you've built one, how do you know it's actually good? Both practically actionable (set up evals for your agent) and conceptually complete (the theory and landscape). As the capstone it also reflects on the whole book. The reader knows the loop, tools, MCP, skills, multi-agent, memory, and has built the full agent. Field and benchmarks move extremely fast; leaderboard numbers are snapshots. Several 2026-dated model names/scores in circulation could not be independently verified — treat as directional.
+
+## TL;DR
+- **Evaluation is what separates a demo from a production system.** A coding agent that "works" in a demo is easy; knowing it works *reliably* requires measuring outcome success, trajectory quality, efficiency, consistency, tool use, safety, and code quality — via public benchmarks, custom evals, LLM-as-judge, and production observability wired into a continuous feedback loop.
+- **Public benchmarks (SWE-bench Verified, Terminal-Bench, τ²-bench, LiveCodeBench, BFCL, GAIA) tell you where the frontier is, but your own eval set is what tells you whether YOUR agent is good.** Anthropic's advice: start with ~20 real cases, define unambiguous success criteria, combine deterministic + model-based + human graders, and read the transcripts.
+- **The hard problems are non-determinism, contamination, and trajectory/safety evaluation.** Use pass^k (not just pass@k) for reliability, contamination-resistant benchmarks, and calibrated LLM judges. Evaluation turns agent-building from art into engineering.
+
+## Why evaluation is the hardest and most important part — framing
+Every earlier Part V chapter made the agent *more capable*; each addition is a *bet* that it helps. Evaluation is the only thing that tells you whether the bet paid off. Anthropic (*Demystifying evals for AI agents*, Jan 9 2026): "The capabilities that make agents useful also make them difficult to evaluate" — autonomy, intelligence, and flexibility mean mistakes compound across turns, and frontier models find creative solutions that break static graders (Opus 4.5 solved a τ²-bench flight-booking task by exploiting a policy loophole, "failing" the eval as written while actually serving the user better). The core obstacle is **non-determinism**: behavior varies run to run, so "a task that passed on one eval run might fail on the next." You can't improve what you can't measure; without evals teams are stuck in "reactive loops — fixing one failure, creating another, unable to distinguish real regressions from noise." Evaluation is the feedback loop that justifies all the harness engineering.
+
+## What to evaluate — the dimensions of agent quality
+Anthropic groups graders into three types, each scoring either the **outcome** (final environment state) or the **transcript** (full trial record):
+- **Code-based graders** — string/regex/fuzzy match, binary fail-to-pass and pass-to-pass tests, static analysis (lint/type/security), outcome verification, tool-call verification, transcript analysis. Fast, cheap, objective, reproducible — brittle to valid variations.
+- **Model-based graders** — rubric scoring, natural-language assertions, pairwise comparison, reference-based eval, multi-judge consensus. Flexible and scalable but non-deterministic, needing calibration.
+- **Human graders** — SME review, crowdsourced judgment, spot-check sampling, A/B testing, inter-annotator agreement. Gold standard but expensive and slow.
+
+Dimensions:
+- **Task success / outcome** — the primary metric; did tests pass, did the reservation land in the DB.
+- **Trajectory / process** — was the path efficient; where did failure occur.
+- **Efficiency** — Anthropic's example YAML tracks `n_turns`, `n_toolcalls`, `n_total_tokens`, plus latency (`time_to_first_token`, `output_tokens_per_sec`, `time_to_last_token`). Dollar cost per task is first-class (in the Holistic Agent Leaderboard, SWE-bench Verified Mini runs cost $259–$1,790 depending on model/scaffold).
+- **Reliability / consistency** — pass^k, not just pass@k.
+- **Tool use quality** — right tools, correct parameters, graceful error handling.
+- **Safety / alignment** — refuse harmful requests, stay within constraints, avoid destructive actions.
+- **Code quality** — beyond "tests pass": maintainability, correctness beyond the tests, no over-engineering. Anthropic's "Hybrid Norm": verifiable rewards (unit tests) + LLM rubrics (readable, efficient, secure).
+
+**pass@k vs pass^k.** pass@k = probability of at least one success in k attempts (rises with k). pass^k = probability *all* k trials succeed (falls with k). If per-trial success is 75%, pass^3 = 0.75³ ≈ 42%. The τ-bench paper (Yao et al., arXiv:2406.12045) introduced pass^k because frontier function-calling agents are inconsistent: "even state-of-the-art function calling agents (like gpt-4o) succeed on <50% of the tasks, and are quite inconsistent (pass^8 <25% in retail)" — a ~60% relative drop from pass^1 (~61%) to pass^8 (~25%) on retail. Use pass@k where one success suffices (a verifiable solution), pass^k for customer-facing agents.
+
+**Capability vs regression evals.** Capability ("quality") evals start low and give the team a hill to climb; regression evals sit near 100% and protect against backsliding. Saturated capability evals "graduate" into the regression suite.
+
+## The benchmark landscape for coding agents
+**SWE-bench** (Jimenez et al., ICLR 2024) — 2,294 real GitHub issues from 12 Python repos; agent produces a patch; success = new fail-to-pass tests pass AND pre-existing pass-to-pass tests still pass, in a reproducible Docker harness.
+
+**SWE-bench Verified** — human-validated 500-task subset (Aug 13 2024, with OpenAI's Preparedness team), each reviewed by contracted developers, removing under-specified problems and broken tests: "68.3% of SWE-bench samples being filtered out due to underspecification, unfair unit tests, or other issues." *The* most-cited coding benchmark, and saturating: from ~40% to >80% in one year ("started at 30% this year, and frontier models are now nearing saturation at >80%"). Labs run slightly different subsets (GPT-5 System Card: "a fixed subset of n=477"; Sonnet 3.7: 489; Epoch: 484) because some tasks don't run reliably on all infra — a subtlety when comparing headline numbers. It evaluates the *harness AND model together*, which is why the same model posts different numbers under different scaffolds.
+
+**SWE-bench variants:** **Multimodal** (517 issues with visual elements); **Multilingual** (beyond Python; excludes link-following); **Multi-SWE-bench** (ByteDance, Apr 2025 — 1,632 instances across Java/TS/JS/Go/Rust/C/C++, 68 expert annotators, plus a Multi-SWE-RL community); **SWE-bench Live** (Microsoft, NeurIPS 2025 — automated curation adding 50 verified issues monthly to fight contamination; initial 1,319 instances, post-Jan-2024 issues); **SWE-bench Pro** (Scale AI — 1,865 tasks across 41 professional repos, public + private held-out splits; models clearing 80%+ on Verified solve far fewer — on the private set Opus 4.1 dropped 22.7%→17.8%, GPT-5 23.1%→14.9%); **SWE-Lancer** (OpenAI, ICML 2025, arXiv:2502.12115 — 1,488 real Upwork tasks worth $1M, triple-verified Playwright tests; best model in the paper Claude 3.5 Sonnet "earns $208,050 on the SWE-Lancer Diamond set and resolves 26.2% of IC SWE issues," 44.9% on manager tasks — models better at *choosing* than *writing*).
+
+**Terminal-Bench** (Stanford × Laude Institute) — outcome-driven agent benchmark in a Dockerized terminal; success verified by pytest-style checks on *final environment state*, not the transcript. Terminal-Bench 2.0: 89 human-audited tasks (~3 reviewer-hours each); frontier models <65%. Runs through Harbor with the neutral Terminus 2 reference agent ("an LLM plus a terminal").
+
+**LiveCodeBench** (Jain et al., arXiv:2403.07974) — contamination-free competitive programming, continuously harvesting fresh problems from LeetCode/AtCoder/Codeforces, each date-stamped so you score only post-cutoff problems. Evaluates generation, self-repair, execution, and test-output prediction.
+
+**Aider Polyglot** — 225 hardest Exercism exercises across C++/Go/Java/JS/Python/Rust, scored inside Aider's real edit loop (must emit applicable diffs; second attempt after failing tests). Recalibrated so top models occupy 5–50%; reports cost and edit-format compliance.
+
+**Agentic / tool-use beyond pure coding:** **τ-bench / τ²-bench** (Sierra — dynamic LLM-user↔agent conversations under domain policies; evaluates final DB state; introduced pass^k; τ² adds dual-control); **GAIA** (Meta AI, arXiv:2311.12983 — 466 general-assistant questions; "human respondents obtain 92% vs. 15% for GPT-4 equipped with plugins"; 300-question private test set); **BFCL** (Berkeley Function-Calling Leaderboard — 2,000+ pairs across Python/Java/JS/REST; AST-based structural checking; V3/V4 add multi-turn, memory, relevance-detection); **WebArena / VisualWebArena / OSWorld** (browser/OS tasks verified by URL/page + backend state); **AgentHarm** (Andriushchenko et al., ICLR 2025, arXiv:2410.09024 — "110 explicitly malicious agent tasks (440 with augmentations)"; found "leading LLMs are surprisingly compliant with malicious agent requests without jailbreaking").
+
+**Benchmark limitations.** Contamination (training on test data) is the central threat, driving the live/dated designs. Saturation makes big gains look like small bumps. Headline numbers are mostly self-reported and harness-dependent (the same "SWE-bench" name hides different measurements). And benchmark scores ≠ real usefulness — which is why you build your own.
+
+## Building your own evals — the practical core
+Public benchmarks measure the frontier, not *your* codebase and tasks. Anthropic's roadmap (field-tested across Claude Code, Descript, Bolt):
+- **Step 0: Start early, start small.** "20–50 simple tasks drawn from real failures is a great start." Early on, effect sizes are huge (a prompt tweak can move 30%→80%), so small samples suffice. Evals get *harder* to build the longer you wait.
+- **Step 1: Start with what you already test manually** — the behaviors you check before each release; convert bug-tracker/support failures into cases.
+- **Step 2: Write unambiguous tasks with reference solutions.** "A good task is one where two domain experts would independently reach the same pass/fail verdict." A 0% pass@100 with a frontier model usually signals a broken task, not an incapable agent.
+- **Step 3: Build balanced problem sets** — test where a behavior *should* occur and where it *shouldn't* (avoid one-sided optimization).
+- **Step 4: Build a robust harness with a stable, isolated environment.** Each trial starts clean; shared state causes correlated failures or lets the agent cheat.
+- **Step 5: Design graders thoughtfully.** Prefer deterministic; grade *what the agent produced, not the path* (exact tool-call-sequence checks are "too rigid" and punish valid creativity). Build in partial credit; make graders hack-resistant.
+- **Step 6: Read the transcripts.** "You won't know if your graders are working well unless you read the transcripts." Anthropic doesn't "take eval scores at face value until someone digs into the details of the eval and reads some transcripts." (Opus 4.5's CORE-Bench score jumped 42%→95% after a researcher found grading bugs and non-reproducible tasks.)
+- **Step 7: Monitor for saturation.** 100% only tracks regressions, no improvement signal.
+- **Step 8: Keep it healthy** — treat evals like unit tests; dedicated eval teams own infra while domain experts contribute tasks.
+
+Measuring: success rate, pass@k/pass^k, cost, steps; track over time; compare versions ("did my change help?").
+
+## LLM-as-judge for agent evaluation
+For outputs not checkable programmatically (research syntheses, code quality, interaction quality), use an LLM grader. Anthropic's multi-agent research system used one LLM judge scoring 0.0–1.0 plus pass/fail against a rubric: **factual accuracy, citation accuracy, completeness, source quality, tool efficiency**. "A single LLM call with a single prompt... was the most consistent and aligned with human judgements" — more than multiple specialized judges.
+
+**Rubric-based**: give explicit criteria; give the judge "a way out" (return "Unknown" to avoid hallucination); grade *each dimension with an isolated judge*.
+
+**Judging trajectories**: assess whether the agent called tools reasonably or interacted well, complementing deterministic outcome checks.
+
+**Pitfalls — documented biases** (Zheng et al., MT-Bench, + subsequent studies): **position bias** (favor a slot; swap order); **verbosity bias** (favor longer answers — 15–30 points of inflated preference across GPT-4/Claude/PaLM-2 judges; length-normalize, separate correctness from style); **self-preference / self-enhancement** (favor own outputs ~10–25%; cross-family judging + multi-judge consensus — but shared training lineage makes the bias systematic and undetectable within the pool).
+
+**Calibration** is non-negotiable: validate against human labels (Cohen's kappa; practice increasingly targets Krippendorff's alpha near 0.8) and recalibrate periodically — raw judge scores drift across model versions (a minor version bump can shift your mean several points while CI keeps passing).
+
+## Trajectory evaluation and observability in depth
+**Why trajectory matters:** answer-level evals miss *how* the agent got there. Langfuse's three levels: **final response (black-box)** tells you *what* went wrong; **trajectory (glass-box)** tells you *where*; **single-step (white-box)** tells you *why*.
+
+**Trajectory metrics (Vertex AI Gen AI Evaluation Service):** `trajectory_exact_match` (identical sequence, content + order); `trajectory_in_order_match` (all reference calls in order, extras tolerated); `trajectory_any_order_match` (all reference calls any order, extras tolerated); `trajectory_precision` (fraction of agent actions in reference — penalizes spurious calls); `trajectory_recall` (fraction of essential reference actions captured — penalizes missed steps); `trajectory_single_tool_use` (a specified tool appears at all). Latency and failure added by default.
+
+**Google ADK evaluation:** `tool_trajectory_avg_score` (per-invocation 1.0/0.0 averaged, `match_type` EXACT/IN_ORDER/ANY_ORDER); `response_match_score` (ROUGE-1 unigram overlap vs golden reference, default threshold 0.8). Recommended CI config `{tool_trajectory_avg_score: 1.0, response_match_score: 0.8}`. Now also has LLM-judge criteria (`final_response_match_v2`), rubric criteria, `hallucinations_v1`, `safety_v1`. Anthropic's caveat: rigid exact-sequence matching is often too brittle — precision/recall and any-order matching are usually more robust.
+
+**Observability tooling:** full traces capture every LLM call, tool call, decision, timing, token count. **LangSmith** (trajectory evals, 30+ evaluator templates incl. safety/prompt-injection, SmithDB for nested traces); **Langfuse** (open-source, self-hostable, observation-based traces, 50k free observations/month); **Braintrust** (eval + observability + CI-gated deployments, `autoevals`, 1M spans/month free); **Arize Phoenix** (open-source tracing + evals); **W&B Weave**; newer agent-native (Laminar, Latitude). Converging on **OpenTelemetry GenAI semantic conventions** (v1.41 mid-2026) — vendor-neutral spans/attributes for model calls (`gen_ai.request.model`, token usage), tool executions (`execute_tool {gen_ai.tool.name}`), agent invocations (`invoke_agent`), MCP tool calls. Datadog (v1.37+), Honeycomb, New Relic support natively; LangChain, CrewAI, AutoGen emit compliant spans.
+
+**Using traces:** replay to reproduce failures, cluster to find patterns, and feed failing production traces back into the eval set — the loop that keeps evals grounded.
+
+## Continuous evaluation and the production feedback loop
+- **Regression testing / CI for agents** — run the suite on every prompt/model/tool change; regression suites near 100%; Braintrust and LangSmith support eval-gated deployments.
+- **Offline vs online** — offline (eval sets, benchmarks, reproducible, runs on every commit) vs online (production monitoring, real user feedback, A/B). Anthropic's "Swiss Cheese Model": no single layer catches everything; combine automated evals (CI), production monitoring (drift), A/B (big changes), user feedback + transcript review (gaps), systematic human studies (calibrate judges).
+- **Production monitoring** — success rate, cost, latency, error rate on live traffic; a tool failure at step 3 that silently corrupts step 8 is invisible to call-level monitoring but detectable in a full-session trace.
+- **Human feedback** — thumbs up/down, corrections, bug reports; sparse and severity-skewed but grounded in real usage.
+- **The flywheel** — production usage → traces → eval sets → improvements → better agent → more usage.
+- **Model upgrades** — evals let you adopt new models safely: teams with evals "can quickly determine the model's strengths, tune their prompts, and upgrade in days" while those without face weeks of manual testing. Practice eval-driven development: write capability evals for features that are "bets on what models can do in a few months," and a new release immediately reveals which bets paid off.
+
+## Synthesis, capstone reflection, and the road ahead
+The evaluation story ties the whole book together. Across Part V you built intelligence (the model) wrapped in a harness (the tool loop, error handling, MCP, subagents, memory, sandboxing) that provides reliability and capability. **Evaluation is the third pillar: the discipline that provides the feedback to improve both.** The model provides intelligence; the harness provides reliability and capability; evaluation provides the measurement that tells you whether either is actually working — turning agent-building from art into engineering.
+
+The book's arc: understand the loop → give it tools/MCP/skills → coordinate multiple agents → give it memory → build a production coding agent → and finally, *measure* it. Every capability you added is only justified if you can show it helps, and only evaluation can show that.
+
+**The road ahead — open problems:** **long-horizon evaluation** (Anthropic found the longest agent sessions nearly doubled, from under 25 to over 45 minutes at the 99.9th percentile; evaluating hours-long autonomous work is largely unsolved); **safety evaluation** (AgentHarm shows harmful-request compliance and jailbreak-preserved capabilities; hard to measure, easy to under-test); **benchmark saturation and contamination** (the Verified → Pro → Live → Terminal-Bench 2.0 treadmill continues; the field needs continuously-refreshed, harness-standardized benchmarks); **evaluating agents that learn/improve** (persistent memory and self-improvement make static eval sets moving targets); **non-determinism** (the permanent tax — report distributions, not point estimates; use pass^k). Anthropic: "AI agent evaluation is still a nascent, fast-evolving field." Specifics change month to month, but the fundamentals are constant: start early, source realistic tasks from real failures, define unambiguous success criteria, combine grader types, make tasks hard enough, iterate on signal-to-noise, and **read the transcripts**.
+
+## Recommendations (staged)
+**Stage 1 — Bootstrap (week 1).** Take your Stage Three agent and build a 20–30 task eval set from real usage/failures. Define programmatic success (fail-to-pass + pass-to-pass tests) wherever possible. Instrument tracing (Langfuse self-hosted or LangSmith free tier; emit OpenTelemetry GenAI spans to avoid lock-in). Run each task ≥3 times; report pass@1, pass^3, cost, steps. Advance when you can reliably tell whether a prompt change helped.
+
+**Stage 2 — Harden (weeks 2–6).** Split into a capability suite (low pass rate, your hill) and a regression suite (~100%, gate every change in CI). Add an LLM-judge for code quality/instruction-following; calibrate against 30–50 human labels (target Cohen's kappa ≥ 0.6, ideally ~0.8); mitigate position/verbosity/self-preference bias (swap order, length-normalize, cross-family judge). Add a few contamination-resistant public tasks (a SWE-bench Verified subset or Terminal-Bench) for external grounding. Advance when eval scores move predictably with real quality, verified by reading transcripts.
+
+**Stage 3 — Operationalize (ongoing).** Wire the flywheel: production traces → cluster failures → new eval cases. Add production monitoring (success rate, cost, latency, error rate) and lightweight user feedback (thumbs). A/B test major changes. Run the full suite before adopting a new model. Add a safety eval (AgentHarm-style refusal + constraint checks) before any autonomous/high-privilege deployment. Change the plan if: capability evals saturate (>90%) → build harder tasks; pass^k lags pass@k badly → invest in reliability (retries, verification, self-checking) before new features; judge–human agreement drifts → recalibrate.
+
+## Caveats
+- The field moves extremely fast: specific leaderboard numbers (">80% on SWE-bench Verified," frontier scores) are snapshots that will be stale quickly; treat as illustrative of trends (saturation, contamination-resistance), not fixed facts. Several 2026-dated model names/scores circulating in secondary sources could not be independently verified and should be read as directional only.
+- Headline benchmark numbers are mostly self-reported and harness-dependent: the same model posts different SWE-bench numbers under different scaffolds and subsets; one independently-verified result is worth more than ten vendor-reported ones.
+- LLM-judge scores are not comparable across time or studies without recalibration — they drift with model versions.
+- No single eval layer is sufficient — the Swiss Cheese Model is load-bearing: combine offline evals, production monitoring, and periodic human review.
