@@ -1,0 +1,3 @@
+# Only needed for live mode (real token counts and model routing via the API).
+# The comparator runs offline with the standard library alone.
+anthropic>=0.40

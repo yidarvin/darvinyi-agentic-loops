@@ -1,0 +1,227 @@
+import { TheLandscapeFigure } from "./_figures/TheLandscapeFigure";
+import { TheLandscapeWidget } from "./_widgets/TheLandscapeWidget";
+
+Three tools dominate the conversation about agentic coding: Claude Code, OpenAI's Codex,
+and opencode. It is tempting to compare them as feature lists, but that misreads what they
+are. Strip the packaging and all three run the same program: a model in a loop, calling
+file and shell tools, wrapped in a large deterministic harness. What separates them is not
+the loop. It is a handful of architectural bets about where that loop runs, who owns the
+model, and where the trust boundary sits. This chapter puts the three tools in one
+coordinate system so the rest of the book has a map to hang detail on. Claude Code is the
+spine of that map, since it is the tool this book builds on. Codex and opencode are the
+contrast points that show what the choices could have been.
+
+## The tools are mostly the same program
+
+Start with what does not vary. A reverse-engineering study of Claude Code v2.1.88 from
+MBZUAI (April 2026) cites a community estimate that only about 1.6 percent of the codebase
+is AI decision logic, and the remaining 98.4 percent is operational harness. Treat the
+exact figure as directional, since it comes from a leak-derived bundle rather than a clean
+line count, but the shape is well corroborated: the core is a single while-loop that calls
+the model, runs tools, and repeats, and almost everything else is infrastructure. The
+paper's seventh design principle states the philosophy directly: minimal scaffolding,
+maximal operational harness, on the premise that a capable model benefits more from a rich
+environment than from a framework that constrains its choices.
+
+Codex and opencode reach the same place from different starting points. Codex rewrote its
+CLI from TypeScript to Rust, but the core is still an event-emitting version of that same
+loop. opencode wraps its loop in a persistent client/server daemon, but it is the same loop
+underneath. By 2026 all three share not just the loop but a whole substrate: the file and
+shell primitives (read, write, glob, grep, bash), subagents with isolated context, a plan
+or read-only mode, memory files, sandboxing, and MCP for external tools. They have also
+converged on shared standards. MCP for tools, and the AGENTS.md and CLAUDE.md convention
+for project memory, are now stewarded by the Linux Foundation's Agentic AI Foundation,
+formed in December 2025. When competing teams independently arrive at near-identical harness
+skeletons, that is evidence there is a right shape and everyone is finding it. The
+convergent loop is the one from [the loop](/the-loop); this chapter is about what teams
+build around it.
+
+## Where they actually differ
+
+The differences that survive scrutiny are a short list. An agentic coding tool minimally
+does four things: it runs an agent loop, exposes a tool interface, manages context, and
+enforces control. Every choice past that minimum is a position on an axis, and the axes
+worth tracking are these.
+
+- **Execution locus** (local and interactive, versus cloud and async): does the loop iterate
+  on your machine against your live tree, or in a remote sandbox you fire work at? This has
+  the largest blast radius; it pulls latency, parallelism, trust, and the interaction model
+  along with it.
+- **Model coupling** (single-vendor, versus model-agnostic): bonded to one lab's models, or
+  the model treated as swappable? Coupling buys co-design and first-party caching at the cost
+  of lock-in; agnosticism buys insurance and per-task routing at the cost of model-specific
+  tuning.
+- **Autonomy** (collaborative pair, versus autonomous delegate): asks before every action, or
+  takes a ticket and runs? Partly a permission setting, mostly a product philosophy that
+  shapes the interface and the metrics.
+- **Context strategy**: persistent memory files, compaction, subagent isolation, retrieval,
+  and lazy loading of instructions and tool schemas. This is all of
+  [context-window economics](/context-window-economics) applied as product design.
+- **Extensibility**: how capability is added, and at what context cost, from zero-cost hooks
+  through on-demand skills and packaged plugins to MCP servers that carry a schema cost on
+  every request.
+- **Trust boundary** (permission rules, versus OS sandbox): where control is enforced, and
+  whether it fails open or closed. The strongest systems layer several: deny-first rules, a
+  kernel sandbox, container isolation, git rollback.
+- **Interface** (terminal, versus web or IDE): terminal wins over SSH and in CI; an IDE wins
+  on diff review; web and desktop suit supervising many parallel agents at once.
+
+The axes are not independent. Execution locus drags autonomy and the trust boundary with it:
+once the loop runs in an isolated cloud container, high autonomy is safe because the
+container is the boundary, and low-friction delegation becomes the natural interface. Still,
+these axes are the right coordinate system for placing any tool. The figure shows the whole
+picture at once, a large shared substrate and the short column where tools genuinely diverge.
+
+<Figure id="4.1" caption="Left: the 'small loop, large harness' split. The AI decision logic is a hairline (~1.6%) atop a large operational harness (~98.4%), so the design that distinguishes tools lives in the harness, not the model call. Right: the same tools share a substrate (the loop, the file and shell tools, subagents, plan mode, memory files, MCP, sandbox primitives) and diverge on only a short list of bets, the highest-blast-radius axes the widget plots (these five, plus extensibility and interface).">
+  <TheLandscapeFigure />
+</Figure>
+
+## Three corners of the space
+
+**Claude Code (Anthropic)** takes the local, interactive, collaborative, single-vendor
+corner. It runs in your terminal against your files, shell, and git; each loop iteration
+calls the Anthropic API, while every tool runs locally. Its safety model is a fail-closed
+permission pipeline where deny rules win in every mode, with an optional open-source OS
+sandbox layered underneath. Its bets are that the model is a commodity and the harness is the
+product, that a single-threaded flat history beats multi-agent cleverness because it stays
+inspectable and auditable, and that a deeply tuned single-vendor stack is worth the lock-in.
+In 2026 Anthropic made that coupling explicit, blocking subscription tokens from third-party
+harnesses.
+
+**Codex (OpenAI)** takes the cloud, async, delegated corner. Its defining bet is that the
+future is many autonomous agents running in parallel isolated environments, so you fire a
+task at a container and review the result rather than watch it work. Safety comes from
+containment rather than prompting: every model-issued command runs in a kernel-enforced
+sandbox (Seatbelt on macOS, bubblewrap with Landlock and seccomp on Linux) with the network
+off by default. The Codex team frames the shift as moving from pairing to delegation, and
+reports users adopting an "abundance mindset," queuing several tasks at once. Sessions are
+persistent SQLite-backed threads you can resume, fork, and roll back, an explicit contrast
+with Claude Code's fresh-per-session model.
+
+**opencode (SST)** takes the open, model-agnostic corner. Its defining bet is to never bond
+to one vendor: it connects to 75-plus providers, you bring your own key and pay them
+directly, and you can switch models mid-session, routing a cheap model to planning and a
+frontier model to the hard refactor. Its most distinctive architectural choice is a
+persistent client/server daemon: running opencode starts a background server that owns
+session state and a TUI client that connects to it, so you can close the terminal, SSH back
+in, and reconnect to the same live session. That model-agnosticism stopped being ideological
+in January 2026, when Anthropic's crackdown on third-party harnesses turned it into insurance
+against platform-policy risk overnight.
+
+## Feel the design space
+
+The map plots the three tools, with Cursor and Aider added as contrast points, across the
+axes. Pick the two axes you care about and watch the tools move. The lesson is in the
+movement. On execution locus, Claude Code sits local and Codex sits cloud, at opposite ends,
+yet both stay low on model coupling; bring in that second axis and opencode pulls away from
+both, since it is the one tool that treats the model as swappable. Switch to trust boundary
+against autonomy and Codex flies off alone while the others cluster. A tool's position is
+relative to the coordinate system you measure it in, not an
+absolute ranking, which is why "which tool is best" is the wrong question and "best on which
+axes, for this work" is the right one.
+
+<Widget name="design_space_map" hint="Pick the x and y axes; watch the tools relocate. Select a tool to read its bet and its rationale on the two active axes.">
+  <TheLandscapeWidget />
+</Widget>
+
+## One task, three loops
+
+Take a single task: find and fix the failing test in `auth.test.ts`, then open a PR. The
+three tools produce the same PR and get there through completely different loops.
+
+- **Claude Code** runs on your machine. You start in plan mode, watch it read the failing
+  test and related files, review the plan, approve, switch to accept-edits, and watch the
+  diff land, steering if it drifts. Your eyes are on every consequential action. Best for
+  subtle tasks, sensitive codebases, or learning what the agent actually does.
+- **Codex** runs in the cloud. You type the task into the web UI, it spins up an isolated
+  container, runs the tests behind an OS sandbox with the network off, and hands you a PR
+  with cited logs minutes later. You never watched it, you review the diff, and you queued
+  four other tasks meanwhile. Best for well-scoped, parallelizable work where you would
+  rather review outcomes than steer process.
+- **opencode** runs on a remote box you SSH into. You reconnect to a persistent session,
+  route planning to a cheap model and the fix to a frontier model, work from Plan to Build
+  with per-tool permissions, and stay in tmux the whole time. Best when you refuse lock-in,
+  want per-task routing, or need data sovereignty.
+
+The output is the same fix. The loop is not: how many times you were asked, where the code
+ran, which model did the reasoning, and whether the session survives you closing the
+terminal. That difference, not the diff, is what you are choosing between. The artifact makes
+it measurable.
+
+## Run it
+
+The artifact is a loop comparator. It runs one small task, fixing a wrong
+Celsius-to-Fahrenheit formula, under three harness postures modeled on the three tools:
+interactive (approve every edit, single frontier model, fresh session), delegated (no
+prompts, OS-sandbox containment, persistent thread), and model-agnostic (route planning to a
+cheap model and the fix to a frontier model, per-tool permissions, persistent daemon). All
+three produce the identical patch, which it verifies by running the fixed function. Then it
+prints the loop trace side by side: approval gates, where the code runs, the trust boundary,
+model routing, tokens, and whether the session persists. Offline it uses deterministic
+estimates so it runs anywhere; with an API key it calls the model to produce the fix under
+each posture's routing and reports real token counts, so you can watch model coupling change
+the economics of the same output.
+
+<RunnableArtifact
+  name="loop_comparator"
+  path="artifacts/ch04-the-landscape/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch04-the-landscape", "python3 landscape.py"]}
+  requires="ANTHROPIC_API_KEY (optional; runs offline without it)">
+A loop comparator that runs one small fix under three harness postures, verifies they
+produce the identical patch, and prints the loop traces side by side so the difference shows
+up in approval gates, trust boundary, and model routing, not in the output.
+</RunnableArtifact>
+
+## How to choose
+
+Start from execution locus and trust posture, not from features. Well-scoped, parallelizable
+work you are comfortable running in an OS-sandboxed cloud container points to Codex.
+Eyes-on steering on a trusted local machine points to Claude Code or opencode. A refusal of
+lock-in, or a need for data sovereignty or a remote box, points to opencode. Decide model
+coupling deliberately: the most co-designed harness-and-model stack accepts lock-in and its
+policy risk, while a model-agnostic tool trades co-design for insurance and per-task routing.
+Match autonomy to blast radius, reserving high autonomy for isolated containers where the
+environment is the safety boundary. Above all, invest your own engineering in the 98.4
+percent. Memory-file discipline, permission and approval config, hooks for guardrails that
+must always run, and context-budget hygiene decide outcomes more than model choice does. And
+because the tools converge on standards, staying portable is cheap: author project memory in
+AGENTS.md, expose internal capability over MCP, and keep tool config stable within a session
+for cache efficiency.
+
+## Exercises
+
+<ExerciseCard n="01" title="Place your own workflow on the map">
+Open the widget and pick the two axes that matter most for your day-to-day work. Mark where
+you actually work, then note which of the three tools sits nearest that point. If none is
+close, you have found a gap the market has not filled yet, which is more useful to know than
+a ranking.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Read the trace, not the output">
+Run the loop comparator. All three postures produce the same fix, so ignore the patch and
+read the trace. Count the approval gates, name the trust boundary, and note the model routing
+for each posture. That table is the actual decision you make when you pick a tool.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Watch a bet cascade">
+In the widget, set a tool to cloud and async on execution locus, then check where it lands on
+trust boundary and on autonomy. Convince yourself the axes are not independent: moving the
+execution locus forces the other two. This is why you cannot mix and match bets freely.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Invest in the 98.4 percent">
+Take one repo you run an agent on and write or tighten its AGENTS.md or CLAUDE.md. Run the
+same task before and after. The model did not change and the loop did not change; only the
+harness did. Judge the size of the difference for yourself, then decide where your next hour
+of tuning goes.
+</ExerciseCard>
+
+## Sources
+
+- MBZUAI / VILA-Lab, "Dive into Claude Code" (arXiv:2604.14228, April 2026), analyzing v2.1.88: the "small loop, large harness" framing, the cited 1.6 percent / 98.4 percent split (a directional community estimate on a leak-derived bundle), and the minimal-scaffolding design principle.
+- OpenAI Codex documentation and the Codex team (Hanson Wang, Alexander Embiricos, Fouad Matin): the pairing-to-delegation philosophy, the Rust rewrite, SQLite-backed persistent threads, and OS-level sandboxing (Seatbelt, bubblewrap with Landlock and seccomp, network off by default).
+- opencode (SST; github.com/sst/opencode): the persistent client/server daemon, model-agnosticism across 75-plus providers, Plan and Build modes with per-tool permissions, and the Agent Client Protocol.
+- The Linux Foundation's Agentic AI Foundation (formed December 2025), stewarding MCP and the AGENTS.md convention, for the convergence-on-standards claim.
+- Anthropic's 2026 restriction of subscription tokens to official Claude Code, for the model-coupling and platform-policy-risk discussion (facts and interpretation both still contested).
+- The chapters on [the loop](/the-loop) and [context-window economics](/context-window-economics), for the convergent loop and the harness-as-context-budget framing this chapter generalizes.
