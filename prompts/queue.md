@@ -13,7 +13,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | #  | slug                         | item                                            | status  |
 |----|------------------------------|-------------------------------------------------|---------|
 | 01 | the-loop                     | The Loop                                        | DONE    |
-| 02 | anatomy-of-a-tool-call       | Anatomy of a Tool Call                          | PENDING |
+| 02 | anatomy-of-a-tool-call       | Anatomy of a Tool Call                          | DONE    |
 | 03 | context-window-economics     | Context-Window Economics                        | PENDING |
 | 04 | the-landscape                | The Landscape                                   | PENDING |
 | 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | PENDING |

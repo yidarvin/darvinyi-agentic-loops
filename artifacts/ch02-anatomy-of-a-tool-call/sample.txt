@@ -1,0 +1,3 @@
+the loop is the primitive.
+the model is stateless.
+the harness owns termination.

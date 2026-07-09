@@ -1,0 +1,235 @@
+import { AnatomyOfAToolCallFigure } from "./_figures/AnatomyOfAToolCallFigure";
+import { AnatomyOfAToolCallWidget } from "./_widgets/AnatomyOfAToolCallWidget";
+
+A tool call looks like the model reaching out and doing something: reading a file,
+running a command, calling an API. It does none of that. The model emits a structured
+request as content, in the same token stream as its prose, and then stops. Your
+harness reads that request, runs real code, and hands the result back as the next
+turn's input. Nothing the model produces ever touches your disk or your network. This
+chapter follows one call the whole way: from the tokens the model generates, through
+execution in your code, to the tokens that carry the result back. The clean typed
+blocks your SDK hands you are a projection of that token stream, and holding both
+layers in your head is what separates debugging a tool call from guessing at it.
+
+## The model never runs the tool
+
+In [the loop](/the-loop), one turn had four phases: perceive, decide, act, observe. A
+tool call is the seam between decide and observe, seen up close. The model decides in a
+single forward pass and, if it wants a tool, emits a `tool_use` block and halts with
+`stop_reason` set to `tool_use`. That block is a request, not an action. The harness
+parses it, checks permissions, runs the actual implementation, and returns a
+`tool_result` block on the next turn. The model resumes only when that result is
+already sitting in its context.
+
+Written out, one call is seven stages, using the Anthropic Messages API framing:
+
+1. **Definition.** You declare each tool in the top-level `tools` array as
+   `{name, description, input_schema}`, where `input_schema` is JSON Schema.
+2. **Serialization.** The API renders those definitions into the prompt the model
+   actually sees, ahead of the conversation, in a model-specific format.
+3. **Emission.** The model runs one forward pass and emits a `tool_use` block:
+   `{type: "tool_use", id, name, input}`, with `input` already conforming to the schema.
+4. **Parsing.** The harness reads the response content, finds the `tool_use` blocks,
+   and extracts `name` and `input`. The `id` is a correlation handle to echo back.
+5. **Execution.** The harness dispatches to the real implementation with the parsed
+   `input`, after any safety checks. This is ordinary code: a shell command, an HTTP
+   request, a file read.
+6. **Return.** The harness wraps the output in
+   `{type: "tool_result", tool_use_id, content, is_error?}` and sends it in a **user**
+   message. The `tool_use_id` must match the `id` from stage 3.
+7. **Re-entry.** The result becomes part of the running message list. On the next call
+   the model conditions on it and continues, until it emits a turn with no tool use and
+   `stop_reason` is `end_turn`.
+
+The lever you own is stages 1, 4, 5, and 6. The model owns only stage 3, and even that
+is shaped entirely by the descriptions and schemas you wrote in stage 1.
+
+## Two representations of one call
+
+Here is the part most treatments skip. There is no separate function-calling channel.
+Tool calling is not a distinct transport at the model layer; it is a formatting
+convention the model was post-trained to follow, rendered into the same token stream
+as everything else. The provider's API layer translates between the clean typed blocks
+you send and receive and the on-the-wire token format the model consumes and produces.
+So every call exists at two levels at once: the typed surface your harness holds, and
+the token stream the model runs on.
+
+<Figure id="2.1" caption="One tool call in two representations. The top lane is the typed surface your code holds; the bottom lane is the token stream the model generates and consumes. The API layer serializes definitions down and parses emissions up. Execution happens off-stream, in your code, and the result re-enters as tokens next turn.">
+  <AnatomyOfAToolCallFigure />
+</Figure>
+
+Two consequences fall out of this picture. First, tool definitions are rendered to
+tokens and live in the cached prefix, so every tool you declare costs input tokens on
+every request, whether or not the model uses it. Second, because the emission is
+learned formatting rather than a hard protocol, it can be malformed: truncated JSON, a
+schema violation, an argument that does not typecheck. That is why validation and error
+handling are not optional polish but part of the mechanism. Providers can enforce the
+schema during sampling with constrained decoding so the emitted structure is guaranteed
+valid, but availability and behavior vary by provider and model, so treat guaranteed
+validity as a feature you confirm, not one you assume.
+
+## The blocks, precisely
+
+At the Anthropic API surface the whole exchange is content blocks inside messages. The
+mechanics are worth pinning to specifics.
+
+- **`tools`**: an array of `{name, description, input_schema}`. `input_schema` is JSON
+  Schema, typically `type: "object"` with `properties` and `required`.
+- **`tool_use`** in the assistant response: `{type: "tool_use", id: "toolu_...", name, input}`.
+  The `input` is already a parsed object, not a string.
+- **`tool_result`** in your next user message:
+  `{type: "tool_result", tool_use_id, content, is_error?}`. `content` can be a string or
+  a list of blocks, and `is_error: true` marks a failed run so the model can recover.
+- **`stop_reason`**: `tool_use` means run one or more tools; `end_turn` means done;
+  `max_tokens` means the output was truncated and may have left an incomplete
+  `tool_use` to retry with a larger budget; `pause_turn` can occur on long server-tool
+  turns.
+- **`tool_choice`**: `auto` (the default when tools are present), `any` (must call some
+  tool), `tool` (must call one named tool), or `none`. Forcing a tool is also how you
+  get schema-constrained structured output when you never intend to execute anything.
+
+Two invariants hold the exchange together. Append the assistant turn **verbatim**, so
+the `tool_use` `id`s the model generated stay aligned with the results you send. And
+put every `tool_result` in a user message that **immediately follows** the
+corresponding `tool_use` blocks, one result per call, in order. Break either and the
+next request is rejected.
+
+```python
+# what the model returns (one assistant turn):
+resp.stop_reason        # "tool_use"
+resp.content            # [ TextBlock(...),
+                        #   ToolUseBlock(id="toolu_01H8...", name="read_file",
+                        #                input={"path": "sample.txt"}) ]
+
+# what you send back, as the very next user turn:
+messages.append({"role": "assistant", "content": resp.content})   # verbatim, ids intact
+messages.append({"role": "user", "content": [
+    {"type": "tool_result",
+     "tool_use_id": "toolu_01H8...",     # must match the id above
+     "content": read_file("sample.txt")},
+]})
+```
+
+A single response can carry several `tool_use` blocks. When it does, run all of them
+and return all their `tool_result` blocks together in the next user message. Whether a
+model emits parallel calls, and how reliably, is model-dependent and sometimes
+disabled by configuration.
+
+## Inspect the ladder
+
+The same call reads three ways depending on how far down you look. A chat client shows
+a human a friendly card. Your harness sees typed JSON. The model sees a token stream.
+Toggle between them below. The friendly rendered view drops the correlation `id`, which
+is what makes it lossy. The blocks and tokens views both carry it: it is the one handle
+that binds a call to its result, and it has to survive wherever your harness or the
+model needs to match the two up.
+
+<Widget name="tool_call_inspector" hint="Switch between rendered, blocks, and tokens. It is one exchange the whole time; only the level of description changes.">
+  <AnatomyOfAToolCallWidget />
+</Widget>
+
+## The same call in OpenAI
+
+The token-level reality is the same across providers; the API surface is not, and the
+differences bite when you port code. OpenAI places calls in a `tool_calls` array on the
+assistant message, each with an `id`, a `function.name`, and `function.arguments` as a
+JSON **string** you must parse yourself, rather than a pre-parsed object. You return
+results as messages with `role: "tool"` and a matching `tool_call_id`, not as a content
+block inside a user message. OpenAI also runs two surfaces, the older Chat Completions
+API and the newer Responses API, which reframes the interaction around items for
+agentic use. The contrast to carry: Anthropic is typed content blocks within messages
+with `input` already parsed; OpenAI is a sibling array with stringified arguments and a
+dedicated `tool` role for results.
+
+## The interface is the product
+
+The model chooses and fills a tool from its description and schema alone. That makes the
+agent-computer interface, the ACI, a first-class determinant of reliability, and it
+rewards more engineering than most teams expect. Anthropic reported spending more time
+optimizing its tools than the overall prompt for its SWE-bench work, and treating tool
+ergonomics as a tuning target measurably improved task performance. Tool design here
+means the whole interface, the descriptions and the schemas and the argument shapes, not
+prose alone. Four habits carry most of the value:
+
+- **Write descriptions like docstrings for a new engineer.** What the tool does, when to
+  reach for it, what each parameter means, and the gotchas. This is the highest-leverage
+  prose in the system.
+- **Mistake-proof the arguments.** Anthropic's example: requiring **absolute** filepaths
+  removed a whole class of errors where relative paths broke after the working directory
+  changed. Prefer arguments the model cannot get subtly wrong, and constrain with enums
+  where you can.
+- **Return high-signal results and errors.** On failure, send an informative message
+  with `is_error: true` so the model can correct rather than proceed on a bad
+  assumption. "file not found: /x; did you mean /y" beats an opaque stack trace.
+- **Ship fewer, better tools.** Each tool adds description tokens and one more thing to
+  choose wrong. Consolidate overlapping tools; a smaller, sharper set both costs less
+  context and mis-selects less often.
+
+## Every tool costs tokens, every turn
+
+Because tool definitions are rendered into the cached prefix, the tool list is not free
+and it is not static-cost-only. Adding, removing, or reordering tools, or changing
+`tool_choice`, invalidates the cached prefix and forces the model to recompute it,
+raising both cost and latency. Keep the tool list stable across a session to hold the
+cache. The other pressure comes from the return path: tool results accumulate in the
+message list for the rest of the session, and one verbose command dump can eat a large
+slice of the window and degrade everything after it. Cap or summarize large outputs
+before they enter context, and prefer returning a reference, a path or an id, over the
+full payload. These are the same economics [the loop](/the-loop) warned about, made
+concrete at the level of a single call, and they are the subject of the chapter on
+context-window economics that follows.
+
+## Trace it yourself
+
+The artifact runs a real tool-use exchange and prints the raw `tool_use` and
+`tool_result` blocks at each step, so you can see exactly what the model emits and what
+your harness sends back. In live mode it also calls the token-counting endpoint twice,
+once with your tools and once without, so you can read off precisely how many input
+tokens your tool definitions add to every request. With no API key it replays a scripted
+exchange and prints the same block structure, with a labeled character-based estimate in
+place of the real token count, so it runs anywhere.
+
+<RunnableArtifact
+  name="tool_call_tracer"
+  path="artifacts/ch02-anatomy-of-a-tool-call/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch02-anatomy-of-a-tool-call", "python3 trace.py"]}
+  requires="ANTHROPIC_API_KEY (optional; runs offline without it)">
+A tool-call tracer that prints the raw tool_use and tool_result blocks of a real
+exchange, plus the token cost your tool definitions add to every request.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Read the raw blocks">
+Run `trace.py` and find, in its output, the `id` on the `tool_use` block and the
+`tool_use_id` on the `tool_result` block. Confirm they are identical. That single
+matched value is the correlation handle the whole exchange hangs on.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Measure what a tool costs">
+In live mode, read the two token counts the tracer prints, with tools and without.
+Add a third, verbose tool with a long description, rerun, and watch the per-request
+overhead climb. You just measured the price of a tool you have not even called yet.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Break an invariant">
+In the tracer, change the `tool_use_id` on the returned result to a wrong value, or
+send the result without appending the assistant turn first. Run it live and read the
+API error. The invariants are enforced, not advisory.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Force a tool for structured output">
+Set `tool_choice` to force one specific tool and give the model a prompt it would
+normally answer in prose. Observe that it emits a `tool_use` block instead, with
+`input` conforming to your schema. That is schema-constrained structured output with no
+execution behind it.
+</ExerciseCard>
+
+## Sources
+
+- Anthropic Messages API documentation: tool use, `tool_use` and `tool_result` content blocks, `stop_reason` values, `tool_choice`, and parallel tool use.
+- Anthropic, "Building Effective Agents" and its companion guidance on tool design (the agent-computer interface, poka-yoke, and the SWE-bench tool-description finding).
+- Anthropic prompt caching and token-counting documentation, for the cached-prefix behavior and the `count_tokens` endpoint used by the artifact.
+- OpenAI function-calling documentation (Chat Completions and Responses APIs), for the `tool_calls` array, stringified `arguments`, and the `role: "tool"` result contrast.
+- The chapter on [the loop](/the-loop) for the four-phase cycle this call sits inside, and the invariants introduced there.
