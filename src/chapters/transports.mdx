@@ -1,0 +1,238 @@
+import { TransportsFigure } from "./_figures/TransportsFigure";
+import { TransportsWidget } from "./_widgets/TransportsWidget";
+
+The last chapter read MCP as a message protocol: three JSON-RPC shapes, a mandatory
+handshake, a capabilities object. It said nothing about how those messages actually
+reach the other process, and that omission was deliberate. MCP is layered. The protocol
+layer decides what a message means; the transport layer decides how its bytes travel,
+and it has exactly one job, to move UTF-8 JSON-RPC in both directions. That clean split
+is why the same server binary can talk to a local editor over a pipe and to a fleet over
+HTTP without changing a line of its message handling. This chapter is about the bytes
+around the message: the two transports the spec standardizes, the one it has abandoned,
+how each frames a call, and the single question that tells you which to reach for.
+
+## The transport is a swappable envelope
+
+The specification is blunt about the boundary: "The protocol is transport-agnostic and
+can be implemented over any communication channel that supports bidirectional message
+exchange." A custom transport is allowed as long as it preserves the JSON-RPC message
+format and the lifecycle. Everything you learned in [MCP from the Wire
+Up](/mcp-from-the-wire-up) sits above this line, untouched by it.
+
+Every SDK encodes the boundary as a small interface. In TypeScript a transport is three
+methods and three callbacks:
+
+```typescript
+interface Transport {
+  start(): Promise<void>;
+  send(message: JSONRPCMessage): Promise<void>;
+  close(): Promise<void>;
+  onmessage?: (message: JSONRPCMessage) => void;
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+}
+```
+
+`StdioServerTransport`, `StreamableHTTPServerTransport`, and the deprecated
+`SSEServerTransport` all implement it. The server logic above knows only `send` and
+`onmessage`; whether those bytes cross a pipe or a socket is not its concern. This buys
+three things. Portability: a TypeScript client calls a Python server because both agree
+on the messages, not the plumbing. Separation of concerns: server authors write tool
+logic, not sockets. Evolvability: the protocol has already swapped its remote transport
+once and is about to change its session model, and the primitives did not move. The spec
+still states a preference for the simplest option: "Clients SHOULD support stdio whenever
+possible."
+
+## stdio: the pipe is the session
+
+The stdio transport launches the server as a child process and talks to it over standard
+input and output. The client writes a JSON-RPC message to the server's stdin and reads
+replies from its stdout. The framing is the whole trick and it is trivial: one message
+per line. Messages are delimited by newlines and must not contain embedded ones, so a
+reader splits on `\n` and parses each line as a complete object. There are no headers,
+no addressing, no session identifier. The pipe already points at exactly one client, the
+process that spawned it, so the connection needs no name.
+
+That simplicity has one famous footgun. The server must write nothing to stdout that is
+not a valid MCP message, because stdout is the wire. A stray `print`, a library banner, a
+progress bar, an uncaught traceback routed to stdout, any of these corrupts a message and
+hangs the client. Logs go to stderr, which the client reads separately and must not treat
+as errors by default. The second footgun is buffering: flush stdout after every message
+or the client waits on bytes that are sitting in a buffer. Both bugs are why the spec
+authors tell you to use the SDK transport rather than hand-roll the framing, and both are
+visible in this chapter's artifact, where the server logs to stderr and flushes stdout on
+every write.
+
+The client owns the process, including its death. A clean shutdown is a sequence: close
+the server's stdin so a well-behaved server sees EOF and exits, wait briefly, send
+`SIGTERM` if it has not, then `SIGKILL` if it still has not. Real clients get this wrong
+often enough that it is worth naming: killing the process before closing the client fires
+a spurious `onclose` and mislabels a clean exit as a failure, and losing track of the
+subprocess leaks it. The transport with the least protocol is the one that leaks
+operating-system resources.
+
+Reach for stdio when the server is a local tool: a file, shell, or database integration
+on one developer's machine, spawned as `npx @modelcontextprotocol/server-filesystem` or
+`uvx some-server`. Every client supports it, it needs no infrastructure, and its latency
+is sub-millisecond because it is inter-process communication with no network. Its limits
+are the flip side of its virtues. One subprocess serves one client. It is local only.
+And it does not scale: pipes are not multiplexed, concurrent requests serialize, and
+there is no load balancing to add. In one Kubernetes benchmark of a trivial echo server
+under twenty concurrent connections, stdio landed two successful responses out of fifty.
+That number is a synthetic upper bound on a toy, so read the direction and not the
+decimal, but the direction is real: stdio was never built to be a network server.
+
+## Streamable HTTP: one endpoint, two answers
+
+For anything remote or multi-client, the current spec defines Streamable HTTP, and its
+design goal was to work with ordinary HTTP infrastructure. The server exposes a single
+endpoint path, say `https://example.com/mcp`, that accepts both POST and GET. Every
+client-to-server message is a fresh POST whose body is one JSON-RPC message, sent with
+`Accept: application/json, text/event-stream` because the client must be ready for either
+kind of reply.
+
+The reply is where the transport earns its name. If the POST carried a notification or a
+response, meaning nothing is owed back, the server answers `202 Accepted` with an empty
+body. If it carried a request, the server chooses between two `Content-Type`s. It can
+answer `application/json` with a single response object and close, which is the simple,
+stateless-friendly path. Or it can answer `text/event-stream` and hold open a Server-Sent
+Events stream, pushing zero or more messages (progress notifications, for instance) before
+the response and only then ending the stream. The client must support both. A dropped
+stream is not a cancellation: to cancel, the client sends a `CancelledNotification`.
+
+Two headers carry the state the pipe used to imply. On the `initialize` response the
+server may assign an `Mcp-Session-Id`, cryptographically random and globally unique, and
+if it does the client must echo it on every later request; a server that requires one
+answers a request without it with `400`. And the client must send `MCP-Protocol-Version`
+on every post-initialize request so the server knows which revision it is speaking. When
+a stateful server attaches event IDs to its SSE messages, a client that drops can
+reconnect with a `Last-Event-ID` header and the server replays what it missed on that
+stream. That resumability, a per-stream cursor, is the capability the older remote
+transport never had.
+
+That older transport is worth one paragraph, because you will still meet servers speaking
+it. The original 2024-11-05 remote transport, HTTP+SSE, used two endpoints: a long-lived
+`GET` that streamed every server message, and a `POST` for client messages that returned
+`202` while the real answer arrived later on the stream. It works, but it forces two
+connections per session correlated only by a URL parameter, a mandatory long-lived stream
+with no resumability, and a stateful server that pins each session to one instance. It is
+serverless-hostile and was deprecated in 2025-03-26. Never build a new one. Treat it as a
+compatibility shim for pre-2025 clients, on a published sunset date.
+
+<Figure id="6.1" caption="MCP is layered. One tools/call message (the protocol layer, top) is identical no matter how its bytes move. Below the line, the two standard transports frame it differently, and the deciding axis is drawn into the shapes. stdio is one client that owns one server subprocess over a stdin/stdout pipe: one newline-delimited line, no headers, local, sub-ms, and no scaling. Streamable HTTP is many clients reaching one server over a single POST /mcp endpoint, whose reply forks into a plain JSON body or an SSE stream: remote-capable, authenticated over standard HTTP, and horizontally scalable.">
+  <TransportsFigure />
+</Figure>
+
+## The one axis that decides
+
+Almost every transport decision reduces to a single question: does one client own the
+server process, or do many clients reach one server over a network? If one client owns the
+process, use stdio and add nothing. If many clients need one server, if the server is
+hosted or remote, if you need real authentication, or if you are deploying to serverless,
+use Streamable HTTP. There is no clean authentication path for stdio, so the moment auth
+is a requirement the answer is HTTP. Migrating an existing stdio server to HTTP is usually
+a five-line change to how the transport is constructed, not a rewrite, because the tool
+logic never touched the transport.
+
+Raw latency rarely decides it. A stdio call is sub-millisecond and an HTTP call adds a
+network round trip, but both are dwarfed by the half-second to several seconds an LLM
+spends generating the tokens that triggered the call. What differs is deployment topology.
+Where scale does matter, the lever is session reuse rather than the transport itself: the
+same benchmark that embarrassed stdio measured Streamable HTTP at roughly 300 requests per
+second with pooled sessions against 30 to 36 with a fresh session per request, a tenfold
+gap. Pool aggressively before you add hardware. The widget holds the axis fixed and lets
+you flip only the framing, so you can watch one `tools/call` become a bare line on a pipe,
+then an HTTP request answered by a JSON body, then the same request answered by a stream.
+
+<Widget name="transport_framing" hint="Hold one tools/call fixed and reframe it. Switch from stdio to Streamable HTTP, then flip the HTTP response between a JSON body and an SSE stream. Teal marks the JSON-RPC message; muted marks the transport's own framing, including the SSE event: and data: wrappers. Notice the stream adds a progress message before the result.">
+  <TransportsWidget />
+</Widget>
+
+<Callout kind="danger">
+HTTP transports carry three non-negotiable defenses the spec spells out. Validate the
+`Origin` header on every request and reject a mismatch with `403`, which stops DNS-rebinding
+attacks from a browser. When the server is local, bind it to `127.0.0.1`, never `0.0.0.0`,
+so nothing off the machine can reach it. And require real authentication with TLS in
+production, using session IDs that are cryptographically random and bound to the user, never
+accepting a token that was not issued for your server. The TypeScript SDK exposes the
+`Origin` and `Host` checks as `enableDnsRebindingProtection` with an `allowedHosts` and
+`allowedOrigins` list; binding to loopback is a separate choice you make when the server
+starts listening. stdio has a different trust boundary: launching it runs arbitrary local
+code at your privilege, and its secrets ride in environment variables, so treat that config
+file as if it holds plaintext credentials, because it does. This chapter's artifact shows
+these controls in action: it binds loopback only, refuses a foreign `Origin` with `403`, and
+refuses a request that arrives without its session id with `400`.
+</Callout>
+
+## Run it
+
+The artifact is one Python file with a single MCP server core exposed over both transports
+at once. Run it and a driver sends the identical sequence, `initialize`, `tools/list`,
+`tools/call`, first over stdio and then over Streamable HTTP, printing every framed byte in
+both directions. Over stdio you see newline-delimited JSON on a subprocess pipe with no
+headers. Over HTTP you see each message become a fresh `POST /mcp`, the `initialize` reply
+assign an `Mcp-Session-Id` the client then echoes, a notification answered with `202` and no
+body, and a request answered with one `application/json` body. A second HTTP pass answers the
+same `tools/call` as a `text/event-stream`, a progress event and then the result. Two probes
+fail on cue, a foreign `Origin` refused with `403` and a request missing its session id
+refused with `400`. The closing line is the point: same `initialize`, same `tools/call`, only
+the bytes around them changed. No key, no SDK, no network beyond loopback.
+
+<RunnableArtifact
+  name="transports"
+  path="artifacts/ch06-transports/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch06-transports", "python3 transports.py", "python3 transports.py --http"]}>
+One MCP server core framed over stdio and Streamable HTTP, with a client that prints the
+identical call as it travels each way, including the JSON-versus-SSE response fork and two
+HTTP security refusals. Standard library only.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Read one call two ways">
+Run the artifact and find the `tools/call` for `search` in the stdio trace and again in the
+HTTP-JSON trace. Underline the part of each that is byte-for-byte the same message, and
+circle the bytes that differ. Then predict, before you scroll, what the SSE trace adds to
+the reply that the JSON trace does not. Confirm it against the third pass.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Contaminate the stdout wire">
+In the artifact's `serve_stdio` loop, add a plain `print("hello")` before the reply is sent.
+Rerun and watch the stdio trace break. Explain in one sentence why the same stray line would
+be harmless from an HTTP server and fatal from a stdio one, then move the print to
+`sys.stderr` and confirm the trace recovers.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Trip the HTTP defenses yourself">
+The artifact rejects a foreign `Origin` with `403` and a missing session id with `400`. Add a
+third refusal: reject any request whose `MCP-Protocol-Version` header names a version the
+server does not support, answering `400`. Send one good request and one bad one and confirm
+only the bad one is turned away.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Pick the transport for a real server">
+Take an MCP server you actually use and answer the deciding question out loud: does one client
+own its process, or do many clients need it over a network? Name the transport that follows,
+then list what would have to change about the server, its auth, and its deployment if the
+answer flipped. Most migrations are smaller than they look.
+</ExerciseCard>
+
+## Sources
+
+- The Model Context Protocol specification (`2025-11-25`), for the transport-agnostic
+  boundary, the `Transport` interface, the stdio framing rules (newline-delimited, nothing
+  but valid messages on stdout, the stderr allowance), the Streamable HTTP single-endpoint
+  design, the `202` and `application/json` versus `text/event-stream` reply choice, the
+  `Mcp-Session-Id` and `MCP-Protocol-Version` headers, `Last-Event-ID` resumability, and the
+  mandatory `Origin` validation, loopback binding, and authentication requirements.
+- The MCP revision history, for the original 2024-11-05 HTTP+SSE transport, its two-endpoint
+  design, and its deprecation in favor of Streamable HTTP in `2025-03-26`.
+- Stacklok's `yardstick` transport benchmark, for the directional scaling numbers (stdio's
+  failures under concurrency and the roughly tenfold Streamable HTTP gap between pooled and
+  per-request sessions), read as a synthetic upper bound on a trivial server rather than a
+  production measurement.
+- The chapter on [MCP from the Wire Up](/mcp-from-the-wire-up), for the message shapes and the
+  handshake that ride above the transport, and [Context-Window
+  Economics](/context-window-economics), for why the per-call transport overhead is usually
+  negligible against inference cost.

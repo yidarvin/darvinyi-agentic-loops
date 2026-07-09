@@ -1,0 +1,3 @@
+# No dependencies. Both transports are standard library only: json, subprocess,
+# threading, socket, http.server, http.client, sys. This file exists so the run
+# instructions are uniform across chapters; there is nothing to install.
