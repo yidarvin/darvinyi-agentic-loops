@@ -1,0 +1,3 @@
+# No dependencies. The wire trace is standard library only: json, subprocess,
+# threading, sys. This file exists so the run instructions are uniform across
+# chapters; there is nothing to install.

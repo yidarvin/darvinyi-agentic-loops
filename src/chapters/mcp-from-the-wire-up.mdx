@@ -1,0 +1,218 @@
+import { McpFromTheWireUpFigure } from "./_figures/McpFromTheWireUpFigure";
+import { McpFromTheWireUpWidget } from "./_widgets/McpFromTheWireUpWidget";
+
+The Model Context Protocol arrives wrapped in a lot of noise: an SDK downloaded tens of
+millions of times a month, a home in the Linux Foundation, a five-figure count of
+public servers, a version marked "2.0" already in release candidate. The noise hides how
+small the thing underneath is. MCP is JSON-RPC 2.0 with a mandatory handshake, a capabilities
+object you negotiate once, and a handful of namespaced methods. That is the entire wire
+protocol, and you can hold all of it in your head. This chapter reads MCP from the wire up,
+because once you can read the bytes, every integration you will ever debug is a variation on
+one exchange: negotiate, discover, invoke, return. Transports, the primitives in depth,
+production servers, and the threat model are the chapters that follow; this one is the
+foundation they all stand on.
+
+## The protocol is small; the ecosystem is loud
+
+MCP was created at Anthropic by David Soria Parra and Justin Spahr-Summers and open-sourced on
+November 25, 2024, then donated to the Linux Foundation's Agentic AI Foundation on December 9,
+2025. The reason it spread is a clean piece of leverage. Connecting M agents to N tools by
+hand is up to M times N bespoke integrations. MCP defines one client contract and one server
+contract, so every agent implements the client side once and every tool implements the server
+side once, and any compliant pair interoperates. M times N collapses to M plus N. That is the
+same move the Language Server Protocol made for editors and languages, and it is why people
+reach for the "USB-C for AI" line, though the analogy oversells the neutrality of a protocol
+that launched from a single vendor.
+
+The adoption numbers are genuinely large and genuinely approximate. Anthropic's December 2025
+announcement cited more than 97 million monthly SDK downloads and more than 10,000 active
+public servers. Independent trackers disagree on the exact totals by an order of magnitude, so
+take the direction as solid and the precise figures as marketing. None of it changes the wire.
+A server with one user and a server with a million speak the same three message shapes.
+
+## Three shapes and one rule
+
+Every MCP message is a JSON-RPC 2.0 object, and there are only three kinds.
+
+- A **request** carries an `id`, a `method`, and `params`, and expects exactly one response.
+  MCP tightens the base spec here: the `id` must be a string or an integer, it must not be
+  null, and it must not be reused within a session. The `id` is the correlation handle that
+  lets a response find its request when several are in flight.
+- A **response** echoes that same `id` and carries exactly one of `result` or `error`, never
+  both.
+- A **notification** has a `method` but no `id`, and gets no response at all. Notifications
+  carry lifecycle events and dynamic updates: `notifications/initialized`,
+  `notifications/tools/list_changed`, progress, cancellation.
+
+The rule that sorts them is the `id`. Present means a reply is owed; absent means fire and
+forget. Method names are case-sensitive and forward-slash namespaced (`tools/list`,
+`resources/read`, `prompts/get`), and the two most common wire bugs are a wrong casing and a
+missing namespace.
+
+Two assumptions are worth heading off. Framing, how one message is
+delimited from the next, is the transport's job, not the protocol's, which is exactly why the
+same server talks over stdio to a local IDE and over HTTP to a remote service without changing
+a line of message logic. That is the subject of the next chapter. And batching, bundling
+several messages into a JSON array, was allowed early, then required to be received, then
+removed outright in the `2025-06-18` revision. Treat batching as dead.
+
+## Two failures that must not blur
+
+MCP draws a hard line between two kinds of failure, and blurring it is the single most common
+design mistake at the server. A request that cannot be processed at all (an unknown method, an
+unknown tool name, malformed params) comes back as a JSON-RPC `error` object with a numeric
+code: `-32601` for method not found, `-32602` for invalid params, `-32700` for a parse error,
+and the `-32000` to `-32099` range reserved for server-defined codes. But a tool that runs and
+then fails is not a protocol error. It comes back as a perfectly successful `result` whose
+`isError` field is `true` and whose `content` array explains what went wrong.
+
+This is deliberate, and it is the same design you saw in [the anatomy of a tool
+call](/anatomy-of-a-tool-call). A protocol error is for the harness; the connection did
+something illegal. A tool error is for the model; the call was well formed but the world did
+not cooperate, so the failure is handed back as content the model reads and retries from. Send
+a division-by-zero back as `-32603` and the model never sees it. Send it back as a result with
+`isError: true` and the model apologizes, fixes the argument, and calls again. The figure holds
+both ideas: the three shapes on top, and the fork a `tools/call` takes on the bottom.
+
+<Figure id="5.1" caption="Top: the three JSON-RPC shapes MCP is built from, sorted by one rule, the presence of an id. A request expects a response; a response echoes the id and carries result xor error; a notification has no id and gets no reply. Bottom: a single tools/call forks into two failures that look different on the wire. An unknown tool or method returns a JSON-RPC error object, meaning the request was never processed. A tool that runs and then fails returns a successful result with isError:true, which the model reads and can retry from.">
+  <McpFromTheWireUpFigure />
+</Figure>
+
+## The handshake is not optional
+
+MCP is a stateful, session-oriented protocol, and initialization must come first. Nothing real
+happens until a three-message handshake completes. The client sends an `initialize` request
+carrying its `protocolVersion`, its `capabilities`, and its `clientInfo`. The server replies
+with its own negotiated version, its capabilities, its `serverInfo`, and optionally an
+`instructions` string, a short natural-language manual the host can feed the model. The client
+then sends the `notifications/initialized` notification, and only then does the operation phase
+begin. Before the server has answered `initialize`, the client should send nothing but pings;
+before `initialized` arrives, the server should send nothing but pings and logging.
+
+The session this sets up is strictly one to one. The architecture is host, client, server: the
+host is the LLM application, and inside it each **client** holds an isolated, stateful session
+with exactly one **server**. A host wired to three servers runs three clients, three sessions,
+no crosstalk. That isolation is a security boundary as much as an engineering one. A server
+sees only its own session, never the whole conversation and never another server's traffic, and
+consent and policy live at the host, not the server. Hold that thought; it is the whole premise
+of the security chapter later in this part. Shutdown, by contrast, has no message at all. The
+transport signals termination. Over stdio the client closes the server's standard input
+and the server exits.
+
+## Capabilities are a contract
+
+The `capabilities` object exchanged in the handshake is how two peers agree on what they are
+allowed to do to each other. It is a nested object, and the rule is that presence advertises a
+feature. A server that lists `tools` serves tools; one that also nests `listChanged` under it
+promises to emit a notification when its tool list changes. A client that lists `sampling`
+offers the server a way to request model completions back through the host; `roots` offers
+filesystem roots; `elicitation` offers to collect user input mid-session. Anything not
+advertised must not be used, and that single rule is what lets an old client and a new server,
+or the reverse, share a connection safely: each side declines to reach for what the
+other did not offer. Capability negotiation is the graceful-degradation
+mechanism that keeps the protocol forward and backward compatible across versions.
+
+## Versions are dates, and the date matters
+
+MCP versions are dates in `YYYY-MM-DD` form, and the date is the last backwards-incompatible
+change, not a release date. Negotiation is simple: the client offers its latest supported
+version, the server echoes it if it can speak it, and otherwise the server counter-offers its
+own latest and lets the client decide whether to accept or disconnect. A well-behaved server
+keeps a descending list of the versions it knows and negotiates down to the newest one it
+shares with the client.
+
+The short history is enough to place any server you meet:
+
+- `2024-11-05`, the initial release: stdio and an HTTP-plus-SSE transport, no standard auth,
+  batching allowed.
+- `2025-03-26`: an OAuth 2.1 authorization framework, the Streamable HTTP transport replacing
+  HTTP-plus-SSE, and tool annotations.
+- `2025-06-18`: batching removed, structured tool output added, elicitation added, and the
+  `MCP-Protocol-Version` header made mandatory over HTTP.
+- `2025-11-25`, the current stable version and the one-year anniversary release: durable Tasks
+  (still experimental), icon metadata, and modern OAuth discovery, all backward compatible.
+
+Build on `2025-11-25` today. Reserve `2024-11-05` for the tail of a negotiation list, not as a
+target.
+
+<Callout kind="note">
+A release candidate dated `2026-07-28`, informally "MCP 2.0," reworks the protocol to be
+stateless: it removes the `initialize` handshake and the session, moving version, client info,
+and capabilities into per-request metadata. It is locked but not final as of this writing, and
+SDKs will adopt it at their own pace. Open a migration branch only if you run remote HTTP
+servers, custom clients, or OAuth, or if you shipped against experimental Tasks. A local stdio
+server barely notices. Watch the final release, then follow your Tier-1 SDK.
+</Callout>
+
+## One trace, end to end
+
+Put the pieces together and the whole protocol is one shape repeated. Negotiate the version and
+capabilities in the handshake. Discover what the server offers with `tools/list`. Invoke one
+with `tools/call`. Read the result. The widget steps through exactly that, message by message,
+so you can watch the connection cross from negotiating to operating the instant the
+`initialized` notification goes out. Switch to the version-mismatch scenario to see the
+counter-offer: the client asks for a version the server does not have, the server answers with
+its latest, and the client accepts and carries on. Everything an agent ever does over MCP is a
+variation on this trace.
+
+<Widget name="handshake_sequence" hint="Step through the handshake, then the first tools/list and tools/call. Watch the phase badge flip from negotiating to operating. Switch scenarios to see a version counter-offer.">
+  <McpFromTheWireUpWidget />
+</Widget>
+
+## Run it
+
+The artifact is a working MCP client and server in one standard-library Python file, small
+enough to read top to bottom. Run it and the client spawns the server as a subprocess, connects
+over real stdio framing (newline-delimited JSON), and prints every message on the wire in both
+directions with a decoded summary. You will watch the handshake negotiate a version, the
+`tools/list` discovery, a successful `tools/call`, a tool that runs and fails with
+`isError: true`, and three protocol errors for bad params, an unknown tool, and an
+un-negotiated method, so the fork from the figure shows up as actual bytes. A second mode offers the server a version it
+does not speak and lets you watch the counter-offer. No API key, no network, nothing to install.
+
+<RunnableArtifact
+  name="mcp_wire"
+  path="artifacts/ch05-mcp-from-the-wire-up/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch05-mcp-from-the-wire-up", "python3 mcp_wire.py", "python3 mcp_wire.py --bad-version"]}>
+A minimal MCP client and server that complete the handshake and print every framed JSON-RPC
+message on the wire, including both failure paths and a version counter-offer. Standard library
+only.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Read the bytes, then break the handshake">
+Run the artifact and read the trace top to bottom until each line is obvious. Then break the
+handshake: comment out the `notifications/initialized` line in the client and rerun. Predict
+what the server does with the next request before you look, then confirm it. Breaking the rules
+is the fastest way to learn which ones the wire actually enforces.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Tell the two failures apart">
+In the widget, find the successful `tools/call` result. Now, in the artifact, add a tool that
+raises an exception when it runs, and a `tools/call` for a tool that does not exist. Confirm the
+first returns a `result` with `isError: true` and the second returns a JSON-RPC `error` object.
+Write one sentence on why the model should see the first but not the second.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Negotiate a version down">
+Switch the widget to the version-mismatch scenario and step through the counter-offer. Then
+change the server's supported list in the artifact so it no longer speaks `2025-11-25`, and rerun
+the clean trace. Watch the negotiation land on an older version, and decide what your client
+should do if the counter-offer is one it cannot accept.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Instrument a real server">
+Attach any MCP server you already use to your agent, and log the raw JSON-RPC in and out for one
+session. Find the `initialize` exchange, the negotiated `protocolVersion`, and the capabilities
+each side advertised. Most integration failures are mundane once you can see them: a missing id,
+a wrong version, an unnamespaced method.
+</ExerciseCard>
+
+## Sources
+
+- The Model Context Protocol specification (`2025-11-25`), for the JSON-RPC message shapes, the id rules, the initialization lifecycle, the capabilities object, the version-negotiation scheme, and the protocol-error versus tool-execution-error distinction (`isError`).
+- Anthropic's introduction of MCP (November 25, 2024) and its December 9, 2025 donation to the Linux Foundation's Agentic AI Foundation, for the origin, the M-times-N framing, and the "97M+ monthly SDK downloads" and "10,000+ active public servers" figures (Anthropic's own numbers; independent trackers diverge by an order of magnitude).
+- The MCP revision history (`2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25`) and the `2026-07-28` release candidate, for the feature timeline, the removal of batching, and the stateless "MCP 2.0" rework of the handshake and session.
+- The chapter on [the anatomy of a tool call](/anatomy-of-a-tool-call), for the typed-block-versus-token view of tool calls that MCP serializes over the wire, and the [context-window economics](/context-window-economics) chapter, for why many attached servers and their tool schemas are a real budget cost.
