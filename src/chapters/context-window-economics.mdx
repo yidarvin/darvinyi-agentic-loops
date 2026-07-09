@@ -1,0 +1,242 @@
+import { ContextWindowEconomicsFigure } from "./_figures/ContextWindowEconomicsFigure";
+import { ContextWindowEconomicsWidget } from "./_widgets/ContextWindowEconomicsWidget";
+
+The context window is the one budget every other decision spends against. It is finite,
+it is shared by everything in the request, and because the API is stateless it is
+re-billed in full on every turn. That last property is the one people miss: a session
+does not cost the sum of its turns, it costs the running total re-sent each turn, so the
+bill grows with the square of the conversation. Hold this single constraint in your head
+and most of the rest of the book stops looking like a grab bag of tricks. Prompt caching,
+compaction, context editing, retrieval, subagents, and memory tools are not separate
+features. They are all the same move: buy back room in a budget that is always shrinking
+and always being re-charged.
+
+## One budget, and everything is in it
+
+There is no separate lane for instructions, no free shelf for tool definitions. Anthropic
+is explicit: everything in the request counts toward the context window, the system
+prompt, every message including tool results, images, and documents, your tool
+definitions, and the output the model generates for the turn, including its extended
+thinking. On the Messages API they stack in a fixed order: tool definitions, then the
+system prompt, then the message history, then the current turn, then the model's output.
+
+What matters is how each part behaves over a session. Two are roughly fixed. The system
+prompt is a few thousand tokens and barely moves. Tool definitions are fixed per
+configuration but can be enormous: Claude Code's built-in set runs around 14K to 17K
+tokens, and MCP compounds fast. GitHub's official server alone has been measured between
+roughly 17K and 55K tokens; Anthropic reports seeing up to 134K tokens of tool
+definitions before optimization. One deployment of three MCP servers, about forty tools,
+consumed 143,000 of 200,000 tokens, seventy-two percent of the window, before the first
+user message. You can spend most of a window on capability the model may never use.
+
+The other parts only grow. Message history is re-sent every turn and never shrinks on its
+own. Tool results are the fastest-growing category in a coding agent: one file read can be
+tens of thousands of tokens, and a command dump or a test log lands whole and then rides
+along for the rest of the session. This is why agents "fall apart after a few tool calls."
+It is not that the model gets confused by the task. The accumulated results push the
+working set into the range where attention frays, and eventually the loop fills its own
+window until there is no room left to reason.
+
+## Why cost is quadratic, not linear
+
+The model is stateless. It remembers nothing between calls, so the harness re-sends the
+entire message list every turn (this is the loop from [the loop](/the-loop), and the
+per-call token cost that [anatomy of a tool call](/anatomy-of-a-tool-call) made concrete).
+That re-send is the whole story of agent economics. If each turn adds a fixed increment of
+tokens, then turn one pays for one increment, turn two pays for two, turn three for three,
+and the cumulative input you are billed for is the triangular sum, increment times
+N(N+1)/2. It grows with the square of the turn count.
+
+The numbers are not subtle. A twenty-step loop that adds about 2K new tokens per turn does
+not process 40K tokens. It processes around 420K, roughly ten times the naive linear
+estimate. A forty-turn coding run at 3K new tokens per turn re-processes about 2.46M input
+tokens, which on Sonnet at $3 per million is close to $7.40 of input alone, matching the
+$5 to $8 that a complex agentic coding task actually costs. The output side is smaller in
+token count but pricier per token: across current Claude models output costs five times
+input, so verbose reasoning and chatty tool results are doubly expensive.
+
+<Figure id="3.1" caption="Left: one turn's window, decomposed. A fixed prefix (tools + system) sits under a monotonically growing body (history + tool results), with an output buffer reserved and free space shrinking toward the working-context ceiling. Right: the same stack re-sent every turn. Cumulative billed input is the area of the triangle, not the height of one bar, which is why session cost grows with the square of the turn count.">
+  <ContextWindowEconomicsFigure />
+</Figure>
+
+Caching bends this curve without changing its shape. A stable prefix of system and tools,
+marked with a cache breakpoint, is re-read at one tenth the input price on every turn after
+the first. That is a real saving on the fixed part. But the growing conversation tail is
+only partially cacheable, and in a long loop the tail is what dominates. Caching is the
+first tool you reach for, not the last word. It gets its own chapter in Part IV.
+
+## Bigger windows are not a free lunch
+
+The one-million-token window is now standard on current Claude models at flat pricing, and
+the reflex is to treat it as headroom you can fill. You cannot, for three reasons.
+
+The first is that models do not use long context uniformly. Chroma's "Context Rot" study
+ran eighteen models, including GPT-4.1, Claude 4, Gemini 2.5, and Qwen3, and found that
+performance grows increasingly unreliable as input length grows, even on trivial tasks.
+This is not window overflow: a 200K-token model degrades measurably at 50K. It is a
+gradient, not a cliff, and it shows up in every frontier model. Liu and colleagues named
+the sharpest version of it "lost in the middle," where a model reliably uses information at
+the start and end of its context and loses what sits in the middle. The mechanism is
+structural. Attention creates n-squared pairwise relationships across tokens, so it is a
+finite resource with diminishing returns, not a bag that holds more the bigger it gets.
+
+The second reason is that advertised capacity and effective capacity are different numbers.
+NVIDIA's RULER benchmark defines effective length as the longest input a model can handle
+above an accuracy threshold and finds most models' effective context well below their
+claimed window. A common heuristic is that usable context is around fifty to sixty-five
+percent of the advertised size, and practitioners cap their working context far lower,
+often near forty percent, because quality starts to erode there. Treat forty percent as a
+starting heuristic rather than a law; some argue the onset is an absolute band around 32K
+to 100K tokens rather than a fixed fraction. Either way the lesson holds: a 200K window
+filled with precisely relevant code outperforms a 1M window filled with an entire
+repository.
+
+The third reason is plain economics. Filling a huge window is slower, because time-to-first-token
+grows with input, and quadratically expensive, because you re-send it every turn. The
+window being available does not make it cheap to use.
+
+<Callout>
+Agents are token-hungry by nature. Anthropic reports that agents use roughly four times
+the tokens of a chat interaction, and multi-agent systems about fifteen times. On one of
+their research evals, token usage alone explained about eighty percent of the performance
+variance. The fifteen-times multiplier is the reason a multi-agent architecture has to earn
+its keep: it is only worth it when the task value clears that bar. Part III returns to this.
+</Callout>
+
+## Instrument before you optimize
+
+You cannot budget what you cannot see, and the single most common mistake is optimizing
+context by intuition. There are three layers of instrumentation, and they are cheap.
+
+Before a call, the `count_tokens` endpoint takes the same structured payload as a real
+request, system, messages, tools, images, and returns the exact input token count for free.
+Use it to price a change before you ship it. Do not reach for `tiktoken`: it is OpenAI's
+tokenizer and undercounts Claude by fifteen to twenty percent on text and more on code.
+Note also that the newer tokenizer on recent Claude models produces around thirty percent
+more tokens for the same text than earlier ones, worst on code and structured data, so
+counts from a year ago no longer hold.
+
+After a call, the `usage` object reports where the tokens actually went, and it has a trap:
+`input_tokens` is the uncached input only. Total input is `input_tokens` plus
+`cache_read_input_tokens` plus `cache_creation_input_tokens`. A caching setup that looks
+free because `input_tokens` dropped is just moving tokens into the cache fields. Read all
+three or you will misjudge the bill.
+
+The third layer is a per-category decomposition, the kind Claude Code's `/context` command
+prints: system prompt, tools, message history, tool results, memory, reserved output, and
+free space, each as a token count and a share of the window. That view is what turns a vague
+"we are running out of room" into a specific "tool definitions are eighteen percent of the
+window and we use four of them." Two thresholds are worth wiring as alarms: act when tool
+definitions cross about ten percent of the window, and when free space drops below roughly
+thirty to forty percent. The artifact at the end of this chapter builds exactly this
+decomposition so you can run it against your own session.
+
+## Feel the budget fill
+
+The visualizer below is one turn of the loop made into a slider. Drag the turn count and
+watch the stack grow: history and tool results climb, the free band collapses, and the
+readout crosses the working-context ceiling and then the auto-compact line. Toggle the heavy
+MCP toolset and watch the fixed prefix jump before the conversation has even started, eating
+budget you have not spent yet. The number that should surprise you is the cumulative billed
+input, which climbs far faster than the bar does, because every turn re-sends everything
+below it.
+
+<Widget name="context_budget" hint="Drag turns to advance the session; toggle the heavy MCP toolset. Watch free space collapse and cumulative billed input climb quadratically.">
+  <ContextWindowEconomicsWidget />
+</Widget>
+
+## Every pattern downstream is an answer to this
+
+Once you see context as the master constraint, the rest of the field's toolkit reads as a
+set of responses to it, each attacking a different part of the budget.
+
+- **Prompt caching** attacks the re-send. It amortizes the stable prefix at one tenth the
+  input price, so the fixed part of the window stops costing full price every turn.
+- **Compaction and summarization** attack history growth. They replace a long transcript
+  with a shorter summary that preserves decisions, open bugs, and recent files.
+- **Context editing** attacks tool-result accumulation. It clears old results past a
+  threshold while keeping the record, and runs server-side after the cache lookup so it
+  preserves your cache prefix.
+- **Retrieval** attacks premature loading. It pages in only what a step needs, a file, a
+  query, a link, instead of holding the whole corpus in the window.
+- **Subagents** attack the shared budget itself. Each gets a clean window, burns tens of
+  thousands of tokens exploring, and returns a one-to-two-thousand-token summary to the
+  parent.
+- **Memory tools** attack the session boundary. They externalize state to a file store that
+  persists across sessions, so the window does not have to carry it.
+
+Anthropic reports that context editing alone improved an agentic-search eval by twenty-nine
+percent, and paired with a memory tool by thirty-nine percent, while cutting token use in a
+hundred-turn workflow by eighty-four percent. Those are vendor self-reported numbers, so
+weigh them accordingly, but the direction is the point: reclaiming budget is not
+housekeeping, it is what lets a long task finish at all. Every one of these patterns has a
+chapter later in the book. They will make more sense because you now know what they are all
+buying back.
+
+## Analyze a real budget
+
+The artifact is a context-budget analyzer. It loads a captured session, a system prompt, a
+tools array, and a multi-turn message history with tool results, and decomposes the window
+by category the way `/context` does: tokens and window share for the system prompt, the tool
+definitions, the message history, and the tool results, with alarms when tools cross ten
+percent or free space falls below the working-context floor. Then it models the re-send,
+summing the per-turn input to show the quadratic cumulative bill and pricing it at current
+rates, with and without a cached prefix so you can see what caching buys. In live mode it
+uses the real `count_tokens` endpoint for exact counts; with no API key it falls back to a
+clearly labeled character-based estimate so it runs anywhere.
+
+<RunnableArtifact
+  name="context_budget_analyzer"
+  path="artifacts/ch03-context-window-economics/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch03-context-window-economics", "python3 budget.py"]}
+  requires="ANTHROPIC_API_KEY (optional; runs offline without it)">
+A context-budget analyzer that decomposes a captured session by category with exact token
+counts, flags the categories eating your window, and models the quadratic re-send cost with
+and without a cached prefix.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Price your own tool set">
+Run `budget.py` in live mode and read the tool-definition line. Then paste your own project's
+tools array into `session.json` and rerun. If your tools cross ten percent of the window,
+you are paying that on every request whether or not the model calls them. Decide which tools
+you could actually drop.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Watch the triangle grow">
+In the widget, drag the turn count from ten to forty. The per-turn increment is fixed, so the
+cumulative billed input isolates the effect of length alone. Watch it climb far faster than
+the turn count does: the re-send makes the bill grow with the square, so four times the turns
+is roughly ten to sixteen times the bill. That curve is why long loops get expensive fast.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Turn on the cache and measure it">
+Read the analyzer's two cost lines, uncached and cached-prefix. The gap between them is what
+the cache buys, and it comes entirely from the prefix, the system prompt plus tools, being
+re-read at a tenth of the input price. Grow the prefix: paste more tool definitions into
+`session.json`, or lengthen the system prompt, and rerun. The cached-prefix line pulls
+further below the no-cache line. Now do the opposite and move that chunk into a message
+instead. The cached cost rises, because the message history is the growing tail, and the tail
+is never cacheable. That is the caching lesson in one move: stable content belongs in the
+prefix, volatile content belongs in the tail.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Find the forty-percent line">
+Use the widget to advance the session until free space crosses the working-context ceiling.
+Note the turn number. That is the point where, on the research, quality starts to erode even
+though the window is far from full. In your own agents, that line, not the hard limit, is the
+budget you actually have.
+</ExerciseCard>
+
+## Sources
+
+- Anthropic, "Effective context engineering for AI agents" and the Messages API documentation: what counts toward the context window, the component ordering, and the attention-as-finite-resource framing.
+- Anthropic prompt caching, token counting (`count_tokens`), and context management documentation: the `usage` cache fields, the cached-prefix discount, and context editing / compaction behavior and reported gains (+29%, +39%, 84% token reduction; vendor self-reported).
+- Anthropic pricing (July 2026): Opus 4.8 $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5 per million input/output tokens, cache reads at 0.1x input.
+- Hong, Troynikov, and Huber, "Context Rot: How Increasing Input Tokens Impacts LLM Performance," Chroma (July 2025).
+- Liu et al., "Lost in the Middle: How Language Models Use Long Contexts," TACL 2024, doi:10.1162/tacl_a_00638.
+- Hsieh et al., "RULER: What's the Real Context Size of Your Long-Context Language Models?" (NVIDIA), for effective-versus-advertised context length.
+- Anthropic, on agent and multi-agent token multipliers (roughly 4x and 15x) and the BrowseComp variance finding.
+- The chapters on [the loop](/the-loop) and [anatomy of a tool call](/anatomy-of-a-tool-call), for the stateless re-send and the per-call token cost this chapter generalizes.

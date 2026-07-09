@@ -1,0 +1,3 @@
+# Only needed for live mode (exact token counts from the count_tokens endpoint).
+# The analyzer runs offline with the standard library alone.
+anthropic>=0.40
