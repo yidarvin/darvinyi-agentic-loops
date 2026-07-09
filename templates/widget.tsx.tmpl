@@ -1,0 +1,21 @@
+import { useState } from "react";
+
+// {{WIDGET_COMPONENT}}: the signature widget for "{{TITLE}}".
+// One focused interaction, React state only (no persistence), on brand. Replace the
+// placeholder toggle with the single move that makes this chapter's idea click.
+export function {{WIDGET_COMPONENT}}() {
+  const [on, setOn] = useState(false);
+  return (
+    <div className="font-sans">
+      <button
+        onClick={() => setOn((v) => !v)}
+        className="rounded border border-accent/50 bg-accent/10 px-3 py-1.5 font-mono text-xs text-accent transition-colors hover:bg-accent/20"
+      >
+        {on ? "on" : "off"}
+      </button>
+      <p className="mt-3 font-mono text-xs text-comment">
+        {"// TODO: build the interaction for {{SLUG}}"}
+      </p>
+    </div>
+  );
+}

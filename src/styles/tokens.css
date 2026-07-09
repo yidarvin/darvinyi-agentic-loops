@@ -1,0 +1,24 @@
+/* tokens.css: the house style, single source of truth.
+   Every color and font in the site resolves to a variable defined here.
+   Keep this file small. If a chapter needs a new color, add it here first. */
+
+:root {
+  /* palette: near-black ground, one teal accent, restrained. */
+  --bg: #0a0e0f;          /* page ground */
+  --surface: #10171a;     /* raised cards, figures, widgets */
+  --surface-2: #141d21;   /* nested or hover */
+  --border: #1e2a30;      /* hairlines */
+  --fg: #e6edf0;          /* body text */
+  --fg-muted: #7d919b;    /* captions, labels, secondary */
+  --accent: #2dd4bf;      /* the one accent: links, active, focus */
+  --accent-dim: #1c8577;  /* pressed or subdued accent */
+  --comment: #55707b;     /* text for the code-comment motif */
+  --danger: #f2757f;      /* used sparingly, e.g. crisis callouts */
+
+  /* type: JetBrains Mono is structural (labels, headings, data).
+     Inter carries prose. This split is the signature. */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  color-scheme: dark;
+}

@@ -1,0 +1,46 @@
+import { Pipeline } from "./_figures/Pipeline";
+import { QueueBoard } from "./_widgets/QueueBoard";
+
+This is a reference site, and it is written the way you would maintain a codebase: one unit at a time, from a queue, by an agent that follows a fixed procedure. This first chapter explains that procedure, partly because it is worth knowing, and partly because it is the shape every other chapter follows. If you keep this template, you can delete this chapter once you have a real one. If you are reading it on the deployed site, it is doing its second job, which is proving the pipeline end to end.
+
+## The grammar of a chapter
+
+Every chapter is built from three materials, and only three. Prose teaches the idea in plain language. A figure shows the shape of the idea, so a reader can hold the model in their head. One interactive widget lets the reader feel the idea rather than take it on faith. Prose carries the argument, the figure carries the structure, and the widget carries the intuition. When a chapter is missing one of the three, it usually shows.
+
+Here is the figure for this chapter. It is the build loop itself.
+
+<Figure id="0.1" caption="A queue feeds Claude Code, which researches, builds, verifies, and commits one item, then updates the registry the site reads. In graph mode, a run can also add newly discovered items back to the queue.">
+  <Pipeline />
+</Figure>
+
+## The queue is the plan
+
+The site does not decide what to build. A queue does. The queue is an ordered list you can read, edit, and reorder at any time. The next thing to build is simply the first item that is not done yet. This is the whole scheduling model, and its plainness is the point: you can open the file on your phone on the train, move an item to the top, and the next run picks it up without ceremony.
+
+Try it. The board below is a queue. Running the next one turns the first pending item into a built one. You are doing by hand what the agent does on your machine.
+
+<Widget name="queue_board" hint="each run turns the next pending chapter into a built one. reorder in real life by editing the queue file.">
+  <QueueBoard />
+</Widget>
+
+Two behaviors are worth naming. First, building an item can add more items. A survey site that follows citations will finish one paper and discover five more worth reading, and it appends them to the same queue. Second, priority is not fixed. You reorder the queue whenever your sense of what matters changes, and nothing downstream needs to know.
+
+## What a run actually does
+
+A run is not a single prompt. It is a small pipeline that repeats identically for every item, which is what keeps a long book consistent. The agent reads the next item and its build notes, researches the primary sources, plans the chapter, builds the prose and the figure and the one widget, reviews its own work against a written contract, runs the typecheck and the build, and commits only if both pass. Then it marks the item done and stops. Because the procedure lives in a skill rather than in your memory, an unattended loop runs it the same way at three in the afternoon and three in the morning.
+
+<Callout>
+The registry at <code>content/registry.json</code> is the source of truth for which chapters exist and in what order. The prose lives in <code>src/chapters</code>. Keeping the two separate is what lets the home page show the whole book, including chapters that have not been written yet, as dimmed rows.
+</Callout>
+
+## Exercises
+
+Chapters end with a short run of exercises. They are not homework. They are the fastest way to turn a concept you just read into something you have actually done once.
+
+<ExerciseCard n="01" title="Reorder the queue">
+Open <code>prompts/queue.md</code> and move any pending item to the top. Notice that nothing else has to change. The order in that one file is the entire schedule.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Name the three materials">
+Pick a chapter you want to write. In one sentence each, say what the prose will argue, what the figure will show, and what the reader will be able to do with the widget. If any of the three is hard to name, the chapter is not ready yet.
+</ExerciseCard>

@@ -1,0 +1,28 @@
+{
+  "title": "refsite",
+  "subtitle": "a queue-built reference site --- replace this with your subject",
+  "mode": "book",
+  "chapters": [
+    {
+      "num": 0,
+      "slug": "how-this-book-is-built",
+      "title": "How this book is built",
+      "subtitle": "the grammar and the queue",
+      "part": "Part 0 --- The system",
+      "routes": [
+        "meta",
+        "workflow"
+      ],
+      "status": "done"
+    },
+    {
+      "num": 1,
+      "slug": "the-first-real-chapter",
+      "title": "Your first real chapter",
+      "subtitle": "written by the runner",
+      "part": "Part I --- Begin here",
+      "routes": [],
+      "status": "pending"
+    }
+  ]
+}

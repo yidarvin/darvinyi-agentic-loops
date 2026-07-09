@@ -1,0 +1,29 @@
+{
+  "_comment": "House prose gate. Case-insensitive regexes, one per pattern. Dashes are written as \\u escapes so this file stays ASCII. errors fail the gate; warnings are advisory. Truncated patterns (no trailing \\b) catch a word family on purpose, e.g. complexit -> complexity, complexities.",
+  "globs": [
+    "src/chapters/**/*.mdx",
+    "src/chapters/**/*.tsx"
+  ],
+  "errors": [
+    "\\u2014",
+    "&mdash;",
+    "\\bit['\\u2019]s important to note\\b",
+    "\\bimportant to note that\\b",
+    "\\bin today['\\u2019]s fast-paced\\b",
+    "\\bdelve\\b",
+    "\\btapestry\\b",
+    "\\bnavigate the complexit",
+    "\\bat its core\\b",
+    "\\bwhether you['\\u2019]re\\b",
+    "\\bit['\\u2019]s not just\\b"
+  ],
+  "warnings": [
+    "\\u2013",
+    "&ndash;",
+    "\\bworth noting\\b",
+    "\\bworth pinning down\\b",
+    "\\bin summary\\b",
+    "\\bto recap\\b",
+    "not just a\\b[^.!?]{0,60}\\bbut\\b"
+  ]
+}

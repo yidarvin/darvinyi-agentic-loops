@@ -1,0 +1,27 @@
+// {{FIGURE_COMPONENT}}: the figure for "{{TITLE}}".
+// Inline SVG, themed with the CSS variables so it matches the house style and stays
+// crisp at any width. Replace the placeholder with a diagram that encodes the
+// structure of this chapter's idea. Keep labels in the mono font and legible on mobile.
+export function {{FIGURE_COMPONENT}}() {
+  return (
+    <svg
+      viewBox="0 0 640 200"
+      className="w-full"
+      role="img"
+      aria-label="TODO: describe what this figure shows."
+      fill="none"
+    >
+      <rect x="1" y="1" width="638" height="198" rx="8" fill="var(--surface-2)" stroke="var(--border)" />
+      <text
+        x="320"
+        y="104"
+        textAnchor="middle"
+        fontFamily="var(--font-mono)"
+        fontSize="12"
+        fill="var(--comment)"
+      >
+        {"// TODO: build the figure for {{SLUG}}"}
+      </text>
+    </svg>
+  );
+}
