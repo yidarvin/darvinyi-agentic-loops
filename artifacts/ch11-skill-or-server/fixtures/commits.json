@@ -1,0 +1,16 @@
+{
+  "since_tag": "v0.3.0",
+  "head": "v0.4.0",
+  "commits": [
+    { "sha": "a1b2c3d", "message": "feat(export): add --export flag to the CLI", "author": "rae" },
+    { "sha": "e4f5a6b", "message": "fix(parser): handle empty input without crashing", "author": "kito" },
+    { "sha": "c7d8e9f", "message": "feat(auth): support token refresh on a 401", "author": "rae" },
+    { "sha": "0a1b2c3", "message": "chore(deps): bump vite to 5.4.2", "author": "release-bot" },
+    { "sha": "3d4e5f6", "message": "docs(readme): clarify the install steps", "author": "mira" },
+    { "sha": "6a7b8c9", "message": "fix(cache): evict stale entries on TTL expiry", "author": "kito" },
+    { "sha": "9d0e1f2", "message": "refactor(core): split loop dispatch into modules", "author": "rae" },
+    { "sha": "2f3a4b5", "message": "feat(security)!: reject unsigned tokens by default", "author": "kito" },
+    { "sha": "5c6d7e8", "message": "test(parser): add fuzz cases for empty input", "author": "mira" },
+    { "sha": "8e9f0a1", "message": "perf(index): batch writes to cut fsync calls", "author": "rae" }
+  ]
+}

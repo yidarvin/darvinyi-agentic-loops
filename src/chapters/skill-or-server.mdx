@@ -1,0 +1,244 @@
+import { SkillOrServerFigure } from "./_figures/SkillOrServerFigure";
+import { SkillOrServerWidget } from "./_widgets/SkillOrServerWidget";
+
+The two chapters before this taught [MCP](/mcp-from-the-wire-up) and [Skills](/skills) as
+though you would eventually have to pick one. That framing is wrong. A skill and a server
+answer different questions, and the useful question is never which is better but which
+layer your problem lives in. One test settles most cases: is the hard part getting
+*access* to something, or applying *judgment* to something the agent can already reach?
+Access is a server. Judgment is a skill. And the honest answer for real production work is
+usually both, layered, with a skill that drives a server.
+
+The question feels urgent because Simon Willison lit a fuse in October 2025, calling Skills
+"maybe a bigger deal than MCP" and citing MCP's token cost for his own cooling interest.
+The replace-MCP reading spread quickly, and it misreads the relationship. Skills and MCP
+are documentation and APIs. Speakeasy called "Skills versus MCP" a false dichotomy for
+exactly that reason, and a working system needs both.
+
+## Connectivity versus procedure
+
+Start with what each thing physically is, because that difference decides everything
+downstream. An MCP server is a running process. The agent talks to it over
+[JSON-RPC](/resources-tools-and-prompts), across a local pipe or a remote HTTP connection,
+and on the other side sits something with state: a database pool, an authenticated
+session, a live API. A skill is a folder. It lives in the agent's own [execution
+environment](/skills), loads through progressive disclosure, and holds no connection to
+anything. There is no wire and no server.
+
+The consequence people miss is what a skill does not do. It does not load a tool. Armin
+Ronacher put the mechanics plainly: a skill "does not actually load a tool definition into
+the context. The tools remain the same: bash and the other tools the agent already has.
+All it learns from the skill are tips and tricks for how to use these tools more
+effectively." A server hands the agent a new verb. A skill teaches it to use the verbs it
+already has. Damian Galarza compressed the split to four words: MCPs are verbs, skills are
+playbooks. Block's Goose team wrote it from the other side: skills describe the workflow,
+MCP provides the runner.
+
+That gives you a test you can run in your head, from Sumo Logic: if a senior expert on your
+team were doing this by hand, would the hard part be getting access to the data, or knowing
+what to do with it once they had it? If the hard part is access, you need a server. If the
+hard part is judgment, you need a skill.
+
+## The token axis, and why it is narrowing
+
+The sharpest measurable difference is what each costs the [context
+window](/context-window-economics) before it does any work. A large MCP server loads all
+its tool definitions at connection time, every session. GitHub's official server runs to
+roughly 17,600 tokens across its tool set; a typical setup of five servers lands near
+55,000; Anthropic has measured 134,000 tokens of definitions in a worst case before any
+optimization. A skill inverts this. It announces itself with about a hundred tokens of
+metadata and loads its body, under five thousand tokens, only when a task actually matches
+its description. A hundred installed skills cost a few kilotokens at startup because you
+pay for names, not bodies.
+
+That gap was the strongest argument for skills, and it is the one closing fastest. In
+January 2026 Anthropic shipped MCP Tool Search: when a server's definitions exceed about a
+tenth of the context, its tools are marked for deferred loading and discovered on demand,
+cutting the startup cost by around 85 percent, roughly 77,000 tokens down to 8,700 for a
+fifty-tool set, and improving tool-selection accuracy at the same time. Prompt caching
+already amortized the billing cost of large definitions across a session, but not the
+attention cost: schemas the model must read still occupy working memory even when they are
+cached. Treat the specific numbers as order-of-magnitude. They move with the tool subset,
+the measurement method, and the month.
+
+Weight this axis correctly. Progressive disclosure was designed into skills from day one;
+MCP's deferred loading is a 2026 retrofit that mostly closes the startup gap and leaves the
+architecture untouched. The token argument is real and shrinking. The split underneath it,
+connection versus instruction, is not going anywhere.
+
+## The decision, in one question and a few corrections
+
+The whole framework is one question with a few corrections stapled to it. Is the hard part
+access or judgment? Access, and you need a server. Judgment, and you need a skill. Both,
+and you need both. Neither, and you should build nothing at all, because the agent already
+does the thing in one step and a heavy setup is its own cost.
+
+<Figure id="11.1" caption="The decision as a plane. Access and judgment are independent axes, not two ends of one dial: how much of the hard part is reaching a live system runs left to right, how much is knowing what to do runs bottom to top. The four regions map to the four verdicts. Low on both is neither, where the agent already does the job. High judgment, low access is a skill: procedure over tools it already has. High access, low judgment is a server: connectivity to a live system. High on both is the top-right corner, both layered, a skill that drives a server, and it is highlighted because that is where most capabilities worth building actually land. Five real cases are plotted where they fall. The side panel states the single test and the mapping, with the two corrections that come before building a server.">
+  <SkillOrServerFigure />
+</Figure>
+
+The plane makes the load-bearing claim visible: access and judgment are independent axes,
+not two ends of one dial. A capability sits somewhere in that square, and "both" is a
+corner of it, the top right, where a live connection and real procedural knowledge are each
+the hard part. That corner is where most capabilities worth building actually land.
+
+Three corrections keep the question honest. First, before you build a server, ask whether a
+CLI the agent can already shell out to, or an official server someone else maintains,
+covers the access. Building an MCP server for git or the GitHub CLI was overengineered from
+the start: the agent already runs `gh pr create`, and a skill that documents your
+conventions on top of it is simpler than a service. Second, a capability that must serve
+many agents or clients under central governance pulls toward a server even when a skill
+could technically do it, because a server is the one auditable chokepoint you can observe,
+rate-limit, and swap. Third, follow the data. If the knowledge changes between invocations,
+you need a live connection; if it is stable enough to write down once and stay right for
+weeks, a skill file is simpler.
+
+Run your own capability through the same logic. Flip the access or the judgment answer and
+watch the verdict cross a boundary.
+
+<Widget name="skill_or_server" hint="Answer the five questions for a capability you actually have, or click a plotted case. Flip access or judgment and watch the verdict move across the plane. The routing is the same classify() the artifact runs.">
+  <SkillOrServerWidget />
+</Widget>
+
+## Both, layered
+
+The production shape almost everyone converges on is a skill that orchestrates a server. The
+server supplies connectivity, the skill supplies the procedure and calls the server's tools
+by name, and the two layers evolve independently. A domain expert sharpens the skill without
+touching infrastructure; the platform team swaps a data provider by changing an MCP URL, and
+the skill above it never notices. Anthropic shipped exactly this in its financial-services
+and life-sciences deployments, each arriving as a set of MCP servers plus a set of skills.
+
+Sentry is a clean public example. Its MCP server provides the connectivity, querying issues
+and traces through tools like `use_sentry`, and Sentry also ships skills, `sentry-fix-issues`
+and `sentry-code-review`, that encode the debugging workflow on top. MCP gave them an open
+foundation, the team wrote, and skills let them turn that context into focused workflows.
+
+The layering has a failure mode worth naming, because it bites in practice. Ronacher moved
+off the Sentry MCP server and rebuilt it as a hand-maintained skill, for two reasons: the
+server cost about 8,000 tokens every time it loaded, and its tool descriptions changed
+without notice, breaking assumptions his workflow depended on. A skill that wraps a server
+inherits that server's instability. When the thing underneath you can shift its interface
+between releases, a wrapper is a maintenance liability rather than a simplification. Layer
+by all means, and pin what you depend on.
+
+## The four ways to get it wrong
+
+Four anti-patterns cover most of the mistakes.
+
+The **MCP-server-for-everything**. Shipping a running service to solve what is really a
+documentation or workflow problem. If you are not connecting to an external system, you
+almost certainly do not need a server; a skill is smaller, cheaper, and portable across
+every client that reads `SKILL.md`.
+
+**Connectivity crammed into a skill**. Writing "this process calls the DeepL API" into a
+`SKILL.md` when the real requirement is authentication and a live connection. A skill is a
+static file with no auth model. The moment you need a token or fresh data, that is a
+server's job.
+
+**The unlayered extreme**. A beautiful skill for a task the agent cannot reach, which one
+practitioner called an expensive search engine, or a rich server with no procedural guidance
+on top, which hands over the keys without teaching anyone to drive. Judgment without access
+and access without judgment fail in mirror image.
+
+**The bloated always-on context**. Stuffing every playbook into a resident `CLAUDE.md` that
+is paid on every turn, instead of moving situational procedures into skills that load only
+when their moment arrives. This is the [context-window](/context-window-economics) tax the
+whole skills model exists to avoid.
+
+<Callout kind="note">
+The two mechanisms fail differently, and that shapes governance. A server concentrates risk
+at one trust boundary you can audit, and one compromised shared server reaches every agent
+connected to it, as CVE-2025-6514 showed when a flaw in the `mcp-remote` proxy turned
+connecting to a malicious server into remote code execution. A skill distributes risk as a
+supply chain: it is code you place on the agent's own machine, and a third-party skill
+marketplace is a package registry with the same poisoning problem. So the defenses differ
+too. Route servers through a central config you can observe and swap; vet and pin skills
+like the dependencies they are. Both come from [The MCP Security
+Surface](/mcp-security-surface) and [Skills](/skills). The point here is only that choosing
+between the two is also choosing between two threat models.
+</Callout>
+
+## Run it
+
+The artifact solves one problem three ways, so you can watch each half fail and the whole
+succeed. The problem is producing the release notes for a version, which has an access half,
+reach the commits merged since the last tag, and a judgment half, turn them into a clean,
+categorized section. Run `--server-only` and you get raw commits with chores and docs mixed
+in: connectivity delivered, no judgment applied. Run `--skill-only` and the formatter is
+correct and produces nothing, because it was never handed the data: judgment starved of
+access. Run `--hybrid` and the skill calls the server's `list_commits_since` tool over a
+real process boundary, then runs its bundled formatter on the result, and you get the notes.
+The `--decide` mode is the chapter's question in code, the same routing the widget uses,
+and `--test` asserts the framework routes the canonical cases and all three paths behave.
+Zero dependencies, no API key, no network: the server reads a bundled commit fixture so the
+whole thing runs offline.
+
+<RunnableArtifact
+  name="hybrid_lab"
+  path="artifacts/ch11-skill-or-server/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch11-skill-or-server", "python3 hybrid_lab.py --server-only", "python3 hybrid_lab.py --skill-only", "python3 hybrid_lab.py --hybrid", "python3 hybrid_lab.py --decide --access --judgment --live", "python3 hybrid_lab.py --test"]}>
+One problem, release notes for a version, solved with a server alone, a skill alone, and the
+two layered. A real separate process stands in for the connectivity layer, a real skill
+folder supplies the procedure, and the decision framework that routes any capability to
+skill, server, both, or neither runs as `--decide`. The `--test` mode asserts that neither
+half works alone and the hybrid does.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Classify three of your own">
+Pick three capabilities you actually want an agent to have. For each, run
+`python3 hybrid_lab.py --decide` with the flags that match it (`--access`, `--judgment`,
+`--shared`, `--cli-exists`, `--live`) and write the verdict down. The ones that come back
+`both` are the ones you were most likely to have built as a single lopsided artifact.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Watch each half fail">
+Run `--server-only`, then `--skill-only`, then `--hybrid`, and read the three outputs
+side by side. State in one sentence what the procedure did to the raw commits that the
+connection alone could not, and what the procedure produced when it had no connection. That
+contrast is the entire case for layering.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Find the boundary">
+Take an access-heavy capability and run `--decide --access`. It routes to a server. Now add
+`--cli-exists` and run it again. It routes to a skill wrapping the CLI. Explain why one flag
+moved the verdict, then run `--decide --access --live --cli-exists` and explain why the CLI
+no longer rescues you once the data is live.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Audit a wrapper before you ship it">
+Reread the Sentry story: a skill that wrapped an MCP server broke when the server changed
+its tool descriptions without notice. Write the three checks you would run before wrapping
+any server in a skill, at least one about the server's interface stability and one about its
+token cost on load.
+</ExerciseCard>
+
+## Sources
+
+- Mahesh Murag (Anthropic), for the complementary framing that MCP provides secure
+  connectivity to external software and data while skills provide the procedural knowledge
+  for using those tools, and for MCP as the connectivity layer of the agent architecture.
+- Armin Ronacher, for the mechanical point that a skill loads no tool definitions and only
+  teaches better use of the tools the agent already has, and for the account of moving off
+  the Sentry MCP server to a hand-maintained skill over token cost and unstable tool
+  descriptions.
+- Sumo Logic, for the senior-expert test (is the hard part access or judgment); Damian
+  Galarza, for "MCPs are verbs, skills are playbooks"; Block's Goose team, for "skills
+  describe the workflow, MCP provides the runner"; Speakeasy, for the "false dichotomy"
+  framing and the documentation-versus-APIs analogy.
+- Simon Willison, for the October 2025 assessment that Skills may be "a bigger deal than
+  MCP" and the token-cost argument that seeded the replace-MCP debate.
+- Anthropic, for the MCP token figures (GitHub's server, the five-server setup, the 134,000
+  worst case), for MCP Tool Search (January 14 2026) and its deferred-loading trigger and
+  roughly 85 percent startup reduction, and for the financial-services and life-sciences
+  deployments that shipped as servers plus skills. Treat all token figures as
+  order-of-magnitude.
+- Sentry's engineering write-up, for the pattern of an MCP server plus `sentry-fix-issues`
+  and `sentry-code-review` skills layered on top.
+- JFrog, for CVE-2025-6514, the `mcp-remote` remote-code-execution flaw, as the example of a
+  shared-server trust boundary; and the chapters on [The MCP Security
+  Surface](/mcp-security-surface) and [Skills](/skills) for the two threat models this
+  chapter weighs against each other.
