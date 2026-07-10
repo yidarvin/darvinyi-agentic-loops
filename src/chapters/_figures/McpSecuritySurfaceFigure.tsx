@@ -1,0 +1,106 @@
+// McpSecuritySurfaceFigure: the figure for "The MCP Security Surface".
+// The structure it encodes: the lethal trifecta. Three legs feed one context window
+// where DATA BECOMES INSTRUCTIONS, because the model cannot tell an instruction it was
+// given from data it merely read. Leg A is untrusted content arriving on a tool result;
+// it carries the injected instruction. Leg B is a legitimate private-data tool. Leg C is
+// a legitimate exfiltration sink. The injection (danger-colored) rides in on A, drives the
+// read on B, and routes the secret out through C, all with tools the agent is ALLOWED to
+// use. The lesson band: any two legs is safe; all three is the trifecta; a real defense
+// removes a leg (resource-lock severs the reach into B, the exfil gate closes C), it does
+// not try to score the prose. Inline SVG, themed with the CSS variables, mono labels.
+
+export function McpSecuritySurfaceFigure() {
+  return (
+    <svg
+      viewBox="0 0 880 486"
+      className="w-full min-w-[840px]"
+      role="img"
+      aria-label="The lethal trifecta, drawn as three legs feeding one context window. Leg A, top left, is untrusted content: a tool result from a public issue or web page, which carries a hidden injected instruction. Leg B, bottom left, is private data: a legitimate tool that reads a private repository or a secret file. Leg C, right, is an exfiltration sink: a legitimate tool that can send data out, such as opening a public pull request or fetching a URL. All three arrows meet at the center, the agent's context window, where data becomes instructions because the model cannot separate an instruction it was given from data it merely read. A danger-colored path shows the attack: the injected instruction rides in on leg A, drives the private read on leg B, and routes the secret out through leg C, using only tools the agent is allowed to use. The lower band states the rule: any two legs is safe, all three legs together is the lethal trifecta, and a real defense removes one leg, for example per-session resource locking severs the reach into private data and the exfiltration gate closes the outbound sink, rather than trying to detect whether the incoming text is malicious."
+      fill="none"
+    >
+      <rect x="1" y="1" width="878" height="484" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
+
+      <defs>
+        <marker id="mcp9-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)" />
+        </marker>
+        <marker id="mcp9-arrow-danger" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--danger)" />
+        </marker>
+      </defs>
+
+      <text x="22" y="18" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
+        {"// the lethal trifecta: three legs the agent is allowed to use, closed into a leak"}
+      </text>
+
+      {/* the attack, in danger color: the injected instruction closes the loop over the top */}
+      <path
+        d="M 141 62 C 141 40, 450 36, 746 46 L 746 192"
+        stroke="var(--danger)"
+        strokeWidth="1.6"
+        strokeDasharray="5 4"
+        markerEnd="url(#mcp9-arrow-danger)"
+      />
+      <text x="356" y="34" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--danger)">
+        {"the injected instruction turns your own tools into a pipeline: read [B], send via [C]"}
+      </text>
+
+      {/* leg A: untrusted content, carrying the injection */}
+      <rect x="34" y="62" width="214" height="72" rx="8" fill="var(--surface)" stroke="var(--danger)" strokeOpacity="0.5" />
+      <text x="48" y="84" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[A] untrusted content</text>
+      <text x="48" y="101" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">tool result: a public issue,</text>
+      <text x="48" y="113" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a web page, an email</text>
+      <text x="48" y="127" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--danger)">carries the injected instruction</text>
+
+      {/* leg B: private data */}
+      <rect x="34" y="326" width="214" height="72" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.45" />
+      <text x="48" y="348" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[B] private data</text>
+      <text x="48" y="365" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a legitimate tool that reads</text>
+      <text x="48" y="377" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a private repo, a secret file,</text>
+      <text x="48" y="389" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a downstream record</text>
+
+      {/* the center: the context window where data becomes instructions */}
+      <rect x="352" y="182" width="196" height="98" rx="9" fill="var(--accent)" fillOpacity="0.08" stroke="var(--accent)" strokeOpacity="0.7" />
+      <text x="450" y="210" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--accent)">context window</text>
+      <text x="450" y="234" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12.5" fill="var(--fg)">data becomes</text>
+      <text x="450" y="250" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12.5" fill="var(--fg)">instructions</text>
+      <text x="450" y="269" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">no instruction / data boundary</text>
+
+      {/* leg C: exfiltration sink */}
+      <rect x="646" y="196" width="200" height="72" rx="8" fill="var(--surface)" stroke="var(--danger)" strokeOpacity="0.5" />
+      <text x="660" y="218" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[C] exfiltration sink</text>
+      <text x="660" y="235" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a legitimate tool that sends:</text>
+      <text x="660" y="247" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a public PR, a fetched URL,</text>
+      <text x="660" y="259" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">a rendered markdown image</text>
+
+      {/* legs into and out of the context window (the ordinary data flow) */}
+      <line x1="248" y1="102" x2="349" y2="196" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#mcp9-arrow)" />
+      <line x1="248" y1="360" x2="349" y2="262" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#mcp9-arrow)" />
+      <line x1="548" y1="231" x2="642" y2="231" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#mcp9-arrow)" />
+      <text x="286" y="150" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">ingest</text>
+      <text x="256" y="330" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">read</text>
+      <text x="565" y="223" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">send</text>
+
+      {/* lesson band */}
+      <rect x="300" y="316" width="558" height="152" rx="8" fill="var(--surface)" stroke="var(--border)" />
+      <text x="316" y="340" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
+        {"// the rule of two, and why a classifier is not a boundary"}
+      </text>
+      <text x="316" y="364" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+        {"[A]+[B]      read a secret, no way to send it       safe"}
+      </text>
+      <text x="316" y="384" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+        {"[A]+[C]      can send, no secret to send             safe"}
+      </text>
+      <text x="316" y="404" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+        {"[B]+[C]      no untrusted content to hijack it       safe"}
+      </text>
+      <text x="316" y="424" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">
+        {"[A]+[B]+[C]  the lethal trifecta                     exfiltration"}
+      </text>
+      <text x="316" y="450" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">
+        {"a defense that holds removes a leg (lock [B]'s reach, gate [C]); it does not score [A]'s prose."}
+      </text>
+    </svg>
+  );
+}
