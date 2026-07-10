@@ -1,0 +1,290 @@
+import { SkillsFigure } from "./_figures/SkillsFigure";
+import { SkillsWidget } from "./_widgets/SkillsWidget";
+
+A skill is a folder with a Markdown file in it. The file is named `SKILL.md`, it opens
+with a few lines of YAML, and the rest is instructions written for a model to read. That
+is the whole format. What makes it interesting is not the file but when the file loads.
+The agent sees only a one-line description of each installed skill until it judges that
+the task in front of it needs one, and only then does it read the body. A hundred skills
+can sit installed and cost almost nothing, because the agent pays for the name and
+description of each, on the order of a hundred tokens, and nothing more until one fires.
+[MCP](/resources-tools-and-prompts) gave the agent tools. Skills give it the procedural
+knowledge to use them, and they spend the context window as if it were the scarce public
+resource it is. Simon Willison called them, on launch day, "maybe a bigger deal than MCP."
+
+Anthropic shipped Agent Skills on October 16 2025, in a product announcement and an
+engineering deep-dive by Barry Zhang, Keith Lazuka, and Mahesh Murag, and published the
+format as an open standard on December 18 2025 at agentskills.io. Within two months
+OpenAI, Microsoft, Cursor, Goose, Amp, and opencode had adopted the same `SKILL.md`
+layout. The reason a format this plain spread that fast is the loading model underneath
+it, which is the real subject of this chapter.
+
+## A folder, a file, and a description
+
+The definition is deliberately minimal: a skill is a directory containing a `SKILL.md`
+file, optionally alongside bundled scripts, reference documents, and assets. The
+`SKILL.md` begins with YAML frontmatter carrying two required fields and continues as an
+ordinary Markdown body.
+
+```markdown
+---
+name: changelog-entry
+description: Formats and validates a Keep a Changelog entry. Use when adding a
+  changelog entry, recording a change, or editing CHANGELOG.md.
+---
+# Changelog entry
+
+Add a single line under the Unreleased section. Pick a type, write one
+imperative line, then run scripts/validate_entry.py before you write it.
+```
+
+`name` is the identifier and the slash-command handle: lowercase, hyphens, at most 64
+characters, and it may not contain the words "claude" or "anthropic". `description` is
+capped at 1024 characters and must state both what the skill does and when to reach for
+it. The optional subdirectories carry the rest. By convention `scripts/` holds executable
+code for deterministic work, `references/` holds documents the model reads only when it
+needs them, and `assets/` holds templates or fonts used in the skill's output. The
+recurring analogy from Anthropic is a new-hire onboarding guide: not a rewrite of the
+employee, a packet of the context and procedure the job needs. The bet behind it,
+in Barry Zhang's words, is that "the agent underneath is actually more universal than we
+thought." One general agent plus a library of capability packages, rather than a
+different architecture per domain.
+
+## Progressive disclosure
+
+The loading model is the design, and it has a name: progressive disclosure. Content
+reveals itself in three levels, each loaded at a different moment and costing the context
+window a different amount.
+
+<Figure id="10.1" caption="Progressive disclosure as a loading ladder. Level 1, the name and description, is always resident and is paid once per installed skill, so its cost scales with how many skills you have. Level 2, the SKILL.md body, loads only when the description matches the task, and only for that one skill. Level 3 and beyond, the bundled scripts and reference docs, load from disk on demand: a doc is read one hop away only when the body sends the model to it, and a script is executed by bash so its source never enters the window at all, only its output. That is why a hundred skills cost a few kilotokens at startup rather than hundreds of thousands.">
+  <SkillsFigure />
+</Figure>
+
+Level one is metadata: the `name` and `description` of every installed skill, injected
+into the system prompt at startup. Anthropic's documentation puts this near a hundred
+tokens per skill. Independent measurements land lower, around thirty to fifty tokens each
+by Firecrawl's count, so a hundred installed skills cost roughly three to five thousand
+tokens at session start. Level two is the `SKILL.md` body, which loads only when the
+model reads the description and decides the task warrants it, targeted at fewer than five
+thousand tokens and fewer than 500 lines. Level three is everything bundled: reference
+docs read on demand, scripts executed without their source ever entering context. Because
+an agent with a filesystem does not have to read a file to know it exists, the bundle is
+effectively unbounded. Anthropic's shorthand for the discipline behind all this is that
+"the context window is a public good," a principle [Context-Window
+Economics](/context-window-economics) makes the master constraint of the whole book.
+
+Set this against a large MCP server, whose tool definitions typically load in full at
+connection time. GitHub's official server alone consumes tens of thousands of tokens
+before the agent does anything, where a skill announces itself in fifty. The saving is
+real, and it is not free. Progressive disclosure trades startup tokens for runtime
+filesystem round-trips: the model has to `bash` out to read the body and any referenced
+file, which one analysis from MCPJam estimated at three to four times the tool calls of
+loading everything upfront. Upfront loading buys latency and immediate reasoning about
+which tool to call; progressive disclosure buys a clean context window. Which one wins is
+the argument of the next chapter, Skill or Server, and the honest answer there is often
+a hybrid.
+
+## The description does the discovering
+
+Skills are model-invoked. The agent decides when one applies, the same way it decides
+which tool to call, and it decides on the strength of a single field. At startup the
+harness aggregates every installed skill's `name` and `description` into the system
+prompt. When a task matches a description, the model reads the full `SKILL.md`; when it
+does not, the body never loads. Everything hangs on the description, which makes it the
+highest-leverage line in the file.
+
+Two rules follow directly. Write it in the third person, because it is injected into the
+system prompt as fact about the world, not addressed to anyone: "Formats and validates a
+changelog entry," never "I can help you format" or "You can use this to." And state both
+halves, what it does and when to use it, with the concrete words a matching task would
+contain. Anthropic's own PDF skill is unashamedly pushy about the second half: use this
+skill whenever the user wants to do anything with PDF files, and if the user mentions a
+`.pdf` file or asks to produce one, use this skill. A description can match perfectly and still not fire. The model only reaches
+for a skill on tasks it cannot already handle in one step. Ask it to read a single
+PDF and it just reads it. Ask for a multi-step, format-sensitive operation and the skill
+reliably triggers. Discovery is a judgment about difficulty, not only about keywords.
+
+Model invocation is the default, not the only door. In Claude Code every skill is also a
+slash command you can call by name, and two frontmatter switches override the default:
+`disable-model-invocation: true` makes a skill user-only, the right setting for something
+like `/deploy` that should never fire on its own, and `user-invocable: false` makes it
+model-only, for background knowledge a human would never summon by name.
+
+## Code that never enters the window
+
+The third level is where skills stop being clever prompts and become something a prompt
+cannot be. Skills run in an environment with a filesystem and a shell, so a bundled script
+is executed rather than read. When the model runs `validate_entry.py`, the script's source
+never enters the context window; only what it prints does. The reasoning is economic and it
+is about correctness. Sorting a list by generating tokens is far more expensive, and far
+less reliable, than running a sort. Anywhere a task is deterministic, shipping the code
+beats asking the model to reconstruct it every time. Willison's `slack-gif-creator` skill
+shows the pattern at its cleanest: the model runs a bundled builder, then a bundled
+validator checks the result against Slack's file-size limit, and if it fails the model
+adjusts and runs again. A feedback loop the skill author wrote once, executed
+deterministically, correcting the model's non-deterministic output.
+
+The one caveat that bites in practice is that the execution environment differs sharply by
+surface. On the API the container has no network and cannot install packages at runtime, so
+a skill can rely only on what is preinstalled. On claude.ai network access depends on admin
+settings. In Claude Code the skill runs with the same reach as any program on your machine,
+full network and local installs included. A skill that quietly assumes it can `pip install`
+its dependencies works in one place and fails in another. The rule from Anthropic is to
+write a skill once and let it run everywhere the environment supports its dependencies,
+which means depending on as little as you can.
+
+## The authoring surface
+
+A good skill is short. The guidance is blunt about it: assume the model is already smart,
+keep the body under 500 lines, and when it grows past that, split the overflow into
+`references/` one hop away rather than padding the always-competing body. Match the
+skill's freedom to the task. Where many approaches are valid, write prose and let the model
+choose. Where the work is fragile or must come out identical every time, ship a script and
+narrow the model to running it. Anthropic frames the two as an open field versus guardrails
+on a narrow bridge. Make the intent unmistakable in the wording, too: "Run
+`analyze_form.py`" tells the model to execute, "See `analyze_form.py`" tells it to read,
+and confusing the two wastes a turn.
+
+The widget below is one small, correct `SKILL.md`, the changelog skill from the artifact.
+Select any part and watch where and when it loads. The description sits at level one,
+always resident, doing the discovering. The body waits at level two for a trigger. The
+reference and the script live at level three, one read on demand and one executed so its
+source never loads. It is the same file in five different relationships with the context
+window.
+
+<Widget name="skill_anatomy" hint="Select a part of the SKILL.md, or click a highlighted line, to see which level of progressive disclosure it lives at, when it loads, and what it costs the context window.">
+  <SkillsWidget />
+</Widget>
+
+One more habit separates skills that work from skills that look like they should. Build the
+evaluation first. Run the task without the skill and note exactly where the model fails,
+capture that gap into the leanest instructions that close it, and only then iterate. The
+practiced version uses two instances: one Claude drafts and refines the skill, a fresh
+Claude runs it cold on real tasks, and the second one's failures are the next edit. A skill
+you tuned against your own expectations is a skill that fires for you and no one else.
+
+## Install only what you trust
+
+A skill executes arbitrary code the moment it triggers, which makes an installed skill a
+piece of software you have chosen to run, not a document you have chosen to read.
+Anthropic's guidance is exactly that: use skills only from trusted sources, ones you wrote
+or obtained from a party you trust, and audit every bundled file for network calls or file
+access that does not match the stated purpose. A skill that fetches an external URL can pull
+fresh instructions into the loop on every run, which is the [indirect injection](/mcp-security-surface)
+problem wearing a new coat, and a trusted skill can be compromised when its dependencies
+change under it. This is why the frontmatter forbids angle-bracket content in the
+description: because that string is injected straight into the system prompt, an XML tag
+there is an injection surface, and researchers at Oasis Security demonstrated a claude.ai
+chain that used a skill to exfiltrate data through the one network endpoint the sandbox left
+open. The sandbox is a convenience boundary, not a security one.
+
+<Callout kind="danger">
+Treat installing a skill like installing a dependency, because it is one. Read every file
+in the folder before you enable it, especially any script that touches the network or the
+filesystem, and be doubly wary of a skill that fetches remote content at runtime. In
+production, gate code execution and network egress, scope the skill's tools to the minimum
+it needs, and back the whole thing with the architectural defenses from [The MCP Security
+Surface](/mcp-security-surface). A skill's trust boundary is the code you place on the
+agent's own machine, so the only safe default is a source you can vouch for.
+</Callout>
+
+Two operational limits are worth carrying forward. On the API a request may attach at most
+eight skills and thirty megabytes, behind three beta headers, and changing the attached set
+invalidates the prompt cache. The deeper comparison, when the gap you are filling is
+procedural knowledge versus live connectivity, is the next chapter, Skill or Server.
+Mahesh Murag's one-liner is the seed of it: MCP provides secure connectivity to external
+software and data, while skills provide the procedural knowledge for using those tools effectively.
+The two compose. A skill that orchestrates MCP tools is the common production shape.
+
+## Run it
+
+The artifact is a skills lab with no dependencies, no API key, and no network. It ships a
+real, correct skill, `changelog-entry/`, that you can copy into `~/.claude/skills/` and
+trigger, complete with a `references/FORMAT.md` read one hop away and a `scripts/`
+validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does three
+things the chapter describes. It validates a skill's frontmatter against the real rules,
+name length and character set, the "claude"/"anthropic" ban, the no-angle-brackets
+requirement, the description's third-person and what-plus-when checks, the 500-line body
+budget. It computes the progressive-disclosure cost, showing what a single skill spends at
+each level and what a hundred of them cost at startup. And it simulates discovery, matching
+a request against the description and printing the loading sequence that follows. A
+deliberately broken `bad-skill/` is included so you can watch every rule fail, and
+`--test` asserts that the good skill passes and the bad one fails on the exact rules it
+violates.
+
+<RunnableArtifact
+  name="skills_lab"
+  path="artifacts/ch10-skills/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"", "python3 skills_lab.py --test"]}>
+One real skill you can install and trigger, plus a validator that checks a `SKILL.md`
+against the actual frontmatter rules, a progressive-disclosure cost model that prices out
+one skill and a hundred, and a discovery simulator. A broken skill is bundled so every
+validation rule has something to catch, and the test mode asserts the good passes and the
+bad fails. Zero dependencies, no key, no network.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Write the description first">
+Take a workflow you repeat, a release note, a code review checklist, a data export, and
+write only the `description` field for a skill that would do it. Third person, one to two
+sentences, both what it does and the exact words a task needing it would contain. Then run
+`python3 skills_lab.py --simulate "<a request in those words>"` and see whether your
+description would have been discovered. Tune the words, not the body.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Price the context">
+Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred skills against
+the cost of one activated skill's body. Now state, in one sentence, why installing a large
+skill library is cheap but triggering the wrong heavy skill on every turn is not. This is
+the difference between level one and level two.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Break a rule and watch it fail">
+Open `bad-skill/SKILL.md` and read why it is broken: a name with a forbidden word, an
+angle bracket in the description, a first-person voice, an over-long body. Run
+`python3 skills_lab.py --validate bad-skill`, then fix one violation and re-run. Each fix
+should silence exactly one error, which is what a frontmatter validator buys you before a
+skill ever reaches a model.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Draw the trust boundary">
+Look at the `changelog-entry` skill's `scripts/validate_entry.py`. It touches no network
+and no files outside its input. Now imagine a version that fetched the format spec from a
+URL at runtime. Write down what an attacker who controlled that URL could make the skill
+do, and which of the defenses from [The MCP Security Surface](/mcp-security-surface) would
+have to be in place before you would run it.
+</ExerciseCard>
+
+## Sources
+
+- Anthropic, "Introducing Agent Skills" and the engineering post "Equipping agents for the
+  real world with Agent Skills" (Barry Zhang, Keith Lazuka, Mahesh Murag, October 16 2025),
+  for the definition, the folder structure, the three-level progressive-disclosure model
+  and its token figures, the description-authoring rules, and the "context window is a
+  public good" and new-hire-onboarding framings.
+- The Agent Skills open standard, published December 18 2025 at agentskills.io, for the
+  format's release as a cross-vendor spec and reference SDK.
+- Simon Willison, for the launch-day assessment that skills are "maybe a bigger deal than
+  MCP," and for the `slack-gif-creator` skill that demonstrates the run-validate-retry
+  feedback loop.
+- Anthropic's skill-authoring best practices, for the under-500-line body budget, the
+  degrees-of-freedom heuristic (open field versus guardrails on a narrow bridge), the
+  execute-versus-read wording rule, and evaluation-first development with a two-instance
+  author-and-tester workflow.
+- Firecrawl, for the measured thirty-to-fifty tokens per skill at startup and the resulting
+  cost of a hundred installed skills; MCPJam, for the estimate that progressive disclosure
+  can use three to four times the filesystem tool calls of upfront loading.
+- Anthropic's platform documentation, for the per-surface execution constraints (API has no
+  network and no runtime installs, Claude Code has full local reach), and the API limits of
+  eight skills and thirty megabytes per request behind three beta headers, with a changed
+  skill set invalidating the prompt cache.
+- Anthropic's security guidance to use skills only from trusted sources and audit every
+  bundled file; Oasis Security, for the claude.ai skill-based exfiltration chain; and Mahesh
+  Murag, for the one-line split between MCP's connectivity and skills' procedural knowledge.
+- The chapters on [Context-Window Economics](/context-window-economics), for why the loading
+  model matters at all; [Resources, Tools, and Prompts](/resources-tools-and-prompts), for
+  why a description is discovered the way a tool is; [The MCP Security Surface](/mcp-security-surface),
+  for the injection and trust-boundary problems a skill inherits; and Skill or Server (Chapter 11),
+  for the head-to-head this chapter defers.
