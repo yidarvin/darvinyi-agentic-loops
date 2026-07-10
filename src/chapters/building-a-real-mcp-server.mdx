@@ -1,0 +1,255 @@
+import { BuildingARealMcpServerFigure } from "./_figures/BuildingARealMcpServerFigure";
+import { BuildingARealMcpServerWidget } from "./_widgets/BuildingARealMcpServerWidget";
+
+The distance between the echo-server tutorial and a server that real agents depend on is
+not a longer feature list. It is the engineering the happy path hides. A production MCP
+server is an adapter between an agent and a system of record, and it has one unusual
+property that shapes every decision: its caller is a non-deterministic language model
+that will send malformed arguments, disallowed queries, and calls in an order you never
+planned for. It is a chaos client, and you cannot make it behave. Everything that
+separates a real server from a toy is a defense against that client, arranged in four
+disciplines: a tool surface designed for intent, two error channels kept strictly apart,
+a lifecycle that owns its resources, and state that survives the server being restarted
+under it. This chapter builds one server that does all four, over a real database.
+
+## The client is a chaos agent
+
+Start from the threat, not the framework. When Equixly ran a security assessment across
+deployed MCP servers, it found command injection in 43% of the implementations it tested,
+path traversal or arbitrary file read in 22%, and server-side request forgery in 30%.
+Those are not exotic zero-days. They are the ordinary result of trusting the caller,
+written for a caller that cannot be trusted. The model does not attack you on purpose. It
+free-associates its way into the worst input in your test matrix, because it is exploring
+a space of tool calls with no sense of which ones are dangerous.
+
+So the posture is defensive by default. Validate every argument before it reaches your
+logic. Never hand a model-supplied string to `os.system` or a raw `eval`. Guard the query
+tool to read-only. Sandbox anything that touches the filesystem or executes code. The next
+chapter, The MCP Security Surface, treats these threats, the injection and confused-deputy
+and token-theft classes, as its own subject. Here the point is narrower
+and prior to all of it: assume the call you least want is the call you will get, and build
+the server so that call fails safely instead of succeeding catastrophically.
+
+## Design the surface for intent, not endpoints
+
+The most common way to build an MCP server is also the most common way to build a bad
+one: wrap an existing REST API one operation to one tool. An empirical study of 116
+official servers (Mastouri and colleagues, arXiv:2507.16044) found that 88.6% are fully or
+partially backed by a REST API and 92% expose their tools as bare wrappers over it. The
+same study found that the good servers are the selective ones, exposing a median of only
+19% of the operations available to them. The lesson is that a tool surface is a user
+interface for a non-deterministic agent, not an inventory of your endpoints. Design it for
+what the agent is trying to accomplish, not for what your backend happens to expose.
+
+Two anti-patterns follow directly. The first is atomic obsession: `get_customer`, then
+`get_orders`, then `get_line_items`, each a full and expensive reasoning round trip, where
+one `summarize_customer_issues` would answer the actual question in a single call. Chatty
+atomic tools burn tokens and turns for nothing. The second is tool explosion. Reliability
+degrades well before a tool list gets long, because model recall drops as the context
+fills, so a server with fifty tools chooses the wrong one more often than a server with
+twelve. Target a surface of roughly eight to twenty well-named tools, and when you pass
+that, consolidate or split into a second server rather than piling on. The per-request
+token cost of tool definitions, and why it is the dominant constraint here, is the subject
+of [Context-Window Economics](/context-window-economics).
+
+Do not hand-roll the JSON-RPC to get there. Use a real framework: FastMCP for Python (the
+standard choice, whose standalone v3 line is the production build, while an older FastMCP
+1.0 ships inside the official `mcp` package for simple servers), or the official
+TypeScript SDK for Node and edge runtimes. The
+framework generates each tool's input schema from your type hints, so the schema and the
+code cannot drift apart, and it leaves you writing only the two things that matter: the
+tool bodies and the descriptions. The description is not documentation. It is the text the
+model reads to decide whether and how to call the tool, the single highest-leverage string
+in the whole server, as [the primitives chapter](/resources-tools-and-prompts) showed.
+
+## The anatomy of a hardened call
+
+Picture one `tools/call` arriving from the agent and everything that has to happen before
+your tool body runs and after it returns. The toy server is only the body. The real server
+is the shell around it, and that shell is the whole job.
+
+<Figure id="8.1" caption="One tools/call from a non-deterministic agent, crossing the pipeline a real server wraps around its tool body. Schema validation rejects malformed arguments as a protocol error before the body runs. Authorization checks the token audience and per-tool scope. The body runs only with the resources the lifespan opened once at startup and injected. Then the error boundary forks three ways: a clean result, a visible ToolError the model can recover from, and an unexpected exception logged in full to stderr but masked to a generic message. The toy is the shaded box. Everything else is the engineering.">
+  <BuildingARealMcpServerFigure />
+</Figure>
+
+Read left to right. Malformed arguments never reach your logic, because validation rejects
+them first, as a protocol error. Authorization happens against the token the server was
+given, checking that the token was actually issued for this server and carries the scope
+this tool requires. The body runs with a database pool and an HTTP client it did not open,
+because the lifecycle opened them once at startup and handed them in. And the boundary at
+the end decides what the client is allowed to learn about a failure. Miss any one layer
+and you have a toy that happens to work until the first call you did not anticipate.
+
+## Two error channels, and the one you mask
+
+MCP has two entirely separate ways to report that something went wrong, and confusing them
+is the classic bug. A protocol error, a malformed call or an unknown method, travels on the
+JSON-RPC `error` channel with a numeric code, and the model never sees it as content: the
+SDK returns `-32602` for bad arguments before your tool body ever runs. A tool execution
+error, the ticket was not found or the query was rejected, rides inside a normal result
+with `isError: true`, precisely so the model does read it and can self-correct on its next
+turn. Report a failed query as a protocol error and you deny the model the feedback it
+needs to recover. Report a malformed call as content and you have taught it that garbage
+input is acceptable.
+
+Within tool execution, draw one more line, and it is the line that keeps your internals
+off the wire. A `ToolError` is a failure you intend the model to see: "customer 9182 not
+found," "only SELECT queries are allowed." Its message is meant for the client and always
+reaches it. Any other exception is an internal fault, and its message is meant for you: a
+stack trace, a SQL string, a file path, a downstream URL. Log that in full server-side, and
+mask it to a generic line before it leaves the building. FastMCP gives you this as one
+switch, `mask_error_details`, and the switch that matters is that it defaults to off. A
+server you have not deliberately hardened leaks its exception text straight to the model,
+which is to say into whatever the model does next.
+
+One more rule sits underneath all of this, and it is the easiest to violate and the hardest
+to debug. A stdio server speaks JSON-RPC over standard output. A single stray `print()` to
+stdout corrupts the stream and the client silently disconnects. Every log line, every
+warning, every debug aside goes to stderr or a file. Never to stdout.
+
+The console below is a hardened server and a chaos client. Send each call and watch the two
+panels: what the agent receives, and what the server logs internally. The clean result, the
+protocol rejection, the two visible `ToolError`s, then the internal fault, where the panels
+finally diverge. Flip `mask_error_details` off on that last one and watch the real database
+error, table name and all, cross the wire to the model.
+
+<Widget name="chaos_client_console" hint="Send a call to a hardened server. The left panel is what the agent sees; the right is the server's internal log. Watch them diverge on the internal fault, then flip mask_error_details off and see the SQLite error leak to the client.">
+  <BuildingARealMcpServerWidget />
+</Widget>
+
+## Lifecycle, and state that outlives the session
+
+A toy opens its database connection as a global on first use and never closes it. A real
+server owns the resource's whole lifetime through a lifespan: it connects to the database
+and constructs the HTTP client once at startup, hands them to every request, and tears them
+down at shutdown. This is not tidiness. A connection opened per call exhausts the pool under
+load, and a client never closed leaks sockets until the process falls over.
+
+State is the harder half, and the protocol is moving under your feet in a way that decides
+the right answer. In the current spec revision, `2025-11-25`, a Streamable HTTP session
+begins with the server minting an `Mcp-Session-Id` that every later request must carry. That
+id pins the client to one server instance, and behind a load balancer it produces a failure
+that is maddening to diagnose: one pod mints the session, the long-lived event stream hashes
+to a different pod, and the second pod returns a `404` for a session it never created. The
+next revision, `2026-07-28`, removes sessions from the base protocol entirely and makes it
+stateless. That direction is not a warning about the future. It tells you how to build now.
+
+The pattern that works today and survives the upgrade is the explicit handle. A tool that
+starts a long operation mints an opaque id, `job_id` or `basket_id`, and returns it; the
+real state lives in a store, Redis or Postgres, keyed by that id; a later tool accepts the
+id as an ordinary argument and reads the state back. No session, no instance affinity, any
+pod serves any request. Two properties make the handle safe rather than a liability, and
+Backslash's research on this is blunt about why: the handle must be bound to the user who
+minted it, and it must expire. A bare handle that any caller can replay, lifted from a log
+or a ticket, is a capability token you did not mean to issue. The artifact's
+`run_ticket_report` mints exactly this kind of handle, and `get_report_status` refuses a
+handle from another user and rejects one that has aged out.
+
+Authorization deserves one paragraph here and a full chapter next. A remote MCP server is an
+OAuth 2.1 resource server: it validates tokens issued by a separate authorization server, it
+checks that each token's audience is actually this server, and it enforces scope per tool. It
+does not mint tokens, and it must never pass the client's token through to a downstream API,
+because forwarding a token collapses the trust boundary and turns the server into a confused
+deputy. When the server needs to call a downstream system, it uses its own credential or
+exchanges the client's token for a separately scoped one. The mechanics, the RFCs, and the
+attacks are the subject of the next chapter.
+
+## Test it without a language model
+
+The instinct to test an agent server by pointing an agent at it is a trap: LLM-driven tests
+are slow, expensive, and non-deterministic, which is everything a regression test must not
+be. The fastest and most reliable way to test an MCP server is the one FastMCP made its
+signature feature, the in-memory transport. You pass the server instance directly to a
+client and call its tools over the real protocol with no subprocess and no network, so a
+full contract test runs in milliseconds. Write deterministic tests for the happy path, for
+both error channels, for the boundary cases, and above all for the input schemas, because a
+schema that silently drifts is a tool the model can no longer call correctly, and nothing in
+your own code will notice. Save the actual model for exploratory checks and the MCP Inspector
+for poking at the server by hand. The artifact ships an `InMemoryClient` and a `--test` suite
+of nine such assertions; it is the smallest honest version of this discipline.
+
+## Run it
+
+The artifact is the Support Analytics server: an adapter over a real SQLite database (the
+standard library, so it runs with no dependencies) whose client is assumed to be hostile by
+accident. It is built twice. `support_analytics.py` builds every discipline by hand so you
+can see it: the lifespan that opens and closes the database, intent tools that consolidate
+instead of chatter, the two error channels with masking on, the explicit-handle state bound
+to a user and expiring, and logging that goes only to stderr. `server_fastmcp.py` is the
+version you would actually ship, the same server written with the official SDK, so you can
+read what the framework does under the decorators; it says so plainly if FastMCP is not
+installed. Run the walkthrough to see each discipline as a wire exchange, run `--test` to
+watch the contract hold, and run `--unmasked` to watch an internal error leak the moment you
+turn the switch the wrong way.
+
+<RunnableArtifact
+  name="support_analytics_server"
+  path="artifacts/ch08-building-a-real-mcp-server/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch08-building-a-real-mcp-server", "python3 support_analytics.py", "python3 support_analytics.py --test", "python3 support_analytics.py --unmasked"]}>
+A production-shaped MCP server over a real SQLite database, built twice: once by hand with
+zero dependencies so the disciplines are visible, and once with FastMCP as you would ship it.
+Lifespan, intent tools, the two error channels with masking, explicit-handle state, and an
+in-memory test suite. The FastMCP version needs `fastmcp` and fails gracefully without it.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Watch the mask fail open">
+Run `python3 support_analytics.py --test`, then `python3 support_analytics.py --unmasked`.
+In the unmasked run, find the `run_query` call against the missing table and read what the
+client now receives. Write one sentence naming exactly what leaked and to whom. Then recall
+that FastMCP's `mask_error_details` defaults to off, and say what that default means for a
+server someone shipped without reading this chapter.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Break the handle's binding">
+In `support_analytics.py`, the `get_report_status` tool refuses a handle that belongs to
+another user and one that has expired. Comment out the ownership check, re-run `--test`, and
+watch which assertion fails. Then describe the concrete attack the check prevents: who holds
+a `job_id` they should not, and how they came to have it.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Turn atomic tools into one intent">
+The server exposes `summarize_customer_issues`, which returns a customer, their tickets, and
+their open-issue counts in a single call. Sketch the three atomic tools a naive REST wrapper
+would have shipped instead. Count the reasoning round trips the agent would spend to answer
+"how many open issues does Acme have" each way, and state the rule you would give a teammate
+about when to consolidate.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Add a stdout bug and feel it break">
+Add a plain `print("debug: handling a call")` inside `SupportAnalytics.handle`, then run
+the stdio server and pipe it a `tools/list` request. Explain why the reply is now
+unparseable to a real client, and rewrite the line so it is safe. This is the single most
+common way a working server breaks the moment it meets a real transport.
+</ExerciseCard>
+
+## Sources
+
+- The Model Context Protocol specification, revision `2025-11-25`, for the two error channels
+  (protocol errors on the JSON-RPC `error` channel versus tool-execution errors carried as
+  results with `isError: true`), the Streamable HTTP session model and `Mcp-Session-Id`, and
+  the authorization model (an MCP server as an OAuth 2.1 resource server that validates token
+  audience and never passes a client token downstream). The `2026-07-28` release candidate, for
+  the removal of protocol-level sessions and the move to a stateless base protocol.
+- Mastouri and colleagues, *From REST to MCP: an empirical study of API wrapping and automated
+  server generation for LLM agents* (arXiv:2507.16044), for the survey of 116 official servers:
+  88.6% fully or partially REST-backed, 92% bare API wrappers, a median of 19% of available
+  operations exposed.
+- Equixly's security assessment of deployed MCP servers, for the reported rates of command
+  injection (43%), path traversal or arbitrary file read (22%), and SSRF (30%), read as
+  directional findings from one scan.
+- FastMCP's documentation (gofastmcp.com), for the framework's error model (`ToolError` messages
+  always reach the client, `mask_error_details` masks unexpected exceptions and defaults to off),
+  the in-memory `Client` transport for testing, and the lifespan and context injection patterns.
+  Jeremiah Lowin's essays *Stop Converting Your REST APIs to MCP* and *Stop Vibe-Testing Your
+  MCP Server*, for the intent-over-endpoints argument and the case against LLM-driven regression
+  tests. Backslash's research on state handles, for the requirement that a handle be bound to a
+  user and expire.
+- The chapters on [MCP from the Wire Up](/mcp-from-the-wire-up), for the JSON-RPC and handshake
+  this server answers, [Transports](/transports), for stdio and Streamable HTTP and why stdout
+  must stay clean, [Resources, Tools, and Prompts](/resources-tools-and-prompts), for the
+  primitives and the two error channels this chapter hardens, and
+  [Context-Window Economics](/context-window-economics), for why a small, intent-shaped tool
+  surface is a performance decision and not only a tidiness one.
