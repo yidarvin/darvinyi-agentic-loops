@@ -23,7 +23,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 09 | mcp-security-surface         | The MCP Security Surface                        | DONE    |
 | 10 | skills                       | Skills                                          | DONE    |
 | 11 | skill-or-server              | Skill or Server                                 | DONE    |
-| 12 | delegation                   | Delegation                                      | PENDING |
+| 12 | delegation                   | Delegation                                      | DONE    |
 | 13 | coordination-patterns        | Coordination Patterns                           | PENDING |
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | PENDING |
 | 15 | memory-taxonomy              | The Memory Taxonomy                             | PENDING |

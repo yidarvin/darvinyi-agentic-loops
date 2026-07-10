@@ -1,0 +1,252 @@
+import { DelegationFigure } from "./_figures/DelegationFigure";
+import { DelegationWidget } from "./_widgets/DelegationWidget";
+
+A single agent has one context window, and every file it reads, every failed command, and
+every long tool result lands in that one window and stays there. Delegation is the
+structural answer. A lead agent hands a slice of the work to a subagent, which runs its
+own loop in its own fresh context window and returns only a result. The reflex is to reach
+for delegation when you want parallelism, and parallelism is real, but it is the smaller
+half of the story. The reason a single agent cannot just work through a breadth-first task
+sequentially in one window is that the window would fill with noise and its answers would
+degrade. Delegation is first a context-engineering move. It decides which work burns which
+window, and only then does it happen to run several windows at once.
+
+This chapter opens Part III by establishing the mechanic and nothing more. The topologies
+that connect many agents belong to [Coordination Patterns](/coordination-patterns), and the
+ways they fail belong to [When Multi-Agent Fails](/when-multi-agent-fails). Here we build
+the atom those chapters compose: one lead, one isolated subagent, a prompt down and a
+result up.
+
+## The ceiling a single window hits
+
+[Context-Window Economics](/context-window-economics) set the budget. This is the failure
+mode that spends it. As a window fills, its signal-to-noise ratio collapses, and the model's
+answers get worse even though the weights never changed. Three mechanisms compound. Liu and
+colleagues named the first in "Lost in the Middle": accuracy is U-shaped by position, and
+when the relevant fact sits in the middle of a long context, accuracy drops by more than
+thirty percent, a pattern they replicated across GPT-3.5, GPT-4, and Claude. The second is
+attention dilution, a fixed attention budget spread thinner across every additional token
+pair. The third is distractor interference, where similar-but-irrelevant content pulls the
+answer off course.
+
+Chroma's 2025 "Context Rot" study widened the claim. Across eighteen frontier models,
+including Claude 4 Opus and Sonnet, Gemini 2.5, and Qwen3, every model degraded as input
+length grew, at every increment, well below the nominal context limit, and without a clean
+needle-position pattern. The practical reading is blunt. A 200,000-token window is not
+200,000 tokens of usable working memory. A task that reads fifty files to answer one
+question is self-defeating in a single window, because by the time the answer is due, the
+files that mattered are buried in the ones that did not.
+
+## A subagent is a tool that happens to be an agent
+
+The mechanic reuses machinery you already have. The lead decomposes the task and spawns a
+subagent by emitting a [tool call](/anatomy-of-a-tool-call). In Claude Code and the Claude
+Agent SDK that call names the Agent tool, renamed from Task in version 2.1.63, with both
+names still accepted. The runtime spins up an isolated agent loop, lets it run to
+completion, and hands the subagent's final message back as the tool result. The subagent is
+a tool whose implementation is another agent loop. The same shape recurs across stacks: the
+OpenAI Agents SDK exposes it as `Agent.as_tool()`, LangGraph as prebuilt handoff tools.
+Delegation is not a new primitive. It is the tool call, pointed at an agent.
+
+What makes it delegation rather than a function call is the context the subagent starts
+with. That context is fresh but not empty. A Claude Code subagent receives its own system
+prompt and environment details, the delegation prompt, the CLAUDE.md and memory hierarchy,
+a git-status snapshot, and any preloaded skills. It does not receive the parent's
+conversation, the parent's tool results, or the parent's system prompt. One rule follows
+and it is load-bearing: the only channel from parent to subagent is the Agent tool's prompt
+string. Any file path, error message, or decision the subagent needs must be written into
+that string, because nothing else crosses.
+
+<Figure id="12.1" caption="Delegation is a context boundary, not just a fan-out. The lead and the subagent hold separate context windows, split by a membrane. The asymmetry is the point. Down, the only channel is the prompt string, carrying the objective, the output format, tool guidance, task boundaries, and any file paths the worker needs. Up, the only channel is a distilled result, one summary or a filesystem reference for a large artifact, never the raw transcript. The subagent's reading and backtracking fill its own window and are then discarded, so the lead's gauge stays low while the subagent's runs high. Isolation is why the lead can keep going; parallelism is the bonus on top.">
+  <DelegationFigure />
+</Figure>
+
+## What isolation buys
+
+The mess stays on the subagent's side. A research-assistant subagent can read dozens of
+files without a line of that content accumulating in the main conversation; the parent
+receives a concise summary, not every file the subagent opened. The human analogy is exact.
+A manager who delegates does not watch every keystroke. They get the memo. Cognition's
+Walden Yan, arguing hard against most multi-agent designs, still concedes the benefit: the
+subagent's investigative work does not need to remain in the main agent's history, which
+lets the main trace run longer before it runs out of room.
+
+There is a sharper corollary that is easy to miss. A clean context does not only save space,
+it can make the subagent smarter. Cognition found their Devin code-review loop works best
+when the coding agent and the reviewing agent share no context beforehand. The reviewer
+skips the extraneous history, looks only at the diff, and rediscovers whatever it needs by
+reading the code from scratch, and with a shorter context the sharper reasoning catches more
+nuanced issues. Even on pull requests Devin wrote itself, their reviewer averages about two
+bugs caught per PR, roughly 58 percent of them severe. Isolation is not just hygiene. Less
+context is sometimes a better context.
+
+None of this is free, and the price is the whole reason to be disciplined about it.
+Anthropic measured agents using about four times the tokens of a chat and multi-agent
+systems about fifteen times. Their multi-agent research system, a Claude Opus 4 lead with
+Claude Sonnet 4 subagents, beat single-agent Opus 4 by 90.2 percent on their internal
+research eval and cut research time by up to 90 percent through parallelism. But token usage
+alone explained about 80 percent of the performance variance, so much of what you buy, you
+buy with tokens. These are Anthropic's own internal numbers on breadth-first research, not
+an independent benchmark, and they do not transfer to coding or to simple tasks. The lesson
+that does transfer: delegation earns its cost only when the per-task value can absorb a
+double-digit token multiple. The canonical win is telling. Asked to name every board member
+of the S&P 500 IT companies, the multi-agent system decomposed the query and found the
+answers while a single agent ground through the same searches sequentially and failed.
+
+## Teach the orchestrator to delegate
+
+Because the subagent shares none of the lead's context, the delegation prompt is the entire
+briefing, and Anthropic calls writing it well their single most important lesson. Each
+subagent needs an objective, an output format, guidance on which tools and sources to use,
+and clear task boundaries. Skip that and agents duplicate work, leave gaps, or never find
+what they were sent for. Their failure example is concrete: told only to "research the
+semiconductor shortage," one subagent went after the 2021 automotive chip crisis while two
+others duplicated each other on the current supply chain, with no division of labor because
+none was specified.
+
+Scale the effort to the task, and put the rule in the orchestrator's own prompt so it stops
+over- and under-spending. Anthropic's embedded guidance is a good default: simple
+fact-finding wants one agent making three to ten tool calls; a direct comparison wants two
+to four subagents with ten to fifteen calls each; only genuinely complex research justifies
+ten or more subagents with clearly divided responsibilities. That single instruction
+corrected both failure directions they saw, from spawning fifty subagents for a trivial
+query to cramming a breadth-first task into one overloaded agent.
+
+Specialization is the other dial, and it has four notches: a focused system prompt that
+would be noise in the main agent's instructions, a restricted tool set so a read-only
+reviewer can analyze but never modify, a cheaper model like Haiku for bulk reading, and a
+smaller thinking budget for shallow work. A Claude Code subagent is a markdown file with
+YAML frontmatter, and its `description` field is what the lead reads to decide when to
+delegate, so that one line does real work. But the first question is always whether to
+delegate at all. Keep the work in the main conversation when it needs frequent
+back-and-forth, when several phases share significant context, when the edit is small and
+targeted, or when latency matters, because a subagent starts cold and pays to re-gather
+context. Delegate when the output is verbose and unneeded upstream, when you want tool
+restrictions, or when the work is self-contained and can come back as a summary.
+
+## The return is a compression boundary
+
+The down-channel is the briefing. The up-channel decides whether delegation paid off. If a
+subagent returns its full context, you lose the entire benefit: you paid to read everything,
+then paid again to copy it into the lead, and polluted the very window you were protecting.
+The return has to be distilled. Mechanically, the parent receives the subagent's final
+message verbatim, so the compression discipline lives in the subagent's system prompt.
+Instruct it to return a structured summary, not a transcript.
+
+For large or high-fidelity outputs, distillation would throw away too much, and the answer
+is not to widen the channel but to move around it. Anthropic's pattern is to let subagents
+write their work directly to the filesystem and pass back a lightweight reference. The heavy
+artifact, a code file, a report, a chart, persists outside the conversation, and only the
+pointer crosses the boundary. This avoids the game of telephone that lossy re-summarizing
+introduces and the token cost of dragging big outputs through the history. Either way the
+principle is the same: the return channel is a compression boundary, and you design it on
+purpose.
+
+<Widget name="delegation" hint="Press run and watch the subagent's window fill while the lead's stays flat: none of that reading has crossed. When it returns, flip the return contract from distilled summary to full transcript and watch the boundary leak. The token model mirrors the chapter's delegate.py.">
+  <DelegationWidget />
+</Widget>
+
+## Where delegation stops
+
+The mechanic has a hard edge, and it is exactly where the next two chapters begin.
+Cognition's "Don't Build Multi-Agents" (June 2025) is the sharpest statement of it, on two
+principles. Share context, and share full agent traces rather than isolated messages. And
+actions carry implicit decisions, so when agents act in parallel their conflicting decisions
+compound into a broken result. Their example sticks: ask parallel subagents to build a game,
+one making the background and another the bird, and you get visually incompatible assets,
+because neither subagent could see what the other chose.
+
+By 2026 both camps had converged on where the line sits. Cognition's follow-up,
+"Multi-Agents: What's Actually Working" (April 2026), keeps the narrower pattern that holds
+up: setups where several agents contribute intelligence to a task while the writes stay
+single-threaded, a manager that splits work, children that execute, and one thread that
+synthesizes and commits. Anthropic and Cognition agree on the safe zone from opposite
+directions, and it is precisely the delegation this chapter describes. Reading, exploring,
+and analyzing parallelize cleanly, because they make no conflicting decisions. Writing does
+not, so funnel every state-mutating action through one thread until models coordinate
+write-decisions reliably. That boundary, and the topologies and failure modes on either side
+of it, are what [Coordination Patterns](/coordination-patterns) and [When Multi-Agent
+Fails](/when-multi-agent-fails) take up next.
+
+## Run it
+
+The artifact makes the boundary observable instead of asserting it. `delegate.py` dispatches
+an isolated subagent to summarize a small codebase. In the code, the lead and the subagent
+are separate context objects, and the subagent function is handed only a prompt string and
+returns only a result, so isolation is enforced by the call signature, not drawn as a
+picture. Run `--compare` and the same task runs three ways: inline, where the lead reads
+every file into its own window; delegate, where only the distilled summary crosses back; and
+leak, where the subagent returns its full transcript. Delegation keeps the lead more than
+thirteen times smaller than inline; leaking the transcript throws that away and lands right
+back near inline. `--show-boundary` prints exactly what crosses each direction, and `--test`
+asserts no file body ever reaches the lead's context. It runs offline with the standard
+library; `--live` swaps in a real Claude subagent when a key is set and degrades quietly to
+offline when it is not.
+
+<RunnableArtifact
+  name="delegation_lab"
+  path="artifacts/ch12-delegation/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch12-delegation", "python3 delegate.py --compare", "python3 delegate.py --show-boundary", "python3 delegate.py --leak", "python3 delegate.py --test"]}>
+One orchestrator, one isolated subagent, one summary task run three ways. The context
+boundary is a fact of the code: the lead and subagent are separate objects, only the prompt
+string crosses down, and only the returned summary crosses up. `--compare` shows delegation
+keeping the lead small, `--leak` shows the boundary broken, and `--test` proves the files
+never reach the lead.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Watch the boundary hold, then break it">
+Run `python3 delegate.py --compare`, then `python3 delegate.py --leak`. In one sentence,
+state what returning the full transcript did to the lead's context, and why that single
+change erases the reason you delegated in the first place.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Write the down-channel">
+Run `python3 delegate.py --show-boundary` and read the prompt string it prints. That text is
+everything the subagent gets. Rewrite it to send the subagent after only the
+security-relevant files, then predict what your version lets the subagent do and what it now
+cannot, given that nothing else crosses.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Size a real return contract">
+The artifact's summary is about 150 tokens while the subagent's peak is about 2,000. Pick a
+delegation you would actually run and write its return contract in two lines: the exact shape
+the subagent must hand back, and the one thing it must never include.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Find the task that should stay inline">
+Name one task from your own work that looks delegable but should not be delegated, and say
+which disqualifier applies: frequent back-and-forth, context shared across phases, or
+latency that a cold subagent would blow.
+</ExerciseCard>
+
+## Sources
+
+- Anthropic, "How we built our multi-agent research system" (June 2025), for the
+  orchestrator-worker architecture, the 90.2 percent gain over single-agent Opus 4, the
+  roughly four-times and fifteen-times token multiples, token usage explaining about 80
+  percent of variance, the up-to-90-percent research-time cut, the S&P 500 board-members
+  case, "teach the orchestrator how to delegate," the effort-scaling rules, the
+  semiconductor-shortage failure, and the direct-to-filesystem artifact pattern. These are
+  Anthropic's own internal evals on breadth-first research; treat them as such.
+- Anthropic, "Effective context engineering," for placing multi-agent architectures among
+  the long-horizon context strategies and for the framing that search is compression.
+- Claude Agent SDK and Claude Code documentation, for the Agent tool (renamed from Task in
+  version 2.1.63, both names accepted), the subagent's fresh-but-not-empty starting context,
+  the rule that the prompt string is the only channel from parent to subagent, the read-only
+  Explore and Plan agents, the delegate-versus-inline guidance, and nested subagents to a
+  depth of five (version 2.1.172).
+- Nelson Liu and colleagues, "Lost in the Middle" (2024), for the U-shaped positional
+  accuracy and the greater-than-thirty-percent drop when the relevant fact sits mid-context.
+- Chroma, "Context Rot" (Hong, Troynikov, and Huber, 2025), for the finding that all
+  eighteen frontier models tested degrade as input length grows.
+- Cognition, "Don't Build Multi-Agents" (Walden Yan, June 2025), for the share-context and
+  actions-carry-decisions principles and the incompatible-game-assets example; and
+  "Multi-Agents: What's Actually Working" (April 2026), for the writes-stay-single-threaded
+  conclusion, the map-reduce-and-manage pattern, the clean-context-makes-it-smarter
+  corollary, and the Devin Review figures of about two bugs per PR, roughly 58 percent
+  severe.
+- OpenAI Agents SDK, for the agents-as-tools manager pattern and handoffs, the cross-stack
+  echo that delegation everywhere is a tool call pointed at an agent.
