@@ -7,9 +7,9 @@ are. Strip the packaging and all three run the same program: a model in a loop, 
 file and shell tools, wrapped in a large deterministic harness. What separates them is not
 the loop. It is a handful of architectural bets about where that loop runs, who owns the
 model, and where the trust boundary sits. This chapter puts the three tools in one
-coordinate system so the rest of the book has a map to hang detail on. Claude Code is the
-spine of that map, since it is the tool this book builds on. Codex and opencode are the
-contrast points that show what the choices could have been.
+coordinate system so the rest of the book has a map to hang detail on. None is the book's
+spine. Each is a labelled example of a design choice, and the point is to make those
+choices portable across whatever tool comes next.
 
 ## The tools are mostly the same program
 
@@ -219,9 +219,9 @@ of tuning goes.
 
 ## Sources
 
-- MBZUAI / VILA-Lab, "Dive into Claude Code" (arXiv:2604.14228, April 2026), analyzing v2.1.88: the "small loop, large harness" framing, the cited 1.6 percent / 98.4 percent split (a directional community estimate on a leak-derived bundle), and the minimal-scaffolding design principle.
-- OpenAI Codex documentation and the Codex team (Hanson Wang, Alexander Embiricos, Fouad Matin): the pairing-to-delegation philosophy, the Rust rewrite, SQLite-backed persistent threads, and OS-level sandboxing (Seatbelt, bubblewrap with Landlock and seccomp, network off by default).
-- opencode (SST; github.com/sst/opencode): the persistent client/server daemon, model-agnosticism across 75-plus providers, Plan and Build modes with per-tool permissions, and the Agent Client Protocol.
-- The Linux Foundation's Agentic AI Foundation (formed December 2025), stewarding MCP and the AGENTS.md convention, for the convergence-on-standards claim.
-- Anthropic's 2026 restriction of subscription tokens to official Claude Code, for the model-coupling and platform-policy-risk discussion (facts and interpretation both still contested).
+- [MBZUAI / VILA-Lab, "Dive into Claude Code"](https://arxiv.org/abs/2604.14228), analyzing v2.1.88: the "small loop, large harness" framing, the cited 1.6 percent / 98.4 percent split (a directional community estimate on a leak-derived bundle), and the minimal-scaffolding design principle.
+- [OpenAI Codex documentation](https://developers.openai.com/codex/) and the [Codex product announcement](https://openai.com/index/introducing-codex/), for the pairing-to-delegation philosophy, persistent threads, and sandboxing.
+- [opencode](https://github.com/anomalyco/opencode), for the persistent client/server daemon, model-agnostic routing, Plan and Build modes with per-tool permissions, and the Agent Client Protocol.
+- [The Linux Foundation's Agentic AI Foundation](https://www.linuxfoundation.org/press/linux-foundation-launches-the-agentic-ai-foundation), for the convergence-on-standards claim.
+- [Anthropic's commercial terms](https://www.anthropic.com/legal/commercial-terms), for the model-coupling and platform-policy-risk discussion. The surrounding interpretation remains contested.
 - The chapters on [the loop](/the-loop) and [context-window economics](/context-window-economics), for the convergent loop and the harness-as-context-budget framing this chapter generalizes.
