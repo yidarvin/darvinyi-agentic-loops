@@ -96,15 +96,15 @@ prompt_for() {
   local stage="$1" slug="$2"
   case "$stage" in
     build) cat <<EOF
-Build chapter '$slug' in the Agentic Loops refsite. Read AGENTS.md, the refsite-runner skill, prompts/notes/$slug.md, and its docs/research chapter before editing. Keep the conceptual spine vendor-neutral. Implement the prose, figure, signature widget, sources with direct links, runnable artifact README and check.sh. Use the existing state scripts to mark the chapter draft. Run npm run check. Do not commit, push, or edit any other chapter.
+Build chapter '$slug' in the Agentic Loops refsite. The driver already enforces the refsite-runner state machine, scope, validation, and commits. Read AGENTS.md, prompts/notes/$slug.md, and its docs/research chapter before editing. Start the chapter work immediately; do not spend the run reloading runner manuals. Keep the conceptual spine vendor-neutral. Implement the prose, figure, signature widget, sources with direct links, runnable artifact README and check.sh. Use the existing state scripts to mark the chapter draft. Run npm run check. Do not commit, push, or edit any other chapter.
 EOF
       ;;
     critique) cat <<EOF
-Critique draft chapter '$slug' independently. Read prompts/critique-rubric.md and the refsite-runner critique spec, then inspect the chapter, figure, widget, artifact, research doc, and sources. Write content/critiques/$slug.md beginning with the exact verdict line. If approved, use scripts/mark.py to record done. If revisions are needed, keep it draft. Do not edit chapter content, commit, or push.
+Critique draft chapter '$slug' independently. The driver already enforces scope, validation, and commits. Read prompts/critique-rubric.md, then inspect the chapter, figure, widget, artifact, research doc, and sources. Start the review immediately; do not spend the run reloading runner manuals. Write content/critiques/$slug.md beginning with the exact verdict line. If approved, use scripts/mark.py to record done. If revisions are needed, keep it draft. Do not edit chapter content, commit, or push.
 EOF
       ;;
     resolve) cat <<EOF
-Resolve the open critique for '$slug'. Read content/critiques/$slug.md, the chapter research, and the artifact. Make only the required chapter-scoped fixes, update the critique first line to 'verdict: resolved', and leave the chapter draft for independent re-review. Run npm run check. Do not commit or push.
+Resolve the open critique for '$slug'. The driver already enforces scope, validation, and commits. Read content/critiques/$slug.md, the chapter research, and the artifact. Start the required chapter-scoped fixes immediately; do not spend the run reloading runner manuals. Update the critique first line to 'verdict: resolved', and leave the chapter draft for independent re-review. Run npm run check. Do not commit or push.
 EOF
       ;;
   esac
