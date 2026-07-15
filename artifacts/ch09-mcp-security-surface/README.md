@@ -1,10 +1,16 @@
 # ch09 - the MCP security surface: exploit, then defend
 
-The earlier chapters built a server that survives a chaos client. This one survives a
-hostile world. The same tools are wired to a deliberately **credulous agent**, and four
-attacks are run against them twice: once against a **vulnerable** server that trusts
-everything, once against a **hardened** server whose controls are architectural, not
-probabilistic. You watch the exploit land, then watch it get blocked.
+This is an **in-process threat-model simulation**, not a runnable MCP server. It has no
+MCP/JSON-RPC transport, initialization handshake, live authorization server, or
+cryptographic access-token validation. It models the information-flow and authorization
+decisions that make the four attacks dangerous, so every result is deterministic and
+safe to run locally.
+
+An untrusted MCP tool provider supplies descriptions and results to a deliberately
+**credulous agent**. A separate **trusted agent host/gateway** mediates private-resource
+access, downstream authorization, and external actions. Each attack runs twice: once
+with that trusted boundary permissive, once with its architectural controls enabled. You
+watch the exploit land, then watch the trusted boundary block it.
 
 The agent is credulous on purpose. It treats the text inside a tool result and the text
 inside a tool description as instructions to follow, because that is exactly what a
@@ -16,8 +22,8 @@ It is the faithful model of the vulnerability the chapter is about.
 
 ```
 cd artifacts/ch09-mcp-security-surface
-python3 mcp_security.py           # every attack on the vulnerable server, then the hardened one
-python3 mcp_security.py --test    # deterministic assertions: all four land on vulnerable, all four blocked on hardened
+python3 mcp_security.py           # every attack with a permissive boundary, then a hardened one
+python3 mcp_security.py --test    # deterministic assertions: all four land when permissive, all four block when hardened
 python3 mcp_security.py --attack 1   # run one attack (1..4) on both postures, verbose
 bash check.sh                     # run the deterministic artifact check
 ```
@@ -34,37 +40,39 @@ bash check.sh                     # run the deterministic artifact check
 | # | attack | where the poison lives | stopped by |
 |---|--------|------------------------|------------|
 | 1 | indirect prompt injection (GitHub toxic-agent flow) | a public issue's text | per-session **resource locking** |
-| 2 | tool poisoning (TPA) | a tool's **description** | **description scanning + pinning** (a backstop) |
-| 3 | confused deputy / token passthrough | an injected escalation | **audience validation, no passthrough** |
-| 4 | output poisoning (ATPA) | a tool's runtime **result** | the **exfiltration gate** (Rule of Two) |
+| 2 | tool poisoning (TPA) | a tool's **description** | trusted **catalog integrity**; scanner is a backstop |
+| 3 | confused deputy / token passthrough | an injected escalation | MCP **authorization policy**, no token transit |
+| 4 | output poisoning (ATPA) | a tool's runtime **result** | trusted **egress gate** (Rule of Two) |
 
 The scoreboard is a `World` object: an attack **succeeds** only when a secret actually
 crosses the trust boundary and lands somewhere the attacker controls. Not whether the
-agent misbehaved, but whether private data escaped. On the hardened server, nothing does.
+agent misbehaved, but whether private data escaped. On the hardened boundary, nothing does.
 
 ### Why the controls differ, and why that is the point
 
 Each attack is stopped by a *different* control, and none of them is a classifier that
 tries to decide whether some text is malicious.
 
-- **Attack 1** is stopped before the exfiltration even starts: the session is scoped to
-  one repo, so the injected read of a *different* private repo is denied. This is the
-  Docker MCP Gateway "one repository per session" idea. It structurally blocks the
-  public to private jump the toxic-agent flow depends on.
-- **Attack 2** is caught by a description scan and a trust-on-first-use pin. This one is
-  honest defense in depth, **not** a boundary: Full-Schema Poisoning hides the same
-  instruction in a parameter name, type, or enum where a description scan never looks,
-  and adaptive attacks defeat classifiers. If the scan is bypassed, attack 2 becomes
-  attack 4, and the exfiltration gate is what has to catch it.
-- **Attack 3** is stopped by refusing to present a token downstream unless its audience
-  is the downstream service. The vulnerable `BillingAPI` trusts by issuer alone, so a
-  token minted for the MCP server (`aud=acme-mcp`, `scope=read:orders`) is served billing
-  data it was never meant to touch. The hardened server validates the audience and never
-  passes a client token through, per the 2025-11-25 spec's `MUST NOT`.
+- **Attack 1** is stopped before the exfiltration even starts: the trusted host scopes
+  the session to one repo, so the injected read of a *different* private repo is denied.
+  This models Docker's "one repository per session" interceptor policy. It structurally
+  blocks the public-to-private jump the toxic-agent flow depends on.
+- **Attack 2** is stopped at the trusted host before the agent sees the changed tool
+  definition. The host compares the provider's catalog against an approved pin; the
+  description scanner is shown only as a diagnostic backstop. Full-Schema Poisoning can
+  hide an instruction where a description scanner never looks, and adaptive attacks can
+  bypass classifiers. If catalog integrity is not available, the egress gate must still
+  contain the resulting exfiltration attempt.
+- **Attack 3** starts with a client token whose `aud=acme-mcp`, which is valid at MCP
+  ingress. The hardened host then denies the injected direct billing-record action under
+  its MCP authorization policy, before it calls Billing at all. A legitimate
+  `read_orders` call uses a distinct token issued for `aud=billing` with only
+  `read:orders`; the client token is never sent downstream. RFC 8693 token exchange is
+  one possible issuance pattern when supported, not an MCP requirement.
 - **Attack 4** hides the instruction in a tool's *runtime output*, so no static scan of
-  tool definitions can ever see it. It is stopped by the Rule of Two exfiltration gate:
-  one session that combines untrusted input, private data, and an external send is the
-  full lethal trifecta, and the hardened server refuses the send without human approval.
+  tool definitions can ever see it. The trusted egress gate stops it: one session that
+  combines untrusted input, private data, and an external send is the full lethal
+  trifecta, and the host refuses the send without human approval.
   The "private data" leg is tracked by provenance, a session flag set the moment any
   private file or record is read, not by matching the outgoing bytes against known
   secrets. That is deliberate: the gate removes a leg, it does not inspect the payload.
@@ -73,13 +81,19 @@ tries to decide whether some text is malicious.
   would reach `~/.ssh` through a different server entirely, which is exactly why the
   exfiltration gate, not the resource lock, has to be the control that contains this path.
 
-## What is real and what is reduced
+## What is modeled and what is reduced
 
-Real: the tokens carry audience and scope claims and are checked the way the spec
-requires; the downstream service trusts the wrong thing the way real services do; the
-`World` records exactly what left the boundary. Reduced: to keep the run deterministic
-without a live model, injected prose carries a machine-readable `<<PLAN>>...<<END>>`
-block that the credulous agent honors. A real LLM needs no marker; it just follows the
-English. The simplification is in the *parser*, not in the *lesson*: the lesson is that
-following instructions found in data is the whole vulnerability, and only architecture,
-not detection, reliably contains it.
+Modeled: a client credential has an audience and exact scopes; the trusted host validates
+the client audience at ingress, requires exact `read:orders` scope before a legitimate
+order read, never transits that credential downstream, and uses a separately issued
+least-privilege billing credential. The
+`World` records exactly what crossed the simulated egress boundary.
+
+Reduced: this is not a wire-level MCP or OAuth implementation. It does not send or parse
+JSON-RPC, perform MCP initialization, verify signatures, discover protected-resource
+metadata, or contact an authorization server. Its `Token` objects stand in for already
+validated claims. To keep the agent deterministic without a live model, injected prose
+carries a machine-readable `<<PLAN>>...<<END>>` block that the credulous agent honors. A
+real LLM needs no marker; it just follows the English. The simplification is in the
+*transport and parser*, not in the information-flow lesson: architecture, not detection,
+is what contains an attacker-controlled instruction.

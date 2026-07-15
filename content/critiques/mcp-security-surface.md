@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -24,3 +24,41 @@ Independent re-review of the current artifacts and the prior approval: read `src
 - The figure's danger path runs directly from untrusted content to the exfiltration sink while the normal arrows omit the agent's request to private data and its return. Add numbered request/result arrows so the figure cannot look as if injection bypasses the model.
 - Several critical figure labels use 8 to 9.5px muted text. Increase their size or contrast for phone legibility. The figure's SVG semantics and overflow handling are otherwise sound.
 - The widget controls are live and keyboard-operable. Consider making the changing outcome a polite live region for screen-reader feedback.
+
+## Builder resolution (2026-07-15)
+Regression gate: re-verified Round 1, which had no required fixes, and all six required
+fixes from Round 2 against the current chapter, figure, widget, README, simulation, and
+research reference. None regressed.
+
+1. Rewrote the authorization discussion in `src/chapters/mcp-security-surface.mdx` and
+   `docs/research/ch09-mcp-security-surface.md`: audience validation, resource indicators,
+   protected-resource metadata, PKCE, and no client-token transit remain normative; RFC
+   8693 is now an optional downstream issuance pattern rather than an MCP requirement.
+2. Refactored `artifacts/ch09-mcp-security-surface/mcp_security.py` around an
+   `UntrustedMcpProvider` and a separate `TrustedHostGateway`. Resource locking, catalog
+   integrity, authorization policy, and egress gating now live at the trusted boundary.
+   The tool-poisoning outcome is stopped by an approved catalog pin; the scanner is a
+   diagnostic backstop. The chapter, README, and widget use the same boundary model.
+3. Corrected the confused-deputy flow in the widget, exercise, and simulation. A client
+   token for `aud=acme-mcp` is validated at gateway ingress; injected direct billing access
+   is denied by authorization policy before Billing is called. Legitimate `read_orders`
+   requires exact client `read:orders` scope and uses a distinct downstream
+   `aud=billing`, `read:orders` token.
+4. Replaced substring scope checks with exact scope membership and strengthened the
+   deterministic lab. It now proves the valid least-privilege order path, rejects
+   `notread:orders` and `notread:billing`, asserts an empty hardened `World.exfiltrated`,
+   and confirms the blocked deputy path makes no Billing call.
+5. Relabelled the runnable artifact consistently as an in-process threat-model simulation.
+   Its README, module docstring, and chapter text now explicitly exclude MCP/JSON-RPC
+   transport, initialization, live authorization-server interaction, and cryptographic
+   token validation.
+6. Repaired the evidence trail: replaced the stale EchoLeak link with Cato plus
+   Microsoft's advisory; added direct sources for GitLost, Trend Micro, Backslash, Prompt
+   Guard 2, Docker's interceptor demonstration, and Meta's Rule of Two; linked Equixly's
+   actual March 2025 report; and updated MCPTox to the final AAAI paper and its 1,348 cases.
+
+Advisories taken: updated the MCPTox figure, added numbered model-mediated request/result
+arrows and larger figure labels, and made the widget outcome a polite live region.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes 22 assertions and
+`npm run check` passes.

@@ -68,8 +68,9 @@ public pull request. The proof of concept exfiltrated private repository names, 
 relocation plan, salary data, and a JWT secret from a private `.env`. The important part is
 that this is not a bug in the GitHub server's code, so GitHub could not fix it with a
 server-side patch. It is a property of wiring untrusted content to private tools and a
-public sink. Follow-on research in 2026 defeated the runtime defenses GitHub later added,
-in one case with a single-word bypass.
+public sink. A separate July 2026 GitLost demonstration against GitHub Agentic Workflows
+reported that adding the word "Additionally" bypassed restrictive guardrails in that proof
+of concept. The mechanism is product-specific; the lesson is not.
 
 EchoLeak (CVE-2025-32711, CVSS 9.3), found by Aim Labs in Microsoft 365 Copilot, is widely
 described as the first documented zero-click prompt-injection exfiltration in a production
@@ -107,7 +108,7 @@ instructions about a different, trusted server's tools, for example that every e
 be blind-copied to the attacker, and the trusted server complies because its own definition
 never changed. Invariant's finding was that the malicious server need not even call the
 trusted tool. Shadowing is enough. The MCPTox benchmark (AAAI) puts numbers on the model
-side: across 45 live servers and 1,312 malicious cases, the average attack success rate was
+side: across 45 live servers and 1,348 malicious cases, the average attack success rate was
 36.5%, and more capable models were more susceptible, because better instruction-following
 means better at following the attacker's instructions.
 
@@ -126,12 +127,13 @@ audience claim names that server, MUST reject tokens that do not, and MUST NOT p
 client's token through to a downstream API. A forwarded token collapses two trust
 boundaries into one, makes the audience claim meaningless, and turns a compromised server
 into a credential laundromat, with the spec enumerating the fallout as bypassed controls,
-indistinguishable clients, misleading logs, and cross-service reuse. The supporting machinery is a stack of
-RFCs the spec adopts: RFC 8707 Resource Indicators to bind a token to a specific server,
-RFC 9728 Protected Resource Metadata to advertise which authorization servers a resource
-trusts, and RFC 8693 Token Exchange to trade the user's token for a downstream-scoped one
-rather than forwarding it, all over OAuth 2.1 with mandatory PKCE. The failure this
-prevents is easy to build without noticing. Zuplo's example is a `/mcp/orders` endpoint and
+indistinguishable clients, misleading logs, and cross-service reuse. The specification's
+normative machinery is audience validation at the MCP server, RFC 8707 Resource Indicators,
+protected-resource metadata, OAuth 2.1 with PKCE, and no client-token transit. When a
+server legitimately needs a downstream API, it must obtain a separately issued token for
+that API. RFC 8693 Token Exchange is one possible downstream issuance pattern when an
+authorization system supports it; the MCP authorization specification does not mandate it.
+The failure this prevents is easy to build without noticing. Zuplo's example is a `/mcp/orders` endpoint and
 a `/mcp/billing` endpoint behind the same identity provider. If billing validates only the
 token's issuer, an orders token sails through, because both endpoints trust the same signer,
 and the audience boundary exists on paper only.
@@ -168,8 +170,10 @@ evidence says that model is a speed bump, not a wall. "The Attacker Moves Second
 descent, reinforcement learning, and human-guided search to bypass twelve recent defenses,
 with attack success above 90% for most of them, and noted that the majority had originally
 reported near-zero success. Guardrail classifiers help at the margin. Meta's Llama Prompt
-Guard 2 reaches 97.5% recall at a 1% false-positive rate. But a classifier is structurally
-fragile: EchoLeak beat Microsoft's by never mentioning AI, and a segment-scoring guard can
+Guard 2 reports 97.5% recall at a 1% false-positive rate on its private held-out English
+direct-jailbreak benchmark. That is useful evidence, not a universal injection guarantee.
+But a classifier is structurally fragile: EchoLeak beat Microsoft's by never mentioning AI,
+and a segment-scoring guard can
 be defeated by splitting the payload so no single segment scores high. Return to the failing
 grade. A classifier lowers the attack rate. It does not draw a boundary that an attacker
 cannot cross, and treating one as your boundary is a design failure rather than a tuning
@@ -179,12 +183,13 @@ problem.
 
 The defenses that hold share one property: they change what is architecturally possible
 rather than estimating what is probably malicious. Least-privilege scoping is the first.
-The Docker MCP Gateway's "one repository per session" interceptor structurally blocks the
-public-to-private jump the toxic-agent flow depends on, because the injected read of a
-second repository is simply not permitted. Audience-bound tokens with no passthrough, backed
-by token exchange downstream, close the confused deputy the same way. Human-in-the-loop
-approval on irreversible or exfiltration-capable actions is necessary, though not
-sufficient, because approval degrades into reflexive clicking if you gate everything.
+Docker's Gateway demonstration implements a "one repository per session" interceptor
+policy that structurally blocks the public-to-private jump the toxic-agent flow depends on,
+because the injected read of a second repository is simply not permitted. Audience-bound
+tokens with no passthrough, backed by a separately issued downstream credential, close the
+confused deputy the same way. Human-in-the-loop approval on irreversible or
+exfiltration-capable actions is necessary, though not sufficient, because approval degrades
+into reflexive clicking if you gate everything.
 
 Two frameworks generalize the trifecta into a rule you can enforce. Meta's Agents Rule of
 Two, published in October 2025, says that until injection is reliably detectable, an agent
@@ -204,11 +209,13 @@ Bits' mcp-context-protector pins tool descriptions on first use and checks every
 before it enters the context window, so a rug pull is caught the moment a definition
 changes.
 
-The widget below is the same server, flipped between vulnerable and hardened, under each of
-four attacks. The untrusted input never changes and the agent never changes. Only the
-server's posture does, and each attack is stopped by a different architectural control.
+The widget below holds the untrusted provider input and the credulous agent constant under
+each of four attacks. It flips the **trusted agent host/gateway** between permissive and
+hardened postures. Resource locking, catalog integrity, authorization policy, and egress
+gating belong there, outside a provider that could itself be malicious. The description
+scanner remains visible as defense in depth, not the control that proves safety.
 
-<Widget name="attack_defense_console" hint="Flip the server between VULNERABLE and HARDENED, then step through the four attacks. Watch the same malicious input land on one posture and get neutralized on the other, each by a different control.">
+<Widget name="attack_defense_console" hint="Flip the trusted host/gateway between VULNERABLE and HARDENED, then step through the four attacks. Watch the same malicious provider input land on one posture and get neutralized at the boundary on the other.">
   <McpSecuritySurfaceWidget />
 </Widget>
 
@@ -223,28 +230,27 @@ binds to `0.0.0.0`, or demands a broad static token.
 
 ## Run it
 
-The artifact is a security lab: one MCP server built twice, vulnerable and hardened, wired
-to a deliberately credulous agent and run through the four attacks the chapter names. The
-agent is credulous on purpose. It follows the instructions it finds in a tool result or a
-tool description, because that is what a language model does, and that credulity is the
-whole vulnerability modeled faithfully. Each attack lands on the server that trusts the
-world and is stopped on the server whose controls constrain the architecture. The scoreboard
-is a single question: did a secret cross the trust boundary. On the hardened server, nothing
-does. Run the walkthrough to watch each exploit and each block step by step, run `--test`
-for the assertions that every attack lands on the vulnerable build and every attack is
-stopped by its intended control on the hardened one, and run `--attack 3` to isolate the
-confused deputy and read the token it should never have forwarded.
+The artifact is an **in-process threat-model simulation**, not a runnable MCP/JSON-RPC
+server. It models an untrusted tool provider, a deliberately credulous agent, and a trusted
+host/gateway that is either permissive or hardened. There is no transport, initialization
+handshake, live authorization server, or cryptographic access-token validation. The agent
+follows instructions it finds in a tool result or description on purpose, because that is
+the vulnerability under study. The scoreboard asks one question: did a secret cross the
+trust boundary? On the hardened path, nothing does. Run the walkthrough to watch each
+exploit and block, run `--test` for assertions that every attack lands on the permissive
+boundary and every hardened result has an empty exfiltration log, and run `--attack 3` to
+watch a valid MCP-ingress token meet authorization policy before any downstream call.
 
 <RunnableArtifact
   name="mcp_security_lab"
   path="artifacts/ch09-mcp-security-surface/"
   runtime="python 3.9+"
   run={["cd artifacts/ch09-mcp-security-surface", "python3 mcp_security.py", "python3 mcp_security.py --test", "python3 mcp_security.py --attack 1"]}>
-One MCP server, exploited four ways and then defended: indirect injection (the GitHub
-toxic-agent flow), tool poisoning through a description, the confused deputy through token
-passthrough, and output poisoning at runtime. Zero dependencies, no API key, no network.
-Every attack succeeds against the vulnerable build and is blocked by a different
-architectural control against the hardened one.
+An in-process threat-model simulation, exploited four ways and then defended: indirect
+injection (the GitHub toxic-agent flow), tool poisoning through a description, the confused
+deputy through token passthrough, and output poisoning at runtime. Zero dependencies, no
+API key, no network. Every attack succeeds with a permissive trusted boundary and is blocked
+by a different architectural control when that boundary is hardened.
 </RunnableArtifact>
 
 ## Exercises
@@ -258,16 +264,19 @@ and naming it is the first defensive move.
 
 <ExerciseCard n="02" title="Watch the control decide the outcome">
 Run `python3 mcp_security.py --attack 4`. Read the vulnerable run: the injection is in the
-tool's output, not its description. Now explain in one sentence why the description scanner
-that stops attack 2 cannot stop attack 4, and why the exfiltration gate can. This is the
-difference between scanning definitions and constraining actions.
+tool's output, not its description. Now explain in one sentence why the trusted catalog
+integrity control that stops attack 2 cannot stop attack 4, why a scanner is only a
+backstop, and why the egress gate can. This is the difference between checking definitions
+and constraining actions.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Forward a token and break the boundary">
-In `mcp_security.py`, the hardened `read_billing_as_deputy` calls the billing service with
-`verify_audience=True`. Flip it to `False` to simulate passthrough, re-run `--test`, and
-watch which assertion fails. Then state, in the spec's terms, exactly which MUST you just
-violated and what a real attacker gains from it.
+Run `python3 mcp_security.py --attack 3`. The hardened path accepts the client's
+`aud=acme-mcp` token at MCP ingress, then denies the injected `read_billing` action before
+Billing is called. Compare that with `read_orders`, which uses a distinct
+`aud=billing`, `read:orders` token. In a scratch change, replace the hardened policy denial
+with the vulnerable issuer-only Billing call and re-run `--test`. State the MCP `MUST NOT`
+you violated, why the client token must never transit downstream, and what the attacker gains.
 </ExerciseCard>
 
 <ExerciseCard n="04" title="Apply the Rule of Two to a real design">
@@ -286,7 +295,9 @@ longer do as a result.
 - Invariant Labs: [the GitHub MCP toxic-agent flow](https://invariantlabs.ai/blog/mcp-github-vulnerability),
   [Tool Poisoning Attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks),
   and [Toxic Flow Analysis](https://invariantlabs.ai/blog/toxic-flow-analysis).
-- [Aim Labs' EchoLeak research](https://www.aim.security/lp/aim-labs-echoleak-m365) and
+- Noma: [GitLost and the GitHub Agentic Workflows guardrail bypass](https://noma.security/blog/gitlost-how-we-tricked-githubs-ai-agent-into-leaking-private-repos/),
+  for the scoped 2026 follow-on demonstration.
+- [Cato's EchoLeak analysis](https://www.catonetworks.com/blog/breaking-down-echoleak/) and
   [Microsoft's CVE-2025-32711 advisory](https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2025-32711),
   for the Microsoft 365 Copilot case study.
 - CyberArk: [Full-Schema Poisoning and Advanced Tool Poisoning](https://www.cyberark.com/resources/threat-research-blog/poison-everywhere-no-output-from-your-mcp-server-is-safe).
@@ -295,19 +306,27 @@ longer do as a result.
   [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html),
   [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html), and
   [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html), for audience validation,
-  resource binding, protected-resource metadata, and token exchange.
+  resource binding, protected-resource metadata, and an optional token-exchange pattern.
 - Commercial assessments, treated as directional rather than peer-reviewed evidence:
-  [Equixly's MCP security assessment](https://equixly.com/blog/2026/02/12/how-mcp-servers-challenge-traditional-api-security-models/)
+  [Equixly's March 2025 MCP security assessment](https://equixly.com/blog/2025/03/29/mcp-server-new-security-nightmare/)
   and [Astrix's 5,200-server credential study](https://astrix.security/learn/blog/state-of-mcp-server-security-2025/).
+- [Trend Micro's 9,695-server analysis](https://www.trendaisecurity.com/en-us/resources-insights/research/stars-dont-save-you-popularity-is-not-security-in-the-mcp-ecosystem)
+  and [Backslash's NeighborJack report](https://www.backslash.security/blog/hundreds-of-mcp-servers-vulnerable-to-abuse),
+  for ecosystem-scale findings and `0.0.0.0` exposure.
 - [CVE-2025-49596](https://nvd.nist.gov/vuln/detail/CVE-2025-49596) and
   [CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514), for the tooling-as-attack-surface finding.
-- [MCPTox](https://arxiv.org/abs/2508.14925), for the benchmark of tool poisoning against
+- [MCPTox, final AAAI paper](https://ojs.aaai.org/index.php/AAAI/article/view/40895), for the benchmark of tool poisoning against
   real-world MCP servers.
 - [The Attacker Moves Second](https://arxiv.org/abs/2510.09023),
   [CaMeL](https://arxiv.org/abs/2503.18813), and
   [mcp-context-protector](https://blog.trailofbits.com/2025/07/28/we-built-the-security-layer-mcp-always-needed/),
   for adaptive attacks, capability-constrained execution, and trust-on-first-use description
   pinning.
+- Meta: [Llama Prompt Guard 2's model card](https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M)
+  and [the Agents Rule of Two](https://ai.meta.com/blog/practical-ai-agent-security/), for
+  the qualified classifier benchmark and the session constraint.
+- Docker: [its MCP Gateway prompt-injection demonstration](https://www.docker.com/blog/mcp-horror-stories-github-prompt-injection/),
+  for the one-repository-per-session interceptor policy.
 - The chapters on [Building a Real MCP Server](/building-a-real-mcp-server), for the
   server-side fixes to command injection, path traversal, and SSRF;
   [Resources, Tools, and Prompts](/resources-tools-and-prompts), for why a tool description is
