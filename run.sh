@@ -96,7 +96,7 @@ prompt_for() {
   local stage="$1" slug="$2"
   case "$stage" in
     build) cat <<EOF
-Build chapter '$slug' in the Agentic Loops refsite. The driver already enforces the refsite-runner state machine, scope, validation, and commits. Read AGENTS.md, prompts/notes/$slug.md, and its docs/research chapter before editing. Start the chapter work immediately; do not spend the run reloading runner manuals. Keep the conceptual spine vendor-neutral. Implement the prose, figure, signature widget, sources with direct links, runnable artifact README and check.sh. Use the existing state scripts to mark the chapter draft. Run npm run check. Do not commit, push, or edit any other chapter.
+Build chapter '$slug' in the Agentic Loops refsite. The driver already enforces the refsite-runner state machine, scope, validation, and commits. Read only AGENTS.md, prompts/notes/$slug.md, and its matching docs/research chapter before editing. Then write the complete chapter immediately: prose, figure, signature widget, direct source links, runnable artifact, README, and check.sh. Do not read skill manuals, surveys, earlier chapters, or unrelated docs. Keep the conceptual spine vendor-neutral. Use the existing state scripts to mark the chapter draft. Run npm run check. Do not commit, push, or edit any other chapter.
 EOF
       ;;
     critique) cat <<EOF
