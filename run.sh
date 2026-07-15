@@ -11,6 +11,7 @@ DRY=0
 ALLOW_DIRTY=0
 VERB=next
 LIMIT=1
+RETRIES=1
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,7 @@ Usage: ./run.sh [status|next|loop [N]|build|critique|resolve] [options]
   -e, --effort LEVEL   reasoning effort (default: ultra)
       TERRA_SANDBOX    nested Codex sandbox (default: workspace-write)
       --push           push the driver-created commit after a successful stage
+      --retries N      retry a no-change Terra stage up to N times (default: 1)
       --no-check       skip npm run check (not recommended)
       --allow-dirty    allow pre-existing changes (never use for unattended work)
       --dry-run        show the chosen stage without invoking Terra
@@ -39,6 +41,7 @@ while (($#)); do
     loop) VERB=loop; LIMIT=999999; shift; if (($#)) && is_positive "$1"; then LIMIT="$1"; shift; fi ;;
     -m|--model) (($# >= 2)) || die "$1 needs a value"; MODEL="$2"; shift 2 ;;
     -e|--effort) (($# >= 2)) || die "$1 needs a value"; EFFORT="$2"; shift 2 ;;
+    --retries) (($# >= 2)) || die "$1 needs a value"; is_positive "$2" || die "--retries needs a positive integer"; RETRIES="$2"; shift 2 ;;
     --push) PUSH=1; shift ;;
     --no-check) CHECK=0; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
@@ -111,23 +114,30 @@ EOF
 }
 
 run_stage() {
-  local stage="$1" slug="$2" num before after prompt log
+  local stage="$1" slug="$2" num before after prompt log attempt changed=0
   [[ "$stage" != done && "$stage" != error ]] || { echo "nothing to run: $stage"; return 0; }
   num="$(target_num "$slug")"; [[ -n "$num" ]] || die "could not find chapter '$slug'"
   before="$(python3 scripts/decide.py counts)"
   prompt="$(prompt_for "$stage" "$slug")"
   mkdir -p .pipeline
-  log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
   echo "== $stage $slug with $MODEL (effort=$EFFORT) =="
   if (( DRY )); then printf '%s\n' "$prompt"; return 0; fi
-  if ! codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1; then
-    echo "run.sh: Terra failed; tail of $log:" >&2
-    tail -80 "$log" >&2
-    return 1
-  fi
-  echo "Terra stage completed; full transcript: $log"
+  for ((attempt=1; attempt<=RETRIES; attempt++)); do
+    log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S)-attempt${attempt}.log"
+    if ! codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1; then
+      echo "run.sh: Terra failed; tail of $log:" >&2
+      tail -80 "$log" >&2
+      return 1
+    fi
+    echo "Terra stage completed; full transcript: $log"
+    if [[ -n "$(git diff --name-only)" ]]; then
+      changed=1
+      break
+    fi
+    echo "run.sh: stalled stage '$stage' (${attempt}/${RETRIES}): no changes" >&2
+  done
+  (( changed )) || return 1
   scope_ok "$stage" "$slug" "$num" || return 1
-  [[ -n "$(git diff --name-only)" ]] || { echo "run.sh: stalled stage '$stage' (1/3): no changes" >&2; return 1; }
   python3 scripts/validate.py
   if (( CHECK )); then npm run check; fi
   after="$(python3 scripts/decide.py counts)"
