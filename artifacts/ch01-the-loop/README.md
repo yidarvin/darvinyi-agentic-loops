@@ -2,7 +2,8 @@
 
 A minimal agent loop that narrates its four phases (`perceive`, `decide`, `act`,
 `observe`) on every turn. It is the runnable companion to chapter 1: the agent is
-the loop, not the model.
+the loop, not the model. The live path uses the Anthropic Messages API as one concrete
+adapter. The four-phase control loop does not depend on that API.
 
 ## Run it
 

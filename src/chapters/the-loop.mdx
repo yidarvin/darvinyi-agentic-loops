@@ -6,8 +6,8 @@ model, runs whatever the model asked for, feeds the result back, and calls the m
 again until there is nothing left to do. The word "agent" names that cycle, not the
 network inside it. This is the whole book compressed into one sentence, and every
 later chapter is an argument about how to build the loop well: what to put in the
-context, when to stop, how to remember, when to split the work. Start here, because if
-the loop is clear, the rest is engineering.
+context, when to stop, how to remember, when to split the work. The shape is
+provider-neutral. Specific APIs enter only where they make a concrete contract visible.
 
 ## The loop is the primitive
 
@@ -22,30 +22,31 @@ the deliberative architecture behind Shakey the robot at Stanford Research Insti
 in the late 1960s: perceive the world, update a model of it, plan, act, repeat. The
 difference is what fills the boxes. The "world model" is now the accumulated text in
 the context window, and the "planner" is a frozen neural policy that you cannot
-retrain in the loop. Anthropic's definition is the smallest correct one the field has
-converged on: agents "are typically just LLMs using tools based on environmental
-feedback in a loop." The decide phase is where reasoning and action interleave, the
-pattern Yao and colleagues named ReAct in 2022.
+retrain in the loop. Anthropic gives a compact version of the definition: agents
+typically use tools based on environmental feedback in a loop. The decide phase is
+where reasoning and action interleave, the pattern Yao and colleagues named ReAct in
+2022.
 
 <Figure id="1.1" caption="One turn of the loop. The model is called exactly once, in decide; every other arrow is the harness. The message list at the center is the only place state accumulates.">
   <TheLoopFigure />
 </Figure>
 
-## The model is a stateless function
+## The model is a stateless policy
 
-The model remembers nothing between calls. It is a pure function from a prompt to the
-next block of output, and the prompt is whatever the harness chose to assemble this
-turn. Everything that feels like memory, continuity, or progress lives in one place:
-the running message list. That list is the agent's working memory. The system prompt,
-the tool schemas, the conversation, and every tool result share a single context
-window, and the list grows in exactly two places. It grows on **decide**, when the
-assistant's turn is appended, and on **observe**, when the tool result is appended.
-Perceive only reads the list; act only touches the outside world.
+The loop gives the model no implicit continuity between calls. Treat the next response
+as a sampled action from the context the harness assembles this turn. Everything that
+feels like memory, continuity, or progress therefore lives in one place: the running
+message list. That list is the agent's working memory. The system prompt, the tool
+schemas, the conversation, and every tool result share a single context window, and
+the list grows in exactly two places. It grows on **decide**, when the assistant's
+turn is appended, and on **observe**, when the tool result is appended. Perceive only
+reads the list; act only touches the outside world.
 
-Because the policy is frozen, the only lever you actually control is the context you
-construct. Barry Zhang of Anthropic reduces an agent to three design decisions, the
-environment, the tools, and the system prompt, and then "the model gets called in a
-loop, and that's agents." Here is that loop with nothing removed:
+Because the policy is frozen, the lever you actually control is the context you
+construct: the environment, the tools, and the system instructions. Here is the loop
+with nothing removed. Its control flow is provider-neutral; the block names below are
+Anthropic Messages API terms because the runnable artifact uses that API as one
+concrete adapter.
 
 ```python
 from anthropic import Anthropic
@@ -77,17 +78,18 @@ what is absent: there is no planner, no memory store, no orchestration graph. Th
 
 ## Termination belongs to the harness
 
-Look again at the one branch in that loop: it stops when `stop_reason` is not
-`tool_use`. Deciding when to stop is a harness responsibility, and it has to be,
+Look again at the one branch in that loop: the simple client-tool loop exits when
+`stop_reason` is not `tool_use`. Exiting the tool loop is not always successful
+completion. Deciding what to do next is a harness responsibility, and it has to be,
 because models are unreliable at knowing when they are done. Left alone, an agent will
 declare victory early or grind in circles late. So the harness owns the stop
 conditions, and there are five worth naming: the model requests no tool, an explicit
 completion signal fires, a hard iteration limit is reached, a cost or token or
 wall-time budget is spent, or an error state is hit. The Anthropic Messages API
-surfaces the first of these as `stop_reason`: `tool_use` means the model wants a tool,
-`end_turn` means it is finished, `max_tokens` means the response was truncated and may
-have left an incomplete tool call to retry. A production loop wires the other four
-around that signal as ordinary control flow.
+surfaces several of these as `stop_reason`: `tool_use` means the model wants a tool,
+`end_turn` usually means it finished, while `max_tokens`, refusal, and context-window
+limits need their own policy. A production loop wires the other conditions around that
+signal as ordinary control flow.
 
 ## Watch the loop turn
 
@@ -106,25 +108,25 @@ model's.
 
 The unsettling part is how little you need. mini-swe-agent, from the SWE-bench team at
 Princeton and Stanford, is roughly a hundred lines of Python. It uses only bash, no
-tool-calling API at all, so it runs with any model, and it scores above 74 percent on
-SWE-bench Verified (74.2 percent with Gemini 3 Pro in the Live-SWE-agent report,
-arXiv:2511.13646). A hundred lines of loop, competitive on a hard real-world coding
-benchmark. The team's own conclusion is blunt: "the interface is the model." When the
-harness is thin, the score is a measurement of the model, which is exactly why
-SWE-bench fixes a minimal harness to compare models fairly.
+tool-calling API at all, so it runs with any model, and its maintainers report a score
+above 74 percent on SWE-bench Verified. That is a dated, model-and-harness-specific
+result, not a permanent leaderboard claim. Still, a hundred lines of loop can be
+competitive on a hard real-world coding benchmark. The team's own conclusion is blunt:
+"the interface is the model." When the harness is thin, the score comes closer to a
+measurement of the model, which is exactly why SWE-bench fixes a minimal harness to
+compare models fairly.
 
-The same lesson shows up in the reference implementation. Community reverse-engineering
-of Claude Code describes a single while-loop at the center, with rough estimates of
-around 1.6 percent of the codebase doing AI decision logic and around 98.4 percent
-doing operational harness work: permissions, compaction, steering, persistence. Treat
-those exact numbers as indicative rather than official, but the ratio is the point.
-The intelligence is bought; the reliability is built.
+The same lesson shows up across coding-agent implementations. A small reactive loop
+sits under a much larger operational harness: permissions, compaction, steering,
+persistence, and verification. The intelligence comes from the model; the reliability
+comes from the system that contains it.
 
-This does not mean scaffolding is worthless. The debate is live: a well-designed
-agent-computer interface, a windowed file viewer plus a targeted edit tool, has been
-shown to roughly double a raw-bash score on SWE-bench. As base models strengthen, the
-marginal value of clever scaffolding shrinks, while harness engineering still decides
-reliability, cost, and safety. Build the loop first. Add harness, not decoration.
+This does not mean scaffolding is worthless. Tool interfaces can materially improve
+results. In one dated GPT-4 Turbo comparison on SWE-bench Lite, the original SWE-agent
+paper reported a 64 percent relative gain over its shell-only baseline. As base models
+strengthen, the marginal value of clever scaffolding shrinks, while harness engineering
+still decides reliability, cost, and safety. Build the loop first. Add harness, not
+decoration.
 
 That also tells you when to reach for an agent at all. A **workflow** runs LLMs
 through control flow you wrote in advance; you own the path. An **agent** lets the
@@ -198,11 +200,11 @@ That curve is the subject of the next chapter on context-window economics.
 
 ## Sources
 
-- Anthropic, "Building Effective Agents" (December 2024). The loop definition and the agent-versus-workflow distinction.
-- Yao et al., "ReAct: Synergizing Reasoning and Acting in Language Models" (2022), arXiv:2210.03629.
-- mini-swe-agent, the SWE-bench / SWE-agent team (Princeton and Stanford). Roughly 100 lines, bash-only.
-- "Live-SWE-agent" (2025), arXiv:2511.13646, for the SWE-bench Verified figures cited here.
-- Jimenez et al., "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?" (2024), arXiv:2310.06770.
-- Barry Zhang (Anthropic), public talk on building agents: environment, tools, system prompt, then a loop.
-- Anthropic Messages API documentation, for `stop_reason` semantics (`tool_use`, `end_turn`, `max_tokens`).
-- Community reverse-engineering analyses of Claude Code (the single-loop design and the 1.6 / 98.4 percent estimates); indicative, not official architecture documentation.
+- [Nils Nilsson, *Shakey the Robot* (SRI Technical Note 323)](https://ai.stanford.edu/~nilsson/OnlinePubs-Nils/shakey-the-robot.pdf), for the historical sense-plan-act lineage.
+- [Anthropic, "Building Effective Agents"](https://www.anthropic.com/engineering/building-effective-agents), for the loop definition and the agent-versus-workflow distinction.
+- [Anthropic, "How tool use works"](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works), for the canonical client-tool loop and its provider-specific contract.
+- [Anthropic, "Stop reasons and fallback"](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons), for `stop_reason` semantics and non-success exits.
+- [Yao et al., "ReAct: Synergizing Reasoning and Acting in Language Models"](https://arxiv.org/abs/2210.03629).
+- [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent), for the roughly 100-line, bash-only agent and its reported SWE-bench Verified result.
+- [Jimenez et al., "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?"](https://arxiv.org/abs/2310.06770).
+- [Yang et al., "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering"](https://arxiv.org/abs/2405.15793), for the dated shell-only comparison and the value of an agent-computer interface.
