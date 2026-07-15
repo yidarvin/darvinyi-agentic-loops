@@ -227,26 +227,23 @@ common way a working server breaks the moment it meets a real transport.
 
 ## Sources
 
-- The Model Context Protocol specification, revision `2025-11-25`, for the two error channels
-  (protocol errors on the JSON-RPC `error` channel versus tool-execution errors carried as
-  results with `isError: true`), the Streamable HTTP session model and `Mcp-Session-Id`, and
-  the authorization model (an MCP server as an OAuth 2.1 resource server that validates token
-  audience and never passes a client token downstream). The `2026-07-28` release candidate, for
-  the removal of protocol-level sessions and the move to a stateless base protocol.
-- Mastouri and colleagues, *From REST to MCP: an empirical study of API wrapping and automated
-  server generation for LLM agents* (arXiv:2507.16044), for the survey of 116 official servers:
-  88.6% fully or partially REST-backed, 92% bare API wrappers, a median of 19% of available
-  operations exposed.
-- Equixly's security assessment of deployed MCP servers, for the reported rates of command
-  injection (43%), path traversal or arbitrary file read (22%), and SSRF (30%), read as
-  directional findings from one scan.
-- FastMCP's documentation (gofastmcp.com), for the framework's error model (`ToolError` messages
-  always reach the client, `mask_error_details` masks unexpected exceptions and defaults to off),
-  the in-memory `Client` transport for testing, and the lifespan and context injection patterns.
-  Jeremiah Lowin's essays *Stop Converting Your REST APIs to MCP* and *Stop Vibe-Testing Your
-  MCP Server*, for the intent-over-endpoints argument and the case against LLM-driven regression
-  tests. Backslash's research on state handles, for the requirement that a handle be bound to a
-  user and expire.
+- The [MCP `2025-11-25` specification](https://modelcontextprotocol.io/specification/2025-11-25/basic)
+  and [transports specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
+  for the error channels, Streamable HTTP session model, and authorization boundary; plus the
+  [2026-07-28 release candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+  for the proposed stateless successor.
+- Mastouri and colleagues, [*From REST to MCP*](https://arxiv.org/abs/2507.16044), for the
+  empirical API-wrapping study. The Equixly [MCP security assessment](https://www.equixly.com/blog/2025/06/17/mcp-security/)
+  provides the directional scan findings on command injection, file access, and SSRF.
+- The [FastMCP documentation](https://gofastmcp.com/servers/tools) and
+  [testing guide](https://gofastmcp.com/patterns/testing), for `ToolError`, error masking,
+  lifespan/context injection, and the in-memory client pattern. Treat framework defaults as
+  version-sensitive and verify them at upgrade time.
+- Jeremiah Lowin's [intent-over-endpoints argument](https://www.jlowin.dev/blog/stop-converting-rest-apis-to-mcp)
+  and [deterministic-testing argument](https://www.jlowin.dev/blog/stop-vibe-testing-mcp-servers),
+  for the design and regression-testing recommendations; Backslash's
+  [MCP security research](https://www.backslash.security/blog/mcp-security) for user-bound,
+  expiring state handles.
 - The chapters on [MCP from the Wire Up](/mcp-from-the-wire-up), for the JSON-RPC and handshake
   this server answers, [Transports](/transports), for stdio and Streamable HTTP and why stdout
   must stay clean, [Resources, Tools, and Prompts](/resources-tools-and-prompts), for the
