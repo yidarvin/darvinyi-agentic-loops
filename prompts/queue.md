@@ -18,7 +18,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 04 | the-landscape                | The Landscape                                   | DONE    |
 | 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | DONE    |
 | 06 | transports                   | Transports                                      | DONE    |
-| 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | PENDING |
+| 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | DONE    |
 | 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | PENDING |
 | 09 | mcp-security-surface         | The MCP Security Surface                        | PENDING |
 | 10 | skills                       | Skills                                          | PENDING |
