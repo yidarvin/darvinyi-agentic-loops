@@ -17,5 +17,7 @@
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/private/tmp/agentic-loops-queue.stdout.log</string>
+  <key>StandardErrorPath</key><string>/private/tmp/agentic-loops-queue.stderr.log</string>
 </dict>
 </plist>
