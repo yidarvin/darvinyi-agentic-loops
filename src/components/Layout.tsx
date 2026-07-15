@@ -24,7 +24,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <main className="mx-auto max-w-3xl px-5 py-10">{children}</main>
       <footer className="border-t border-border">
         <div className="mx-auto max-w-3xl px-5 py-6 font-mono text-xs text-comment">
-          {"// built with claude code --- one chapter at a time"}
+          {"// built one chapter at a time"}
         </div>
       </footer>
     </div>
