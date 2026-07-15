@@ -4,7 +4,16 @@
 <dict>
   <key>Label</key><string>com.darvin.agentic-loops-queue</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/queue-worker.sh</string></array>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/queue-worker.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/darvin</string>
+    <key>PATH</key><string>/Users/darvin/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
