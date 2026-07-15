@@ -175,12 +175,17 @@ def main(argv: list[str]) -> int:
         render(repo, "widget.tsx.tmpl", mapping),
         repo,
     )
+    artifact_dir = os.path.join(repo, "artifacts", f"ch{num:02d}-{slug}")
+    write_if_absent(os.path.join(artifact_dir, "README.md"), render(repo, "artifact-readme.md.tmpl", mapping), repo)
+    check_path = os.path.join(artifact_dir, "check.sh")
+    if write_if_absent(check_path, render(repo, "artifact-check.sh.tmpl", mapping), repo):
+        os.chmod(check_path, 0o755)
 
     ensure_entries(repo, args.num, slug, args.title, args.subtitle, args.part)
 
     print("\nnext steps:")
-    print("  1. write the prose, the figure, and the widget (see the authoring spec).")
-    print("  2. run 'npm run check'.")
+    print("  1. write the prose, figure, widget, and runnable artifact (see the authoring spec).")
+    print("  2. replace the artifact's failing check.sh with a deterministic check, then run 'npm run check'.")
     print(f"  3. run 'python3 scripts/mark.py {slug} done' to record it.")
     return 0
 
