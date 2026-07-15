@@ -35,14 +35,15 @@ of 100 is a defense the attacker beats on the hundredth try, every time.
 
 Willison's sharpest framing, from June 2025, names the exact exploitable combination. Call
 it the lethal trifecta: access to private data, exposure to untrusted content, and the
-ability to communicate externally. Any one leg is harmless. Any two are safe. All three in
-one session is the condition under which your data leaves the building. MCP is uniquely
-good at assembling all three by accident, because it encourages you to mix and match tools
-from different sources, and a single tool can supply more than one leg at once. A tool that
-reads email is both a private-data source and an untrusted-content source, which means an
-attacker can email your agent and tell it what to do.
+ability to communicate externally. Removing one leg breaks this particular autonomous
+exfiltration path. It does not make the remaining system universally safe. All three in one
+session is the condition under which your data can leave the building without another
+boundary intervening. MCP is uniquely good at assembling all three by accident, because it
+encourages you to mix and match tools from different sources, and a single tool can supply
+more than one leg at once. A tool that reads email is both a private-data source and an
+untrusted-content source, which means an attacker can email your agent and tell it what to do.
 
-<Figure id="9.1" caption="The lethal trifecta. Three legs feed one context window where data becomes instructions, because the model cannot separate an instruction it was given from data it merely read. The injected instruction rides in on leg [A], drives the private read on leg [B], and routes the secret out through leg [C], using only tools the agent is allowed to use. Any two legs is safe; all three is the trifecta. A defense that holds removes a leg, it does not try to score the incoming prose.">
+<Figure id="9.1" caption="The lethal trifecta. Three legs feed one context window where data becomes instructions, because the model cannot separate an instruction it was given from data it merely read. The injected instruction rides in on leg [A], drives the private read on leg [B], and routes the secret out through leg [C], using only tools the agent is allowed to use. Removing a leg breaks this autonomous exfiltration path, but it does not make the rest of the system universally safe. A defense that holds removes or gates a capability, it does not try to score the incoming prose.">
   <McpSecuritySurfaceFigure />
 </Figure>
 
@@ -279,32 +280,34 @@ longer do as a result.
 
 ## Sources
 
-- Simon Willison, for the coinage of prompt injection (September 2022), the lethal trifecta
-  (June 2025), the Dual LLM pattern (April 2023), and the recurring standard that in
-  application security 99% is a failing grade.
-- Invariant Labs, for the GitHub toxic-agent flow (May 2025) and the Tool Poisoning Attack
-  and tool-shadowing analysis (April 2025), including the finding that shadowing is enough.
-- Aim Labs, for EchoLeak (CVE-2025-32711, CVSS 9.3) in Microsoft 365 Copilot, the first
-  documented zero-click prompt-injection exfiltration in a production LLM system, and the
-  LLM Scope Violation framing.
-- CyberArk, for Full-Schema Poisoning and Advanced Tool Poisoning (June 2025), which move the
-  injection into the schema and the runtime output where description scanners cannot see it.
-- The Model Context Protocol authorization specification, revision `2025-11-25`, for the
-  audience-validation and no-passthrough requirements, and the adoption of RFC 8707, RFC
-  9728, and RFC 8693 over OAuth 2.1 with mandatory PKCE. Zuplo's write-up, for the
-  issuer-only validation failure between an orders and a billing endpoint.
-- Equixly (March 2025), for the reported rates of command injection (43%), path traversal
-  (22%), and SSRF (30%); Trend Micro, for the audit of 9,695 servers; Astrix, for the
-  credential statistics across 5,200 servers; and Backslash, for the prevalence of servers
-  bound to `0.0.0.0`. These are commercial assessments, directional rather than peer-reviewed.
-- CVE-2025-49596 (MCP Inspector RCE, CVSS 9.4) and CVE-2025-6514 (`mcp-remote` RCE, CVSS
-  9.6), for the tooling-as-attack-surface finding.
-- The MCPTox benchmark (AAAI), for the average 36.5% attack success rate and the result that
-  more capable models are more susceptible.
-- "The Attacker Moves Second" (arXiv 2510.09023), for the bypass of twelve recent defenses at
-  above 90% success; Meta, for Llama Prompt Guard 2 and the Agents Rule of Two (October 2025);
-  Google DeepMind, for CaMeL (arXiv 2503.18813); and Trail of Bits, for mcp-context-protector's
-  trust-on-first-use description pinning.
+- Simon Willison: [Prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/),
+  [the Dual LLM pattern](https://simonwillison.net/2023/Apr/25/dual-llm-pattern/), and
+  [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/).
+- Invariant Labs: [the GitHub MCP toxic-agent flow](https://invariantlabs.ai/blog/mcp-github-vulnerability),
+  [Tool Poisoning Attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks),
+  and [Toxic Flow Analysis](https://invariantlabs.ai/blog/toxic-flow-analysis).
+- [Aim Labs' EchoLeak research](https://www.aim.security/lp/aim-labs-echoleak-m365) and
+  [Microsoft's CVE-2025-32711 advisory](https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2025-32711),
+  for the Microsoft 365 Copilot case study.
+- CyberArk: [Full-Schema Poisoning and Advanced Tool Poisoning](https://www.cyberark.com/resources/threat-research-blog/poison-everywhere-no-output-from-your-mcp-server-is-safe).
+- The [MCP Authorization specification, revision 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
+  [MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
+  [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html),
+  [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html), and
+  [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html), for audience validation,
+  resource binding, protected-resource metadata, and token exchange.
+- Commercial assessments, treated as directional rather than peer-reviewed evidence:
+  [Equixly's MCP security assessment](https://equixly.com/blog/2026/02/12/how-mcp-servers-challenge-traditional-api-security-models/)
+  and [Astrix's 5,200-server credential study](https://astrix.security/learn/blog/state-of-mcp-server-security-2025/).
+- [CVE-2025-49596](https://nvd.nist.gov/vuln/detail/CVE-2025-49596) and
+  [CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514), for the tooling-as-attack-surface finding.
+- [MCPTox](https://arxiv.org/abs/2508.14925), for the benchmark of tool poisoning against
+  real-world MCP servers.
+- [The Attacker Moves Second](https://arxiv.org/abs/2510.09023),
+  [CaMeL](https://arxiv.org/abs/2503.18813), and
+  [mcp-context-protector](https://blog.trailofbits.com/2025/07/28/we-built-the-security-layer-mcp-always-needed/),
+  for adaptive attacks, capability-constrained execution, and trust-on-first-use description
+  pinning.
 - The chapters on [Building a Real MCP Server](/building-a-real-mcp-server), for the
   server-side fixes to command injection, path traversal, and SSRF;
   [Resources, Tools, and Prompts](/resources-tools-and-prompts), for why a tool description is

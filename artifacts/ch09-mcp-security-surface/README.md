@@ -19,12 +19,15 @@ cd artifacts/ch09-mcp-security-surface
 python3 mcp_security.py           # every attack on the vulnerable server, then the hardened one
 python3 mcp_security.py --test    # deterministic assertions: all four land on vulnerable, all four blocked on hardened
 python3 mcp_security.py --attack 1   # run one attack (1..4) on both postures, verbose
+bash check.sh                     # run the deterministic artifact check
 ```
 
 - **Runtime:** Python 3.9+, standard library only.
 - **No key, no network, no third-party package.** Nothing here reaches the internet; the
   "attacker endpoint" is a string an exfiltration tool writes to an in-process log.
 - The SSH key is a fake. Never put a real secret anywhere an agent can read.
+- `check.sh` resolves its own directory, so `bash artifacts/ch09-mcp-security-surface/check.sh`
+  also works from the repository root.
 
 ## The four attacks and the control that stops each
 

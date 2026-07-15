@@ -5,9 +5,10 @@
 // it carries the injected instruction. Leg B is a legitimate private-data tool. Leg C is
 // a legitimate exfiltration sink. The injection (danger-colored) rides in on A, drives the
 // read on B, and routes the secret out through C, all with tools the agent is ALLOWED to
-// use. The lesson band: any two legs is safe; all three is the trifecta; a real defense
-// removes a leg (resource-lock severs the reach into B, the exfil gate closes C), it does
-// not try to score the prose. Inline SVG, themed with the CSS variables, mono labels.
+// use. The lesson band: a missing leg breaks this exfiltration path, while all three close
+// the trifecta; a real defense removes a leg (resource-lock severs the reach into B, the
+// exfil gate closes C), it does not try to score the prose. Inline SVG, themed with the CSS
+// variables, mono labels.
 
 export function McpSecuritySurfaceFigure() {
   return (
@@ -15,7 +16,7 @@ export function McpSecuritySurfaceFigure() {
       viewBox="0 0 880 486"
       className="w-full min-w-[840px]"
       role="img"
-      aria-label="The lethal trifecta, drawn as three legs feeding one context window. Leg A, top left, is untrusted content: a tool result from a public issue or web page, which carries a hidden injected instruction. Leg B, bottom left, is private data: a legitimate tool that reads a private repository or a secret file. Leg C, right, is an exfiltration sink: a legitimate tool that can send data out, such as opening a public pull request or fetching a URL. All three arrows meet at the center, the agent's context window, where data becomes instructions because the model cannot separate an instruction it was given from data it merely read. A danger-colored path shows the attack: the injected instruction rides in on leg A, drives the private read on leg B, and routes the secret out through leg C, using only tools the agent is allowed to use. The lower band states the rule: any two legs is safe, all three legs together is the lethal trifecta, and a real defense removes one leg, for example per-session resource locking severs the reach into private data and the exfiltration gate closes the outbound sink, rather than trying to detect whether the incoming text is malicious."
+      aria-label="The lethal trifecta, drawn as three legs feeding one context window. Leg A, top left, is untrusted content: a tool result from a public issue or web page, which carries a hidden injected instruction. Leg B, bottom left, is private data: a legitimate tool that reads a private repository or a secret file. Leg C, right, is an exfiltration sink: a legitimate tool that can send data out, such as opening a public pull request or fetching a URL. All three arrows meet at the center, the agent's context window, where data becomes instructions because the model cannot separate an instruction it was given from data it merely read. A danger-colored path shows the attack: the injected instruction rides in on leg A, drives the private read on leg B, and routes the secret out through leg C, using only tools the agent is allowed to use. The lower band states that a missing leg breaks this autonomous exfiltration path, while all three legs together close the lethal trifecta. A real defense removes or gates a capability, for example per-session resource locking severs the reach into private data and the exfiltration gate closes the outbound sink, rather than trying to detect whether the incoming text is malicious."
       fill="none"
     >
       <rect x="1" y="1" width="878" height="484" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
@@ -87,19 +88,19 @@ export function McpSecuritySurfaceFigure() {
         {"// the rule of two, and why a classifier is not a boundary"}
       </text>
       <text x="316" y="364" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"[A]+[B]      read a secret, no way to send it       safe"}
+        {"[A]+[B]      no external send in this session"}
       </text>
       <text x="316" y="384" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"[A]+[C]      can send, no secret to send             safe"}
+        {"[A]+[C]      no private-data read in this session"}
       </text>
       <text x="316" y="404" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"[B]+[C]      no untrusted content to hijack it       safe"}
+        {"[B]+[C]      no untrusted input in this session"}
       </text>
       <text x="316" y="424" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">
-        {"[A]+[B]+[C]  the lethal trifecta                     exfiltration"}
+        {"[A]+[B]+[C]  the lethal trifecta: autonomous exfiltration"}
       </text>
       <text x="316" y="450" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">
-        {"a defense that holds removes a leg (lock [B]'s reach, gate [C]); it does not score [A]'s prose."}
+        {"a defense removes or gates a capability; it does not score [A]'s prose."}
       </text>
     </svg>
   );
