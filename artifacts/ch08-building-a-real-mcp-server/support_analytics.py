@@ -52,6 +52,7 @@ SUPPORTED = ["2025-11-25", "2025-06-18", "2025-03-26"]
 # JSON-RPC / MCP error codes. Protocol errors ride the JSON-RPC "error" channel; tool
 # execution failures ride inside a normal result with isError:true (see call_tool).
 METHOD_NOT_FOUND = -32601
+INVALID_REQUEST = -32600
 INVALID_PARAMS = -32602  # a malformed call: the SDK layer rejects it before your tool runs
 
 # How long a report handle stays valid, measured in server ticks (one per request).
@@ -129,12 +130,15 @@ class SupportAnalytics:
         self.mask = mask_error_details
         self.jobs: dict[str, dict] = {}  # explicit-handle store: job_id -> {owner, expires_tick, ...}
         self._tick = 0
+        self.initialized = False
 
     # ---- the JSON-RPC front door ------------------------------------------------
     def handle(self, msg: dict) -> dict | None:
         self._tick += 1
         method = msg.get("method")
         if "id" not in msg:  # a notification is never answered
+            if method == "notifications/initialized":
+                self.initialized = True
             return None
         mid = msg["id"]
 
@@ -145,6 +149,9 @@ class SupportAnalytics:
                 "capabilities": {"tools": {"listChanged": True}, "resources": {"listChanged": True}},
                 "serverInfo": {"name": "support-analytics", "version": "1.0.0"},
             })
+        if not self.initialized:
+            return err(mid, INVALID_REQUEST,
+                       "Received request before initialization completed")
         if method == "tools/list":
             return ok(mid, {"tools": TOOLS})
         if method == "tools/call":
@@ -447,11 +454,17 @@ class InMemoryClient:
     def __init__(self, server: SupportAnalytics):
         self.server = server
         self._id = 0
+        self.server.handle({"jsonrpc": "2.0", "id": self._new_id(), "method": "initialize",
+                            "params": {"protocolVersion": LATEST, "capabilities": {}}})
+        self.server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _new_id(self) -> int:
+        self._id += 1
+        return self._id
 
     def call_tool(self, name: str, arguments: dict) -> dict:
-        self._id += 1
         reply = self.server.handle({
-            "jsonrpc": "2.0", "id": self._id, "method": "tools/call",
+            "jsonrpc": "2.0", "id": self._new_id(), "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         })
         return reply
@@ -469,6 +482,9 @@ def run_tests() -> int:
             failures += 1
 
     with lifespan("u_analyst") as server:
+        early = server.handle({"jsonrpc": "2.0", "id": 0, "method": "tools/list"})
+        check("pre-handshake request -> -32600",
+              early and early.get("error", {}).get("code") == INVALID_REQUEST)
         client = InMemoryClient(server)
 
         # happy path: a well-formed call returns content with isError:false
@@ -554,6 +570,8 @@ def demo(mask: bool) -> int:
         exchange(server, "initialize: declare the capabilities this server actually implements",
                  {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                   "params": {"protocolVersion": LATEST}})
+        exchange(server, "initialized: complete the handshake before tool calls",
+                 {"jsonrpc": "2.0", "method": "notifications/initialized"})
 
         section("intent, not endpoints")
         call(server, "one call returns customer + tickets + counts (avoids three chatty round trips)",
