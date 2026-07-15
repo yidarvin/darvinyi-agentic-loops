@@ -108,14 +108,21 @@ EOF
 }
 
 run_stage() {
-  local stage="$1" slug="$2" num before after prompt
+  local stage="$1" slug="$2" num before after prompt log
   [[ "$stage" != done && "$stage" != error ]] || { echo "nothing to run: $stage"; return 0; }
   num="$(target_num "$slug")"; [[ -n "$num" ]] || die "could not find chapter '$slug'"
   before="$(python3 scripts/decide.py counts)"
   prompt="$(prompt_for "$stage" "$slug")"
+  mkdir -p .pipeline
+  log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
   echo "== $stage $slug with $MODEL (effort=$EFFORT) =="
   if (( DRY )); then printf '%s\n' "$prompt"; return 0; fi
-  codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s workspace-write -a never -C "$ROOT" exec "$prompt"
+  if ! codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s workspace-write -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1; then
+    echo "run.sh: Terra failed; tail of $log:" >&2
+    tail -80 "$log" >&2
+    return 1
+  fi
+  echo "Terra stage completed; full transcript: $log"
   scope_ok "$stage" "$slug" "$num" || return 1
   [[ -n "$(git diff --name-only)" ]] || { echo "run.sh: stalled stage '$stage' (1/3): no changes" >&2; return 1; }
   python3 scripts/validate.py
