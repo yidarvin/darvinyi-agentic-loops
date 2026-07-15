@@ -16,7 +16,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 02 | anatomy-of-a-tool-call       | Anatomy of a Tool Call                          | DONE    |
 | 03 | context-window-economics     | Context-Window Economics                        | DONE    |
 | 04 | the-landscape                | The Landscape                                   | DONE    |
-| 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | PENDING |
+| 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | DONE    |
 | 06 | transports                   | Transports                                      | PENDING |
 | 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | PENDING |
 | 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | PENDING |
