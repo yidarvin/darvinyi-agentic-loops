@@ -4,6 +4,7 @@ set -euo pipefail
 
 MODEL="${TERRA_MODEL:-gpt-5.6-terra}"
 EFFORT="${TERRA_EFFORT:-ultra}"
+SANDBOX="${TERRA_SANDBOX:-workspace-write}"
 PUSH=0
 CHECK=1
 DRY=0
@@ -17,6 +18,7 @@ Usage: ./run.sh [status|next|loop [N]|build|critique|resolve] [options]
 
   -m, --model MODEL    Terra model (default: gpt-5.6-terra)
   -e, --effort LEVEL   reasoning effort (default: ultra)
+      TERRA_SANDBOX    nested Codex sandbox (default: workspace-write)
       --push           push the driver-created commit after a successful stage
       --no-check       skip npm run check (not recommended)
       --allow-dirty    allow pre-existing changes (never use for unattended work)
@@ -47,6 +49,7 @@ while (($#)); do
 done
 
 case "$EFFORT" in low|medium|high|xhigh|max|ultra) ;; *) die "invalid effort '$EFFORT'" ;; esac
+case "$SANDBOX" in workspace-write|danger-full-access) ;; *) die "invalid TERRA_SANDBOX '$SANDBOX'" ;; esac
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 [[ -f content/registry.json && -f prompts/queue.md ]] || die "not a refsite repository"
@@ -117,7 +120,7 @@ run_stage() {
   log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
   echo "== $stage $slug with $MODEL (effort=$EFFORT) =="
   if (( DRY )); then printf '%s\n' "$prompt"; return 0; fi
-  if ! codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s workspace-write -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1; then
+  if ! codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1; then
     echo "run.sh: Terra failed; tail of $log:" >&2
     tail -80 "$log" >&2
     return 1
