@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-python3 primitives.py
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 primitives.py --test

@@ -190,7 +190,8 @@ that is the trade you are making.
 The artifact is one Python file with no dependencies: a real MCP server, `DatabaseServer`,
 that exposes all three primitives over the composition above, plus a driver that walks
 each in turn and prints the wire request and response. Run it and you see `initialize`
-declare all three capabilities in one breath, then three sections, tools then resources
+declare all three capabilities in one breath, the `initialized` notification close the
+handshake, then three sections, tools then resources
 then prompts, each a discover-then-invoke walk so the shapes line up. You see read-only
 and destructive tools carry different annotations, including a `get_schema` tool that
 returns the exact bytes the schema resource does, one primitive apart only in who controls
@@ -241,22 +242,18 @@ terms of what that client can and cannot do today, not what the spec allows.
 
 ## Sources
 
-- The Model Context Protocol specification (`2025-11-25`), for the control taxonomy
-  (model-controlled tools, application-driven resources, user-controlled prompts), the
-  `tools/list` and `tools/call` shapes, the `CallToolResult` structure and the two error
-  channels, tool annotations and their defaults, the `resources/list`, `resources/read`,
-  and `resources/templates/list` methods with RFC 6570 templates, and the `prompts/list`
-  and `prompts/get` message payload with its `user`/`assistant` roles and embedded
-  resources.
-- Anthropic's *Writing effective tools for AI agents* and *advanced tool use* posts, for
-  the description-driven selection guidance, the SWE-bench Verified jump from 33.4% to
-  49.0% after tool-description refinement, the Tool Search Tool results (Opus 4.5 from
-  79.5% to 88.1% with roughly 85% fewer tokens), and the reported share of directory
-  rejections caused by missing annotations.
-- Reported measurements of large-server context cost (StackOne, Nebulagg, and others) for
-  the GitHub-server token figures, read as order-of-magnitude rather than exact, and the
-  documented Claude Desktop resource and template bugs (corroborated by the Python and
-  TypeScript SDK issue trackers).
+- The [MCP server concepts guide](https://modelcontextprotocol.io/docs/learn/server-concepts)
+  and [`2025-11-25` specification](https://modelcontextprotocol.io/specification/2025-11-25/basic),
+  for the model-, application-, and user-controlled taxonomy; the wire shapes; error channels;
+  annotations; resources and URI templates; and prompt messages with embedded resources.
+- Anthropic's [writing effective tools](https://www.anthropic.com/engineering/writing-tools-for-agents)
+  and [advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use) articles,
+  for evaluation-driven tool design, description and namespacing guidance, dynamic discovery,
+  and the reported Tool Search Tool token and evaluation results.
+- The [MCP TypeScript SDK resource issues](https://github.com/modelcontextprotocol/typescript-sdk/issues)
+  and [Python SDK resource issues](https://github.com/modelcontextprotocol/python-sdk/issues), for
+  the client-support caveat. Treat the linked issue trackers as time-sensitive evidence and test
+  the specific client you plan to ship against.
 - The chapters on [MCP from the Wire Up](/mcp-from-the-wire-up), for the handshake and the
   capabilities object these primitives are declared in, [Transports](/transports), for how
   their messages travel, and [Context-Window Economics](/context-window-economics), for why

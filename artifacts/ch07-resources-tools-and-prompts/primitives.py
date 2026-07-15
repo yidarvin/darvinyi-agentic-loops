@@ -40,6 +40,7 @@ LATEST = "2025-11-25"
 SUPPORTED = ["2025-11-25", "2025-06-18", "2025-03-26"]
 
 METHOD_NOT_FOUND = -32601
+INVALID_REQUEST = -32600
 INVALID_PARAMS = -32602
 RESOURCE_NOT_FOUND = -32002  # spec code for resources/read on a URI that has no resource
 
@@ -66,10 +67,15 @@ ORDERS = [
 # ================================================================================
 
 class DatabaseServer:
+    def __init__(self) -> None:
+        self.initialized = False
+
     def handle(self, msg: dict) -> dict | None:
         method = msg.get("method")
         mid = msg.get("id")
         if "id" not in msg:  # a notification: no reply is ever owed
+            if method == "notifications/initialized":
+                self.initialized = True
             return None
 
         if method == "initialize":
@@ -85,6 +91,10 @@ class DatabaseServer:
                 },
                 "serverInfo": {"name": "database-server", "version": "1.0.0"},
             })
+
+        if not self.initialized:
+            return err(mid, INVALID_REQUEST,
+                       "Received request before initialization completed")
 
         # --- tools: model-controlled. Discovery, then invocation. -----------------
         if method == "tools/list":
@@ -346,10 +356,31 @@ def walk_prompts(server: DatabaseServer, mid: int) -> int:
     return mid + 2
 
 
+def run_checks() -> int:
+    """Pin the wire contract that makes this a real MCP server, not a transcript."""
+    server = DatabaseServer()
+    early = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert early and early["error"]["code"] == INVALID_REQUEST
+    initialized = server.handle({"jsonrpc": "2.0", "id": 2, "method": "initialize",
+                                 "params": {"protocolVersion": LATEST}})
+    assert initialized and initialized["result"]["protocolVersion"] == LATEST
+    assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    tools = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+    assert tools and {tool["name"] for tool in tools["result"]["tools"]} == {
+        "get_schema", "run_query", "insert_order"}
+    missing = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
+                             "params": {"uri": "db://tables/absent/schema"}})
+    assert missing and missing["error"]["code"] == RESOURCE_NOT_FOUND
+    print("primitive core checks: OK")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if "--serve-stdio" in argv:
         serve_stdio()
         return 0
+    if "--test" in argv:
+        return run_checks()
 
     server = DatabaseServer()
     print("# resources, tools, and prompts: one server, three controllers")
@@ -358,6 +389,8 @@ def main(argv: list[str]) -> int:
              {"jsonrpc": "2.0", "id": 0, "method": "initialize",
               "params": {"protocolVersion": LATEST, "capabilities": {},
                          "clientInfo": {"name": "walkthrough", "version": "1.0.0"}}})
+    exchange(server, "initialized: the client completes the handshake before any primitive call",
+             {"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     only = {"--tools", "--resources", "--prompts"} & set(argv)
     mid = 1

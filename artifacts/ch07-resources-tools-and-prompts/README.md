@@ -31,8 +31,9 @@ python3 primitives.py
 
 ## What you will see
 
-`initialize` first: the server declares all three capabilities in one response, its
-promise that the matching methods exist. Then three sections, one per primitive, each
+`initialize` first, followed by `notifications/initialized`: the server declares all three
+capabilities in one response, then accepts primitive calls only after the handshake completes.
+Then come three sections, one per primitive, each
 a discover-then-invoke pair so the request and response shapes line up:
 
 1. **tools (model-controlled).** `tools/list` returns names, descriptions, input
