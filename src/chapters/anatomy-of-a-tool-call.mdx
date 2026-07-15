@@ -228,8 +228,8 @@ execution behind it.
 
 ## Sources
 
-- Anthropic Messages API documentation: tool use, `tool_use` and `tool_result` content blocks, `stop_reason` values, `tool_choice`, and parallel tool use.
-- Anthropic, "Building Effective Agents" and its companion guidance on tool design (the agent-computer interface, poka-yoke, and the SWE-bench tool-description finding).
-- Anthropic prompt caching and token-counting documentation, for the cached-prefix behavior and the `count_tokens` endpoint used by the artifact.
-- OpenAI function-calling documentation (Chat Completions and Responses APIs), for the `tool_calls` array, stringified `arguments`, and the `role: "tool"` result contrast.
+- [Anthropic Messages API tool-use documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview), for `tool_use` and `tool_result` content blocks, `stop_reason` values, `tool_choice`, and parallel tool use.
+- [Anthropic, "Building Effective Agents"](https://www.anthropic.com/engineering/building-effective-agents), for tool design, the agent-computer interface, poka-yoke, and the SWE-bench tool-description finding.
+- [Anthropic prompt-caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) and [token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting), for cached-prefix behavior and the `count_tokens` endpoint used by the artifact.
+- [OpenAI function-calling documentation](https://platform.openai.com/docs/guides/function-calling), for the `tool_calls` array, stringified `arguments`, and the `role: "tool"` result contrast.
 - The chapter on [the loop](/the-loop) for the four-phase cycle this call sits inside, and the invariants introduced there.
