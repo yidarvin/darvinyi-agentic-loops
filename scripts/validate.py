@@ -24,6 +24,8 @@ import sys
 
 VALID_REGISTRY_STATUS = {"pending", "draft", "done"}
 VALID_QUEUE_STATUS = {"PENDING", "DONE", "SKIPPED"}
+VALID_VERDICTS = {"approve", "revise", "resolved"}
+VERDICT_RE = re.compile(r"^verdict:\s*([a-z]+)\s*$")
 
 # A shared slug pairs a registry status with a queue status. Any pair not in this
 # set is a mismatch. This encodes: DONE matches done, PENDING matches pending or
@@ -61,6 +63,28 @@ def queue_path(repo: str) -> str:
 
 def chapters_dir(repo: str) -> str:
     return os.path.join(repo, "src", "chapters")
+
+
+def critiques_dir(repo: str) -> str:
+    return os.path.join(repo, "content", "critiques")
+
+
+def critique_path(repo: str, slug: str) -> str:
+    return os.path.join(critiques_dir(repo), f"{slug}.md")
+
+
+def read_verdict(repo: str, slug: str) -> str | None:
+    """Return a critique verdict, None for no file, or '' for malformed text."""
+    path = critique_path(repo, slug)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            first = fh.readline().rstrip("\n")
+    except OSError:
+        return ""
+    match = VERDICT_RE.match(first)
+    return match.group(1) if match else ""
 
 
 # ---- registry --------------------------------------------------------------
@@ -254,6 +278,51 @@ def validate(repo: str) -> tuple[list[str], list[str]]:
                 )
     reg_slugs = set(reg_order)
 
+    # A chapter may become done only after an independent critic has approved it.
+    # Keeping this enforcement in the shared validator makes mark.py transactional:
+    # it writes, validates, and restores state on any failed transition.
+    if os.path.isdir(critiques_dir(repo)):
+        for name in sorted(os.listdir(critiques_dir(repo))):
+            if not name.endswith(".md"):
+                continue
+            slug = name[:-3]
+            if slug not in reg_slugs:
+                errors.append(f"content/critiques/{name} has no registry entry")
+                continue
+            verdict = read_verdict(repo, slug)
+            if verdict == "":
+                errors.append(
+                    f"content/critiques/{name} first line must be exactly "
+                    "'verdict: approve|revise|resolved'"
+                )
+            elif verdict not in VALID_VERDICTS:
+                errors.append(f"content/critiques/{name} has invalid verdict '{verdict}'")
+
+    for slug in reg_order:
+        status = reg_status.get(slug)
+        verdict = read_verdict(repo, slug)
+        if status == "done" and verdict != "approve":
+            if verdict is None:
+                errors.append(
+                    f"registry chapter '{slug}' is 'done' but content/critiques/{slug}.md "
+                    "is missing (done requires an approved critique)"
+                )
+            elif verdict in VALID_VERDICTS:
+                errors.append(
+                    f"registry chapter '{slug}' is 'done' but content/critiques/{slug}.md "
+                    f"has verdict '{verdict}' (done requires an approved critique)"
+                )
+        elif status == "draft" and verdict == "approve":
+            warnings.append(
+                f"'{slug}' has an approved critique but is still 'draft' "
+                f"(run: python3 scripts/mark.py {slug} done)"
+            )
+        elif status == "pending" and verdict is not None:
+            warnings.append(
+                f"content/critiques/{slug}.md exists but '{slug}' is 'pending' "
+                "(stale critique from a reset chapter?)"
+            )
+
     # every mdx on disk must have a registry entry (error, was a warning) --------
     cdir = chapters_dir(repo)
     if os.path.isdir(cdir):
@@ -359,6 +428,25 @@ def _summary_lines(repo: str) -> list[str]:
         lines.append(f"next pending: {nxt.get('num')} {nxt.get('slug')} ({nxt.get('title')})")
     else:
         lines.append("next pending: none, the queue is drained")
+    approved = revise = resolved = unreviewed = 0
+    for chapter in chapters:
+        if chapter.get("status") not in ("draft", "done"):
+            continue
+        slug = chapter.get("slug")
+        if not slug:
+            continue
+        verdict = read_verdict(repo, slug)
+        if verdict == "approve":
+            approved += 1
+        elif verdict == "revise":
+            revise += 1
+        elif verdict == "resolved":
+            resolved += 1
+        elif verdict is None:
+            unreviewed += 1
+    lines.append(
+        f"critiques: {approved} approved, {revise} revise, {resolved} resolved, {unreviewed} unreviewed"
+    )
     return lines
 
 

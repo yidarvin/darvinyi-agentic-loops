@@ -330,6 +330,10 @@ class HttpClient:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         ready = self.proc.stdout.readline().split()
+        if len(ready) != 2 or ready[0] != "MCP_HTTP_READY":
+            detail = self.proc.stderr.read().strip()
+            _close_pipes(self.proc)
+            raise OSError(f"HTTP server did not announce a loopback port: {detail or 'no readiness line'}")
         self.port = int(ready[1])  # "MCP_HTTP_READY <port>"
 
     def post(self, msg: dict, origin: str | None = None,
@@ -473,6 +477,23 @@ def trace_http(stream_mode: bool) -> None:
     c.close()
 
 
+def run_checks() -> int:
+    """Deterministic protocol checks for CI; the full demo also needs loopback TCP."""
+    core = McpCore()
+    initialized = core.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                               "params": {"protocolVersion": LATEST}})
+    assert initialized and initialized["result"]["protocolVersion"] == LATEST
+    tools = core.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    assert tools and {tool["name"] for tool in tools["result"]["tools"]} == {"add", "search"}
+    added = core.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                         "params": {"name": "add", "arguments": {"a": 2, "b": 3}}})
+    assert added and added["result"]["content"][0]["text"] == "5"
+    unknown = core.handle({"jsonrpc": "2.0", "id": 4, "method": "not/a/method"})
+    assert unknown and unknown["error"]["code"] == METHOD_NOT_FOUND
+    print("transport core checks: OK")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if "--serve-stdio" in argv:
         serve_stdio()
@@ -480,6 +501,8 @@ def main(argv: list[str]) -> int:
     if "--serve-http" in argv:
         serve_http("--sse" in argv)
         return 0
+    if "--test" in argv:
+        return run_checks()
 
     only_stdio = "--stdio" in argv
     only_http = "--http" in argv

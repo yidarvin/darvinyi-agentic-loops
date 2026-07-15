@@ -12,7 +12,7 @@
       "routes": [
         "the-loop"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 2,
@@ -23,7 +23,7 @@
       "routes": [
         "the-loop"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 3,
@@ -35,7 +35,7 @@
         "context",
         "economics"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 4,
@@ -46,7 +46,7 @@
       "routes": [
         "landscape"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 5,
@@ -57,7 +57,7 @@
       "routes": [
         "mcp"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 6,
@@ -68,7 +68,7 @@
       "routes": [
         "mcp"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 7,
@@ -79,7 +79,7 @@
       "routes": [
         "mcp"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 8,
@@ -90,7 +90,7 @@
       "routes": [
         "mcp"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 9,
@@ -102,7 +102,7 @@
         "mcp",
         "security"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 10,
@@ -113,7 +113,7 @@
       "routes": [
         "skills"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 11,
@@ -125,7 +125,7 @@
         "skills",
         "mcp"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 12,
@@ -136,7 +136,7 @@
       "routes": [
         "multi-agent"
       ],
-      "status": "done"
+      "status": "pending"
     },
     {
       "num": 13,

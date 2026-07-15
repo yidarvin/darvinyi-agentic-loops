@@ -5,35 +5,49 @@
 # no separate typecheck section.
 set -uo pipefail
 
-echo "== 1/5 validate (queue + registry + content) =="
+echo "== 1/7 validate (queue + registry + content) =="
 if ! python3 scripts/validate.py; then
   echo "VALIDATE FAILED"
   exit 1
 fi
 
 echo ""
-echo "== 2/5 prose lint =="
+echo "== 2/7 prose lint =="
 if ! python3 scripts/prose_lint.py; then
   echo "PROSE LINT FAILED"
   exit 1
 fi
 
 echo ""
-echo "== 3/5 test =="
+echo "== 3/7 pipeline tests =="
+if ! python3 scripts/test_pipeline.py; then
+  echo "PIPELINE TESTS FAILED"
+  exit 1
+fi
+
+echo ""
+echo "== 4/7 artifacts =="
+if ! python3 scripts/check_artifacts.py; then
+  echo "ARTIFACTS FAILED"
+  exit 1
+fi
+
+echo ""
+echo "== 5/7 test =="
 if ! npm run test; then
   echo "TESTS FAILED"
   exit 1
 fi
 
 echo ""
-echo "== 4/5 build (tsc --noEmit + vite build) =="
+echo "== 6/7 build (tsc --noEmit + vite build) =="
 if ! npm run build; then
   echo "BUILD FAILED"
   exit 1
 fi
 
 echo ""
-echo "== 5/5 lint (advisory) =="
+echo "== 7/7 lint (advisory) =="
 if ! npm run lint; then
   echo "lint reported issues (advisory, not blocking the gate)"
 fi

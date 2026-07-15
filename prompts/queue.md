@@ -12,18 +12,18 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 
 | #  | slug                         | item                                            | status  |
 |----|------------------------------|-------------------------------------------------|---------|
-| 01 | the-loop                     | The Loop                                        | DONE    |
-| 02 | anatomy-of-a-tool-call       | Anatomy of a Tool Call                          | DONE    |
-| 03 | context-window-economics     | Context-Window Economics                        | DONE    |
-| 04 | the-landscape                | The Landscape                                   | DONE    |
-| 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | DONE    |
-| 06 | transports                   | Transports                                      | DONE    |
-| 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | DONE    |
-| 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | DONE    |
-| 09 | mcp-security-surface         | The MCP Security Surface                        | DONE    |
-| 10 | skills                       | Skills                                          | DONE    |
-| 11 | skill-or-server              | Skill or Server                                 | DONE    |
-| 12 | delegation                   | Delegation                                      | DONE    |
+| 01 | the-loop                     | The Loop                                        | PENDING |
+| 02 | anatomy-of-a-tool-call       | Anatomy of a Tool Call                          | PENDING |
+| 03 | context-window-economics     | Context-Window Economics                        | PENDING |
+| 04 | the-landscape                | The Landscape                                   | PENDING |
+| 05 | mcp-from-the-wire-up         | MCP from the Wire Up                            | PENDING |
+| 06 | transports                   | Transports                                      | PENDING |
+| 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | PENDING |
+| 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | PENDING |
+| 09 | mcp-security-surface         | The MCP Security Surface                        | PENDING |
+| 10 | skills                       | Skills                                          | PENDING |
+| 11 | skill-or-server              | Skill or Server                                 | PENDING |
+| 12 | delegation                   | Delegation                                      | PENDING |
 | 13 | coordination-patterns        | Coordination Patterns                           | PENDING |
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | PENDING |
 | 15 | memory-taxonomy              | The Memory Taxonomy                             | PENDING |
