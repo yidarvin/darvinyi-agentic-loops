@@ -149,10 +149,10 @@ then an HTTP request answered by a JSON body, then the same request answered by 
 </Widget>
 
 <Callout kind="danger">
-HTTP transports carry three non-negotiable defenses the spec spells out. Validate the
-`Origin` header on every request and reject a mismatch with `403`, which stops DNS-rebinding
-attacks from a browser. When the server is local, bind it to `127.0.0.1`, never `0.0.0.0`,
-so nothing off the machine can reach it. And require real authentication with TLS in
+HTTP transports carry one hard requirement and two security recommendations the spec spells out.
+Validate the `Origin` header on every request and reject a mismatch with `403`, which stops
+DNS-rebinding attacks from a browser. When the server is local, bind it to `127.0.0.1`, never
+`0.0.0.0`, so nothing off the machine can reach it. And use real authentication with TLS in
 production, using session IDs that are cryptographically random and bound to the user, never
 accepting a token that was not issued for your server. The TypeScript SDK exposes the
 `Origin` and `Host` checks as `enableDnsRebindingProtection` with an `allowedHosts` and
@@ -220,18 +220,16 @@ answer flipped. Most migrations are smaller than they look.
 
 ## Sources
 
-- The Model Context Protocol specification (`2025-11-25`), for the transport-agnostic
-  boundary, the `Transport` interface, the stdio framing rules (newline-delimited, nothing
-  but valid messages on stdout, the stderr allowance), the Streamable HTTP single-endpoint
-  design, the `202` and `application/json` versus `text/event-stream` reply choice, the
-  `Mcp-Session-Id` and `MCP-Protocol-Version` headers, `Last-Event-ID` resumability, and the
-  mandatory `Origin` validation, loopback binding, and authentication requirements.
-- The MCP revision history, for the original 2024-11-05 HTTP+SSE transport, its two-endpoint
-  design, and its deprecation in favor of Streamable HTTP in `2025-03-26`.
-- Stacklok's `yardstick` transport benchmark, for the directional scaling numbers (stdio's
-  failures under concurrency and the roughly tenfold Streamable HTTP gap between pooled and
-  per-request sessions), read as a synthetic upper bound on a trivial server rather than a
-  production measurement.
+- The [MCP transports specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
+  for the transport-agnostic boundary, stdio framing rules, Streamable HTTP endpoint and reply
+  modes, session and protocol-version headers, resumability, and the distinction between the
+  required `Origin` validation and recommended localhost binding and authentication.
+- The [MCP `2025-11-25` specification](https://modelcontextprotocol.io/specification/2025-11-25/basic)
+  and [the 2026-07-28 release candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/),
+  for the versioned session model and its proposed stateless successor.
+- Stacklok's [`yardstick` transport benchmark](https://stacklok.com/blog/mcp-server-performance-transport-protocol-matters/),
+  for the directional scaling numbers. It measures a trivial echo server on a local kind cluster,
+  so treat it as an upper bound, not a production forecast.
 - The chapter on [MCP from the Wire Up](/mcp-from-the-wire-up), for the message shapes and the
   handshake that ride above the transport, and [Context-Window
   Economics](/context-window-economics), for why the per-call transport overhead is usually

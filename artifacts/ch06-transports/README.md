@@ -16,7 +16,8 @@ python3 transports.py
 
 - **Runtime:** Python 3.9+, standard library only.
 - **No key, no SDK, no network beyond loopback.** The HTTP server binds only to
-  `127.0.0.1` (the spec's mandatory rule for local servers) on an OS-assigned port.
+  `127.0.0.1`, following the specification's localhost-binding recommendation for local servers,
+  on an OS-assigned port.
 
 ## What you will see
 

@@ -30,7 +30,8 @@ Internal (the driver starts these for you):
     python3 transports.py --serve-http [--sse]
 
 No SDK, no API key, no network beyond loopback. The HTTP server binds only to
-127.0.0.1 (the spec's mandatory rule for local servers) on an OS-assigned port.
+127.0.0.1, following the spec's localhost-binding recommendation for local servers,
+on an OS-assigned port.
 Standard library only.
 """
 from __future__ import annotations
