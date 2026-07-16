@@ -166,16 +166,19 @@ compound into a broken result. Their example sticks: ask parallel subagents to b
 one making the background and another the bird, and you get visually incompatible assets,
 because neither subagent could see what the other chose.
 
-By 2026 both camps had converged on where the line sits. Cognition's follow-up,
-"Multi-Agents: What's Actually Working" (April 2026), keeps the narrower pattern that holds
-up: setups where several agents contribute intelligence to a task while the writes stay
-single-threaded, a manager that splits work, children that execute, and one thread that
-synthesizes and commits. Anthropic and Cognition agree on the safe zone from opposite
-directions, and it is precisely the delegation this chapter describes. Reading, exploring,
-and analyzing parallelize cleanly, because they make no conflicting decisions. Writing does
-not, so funnel every state-mutating action through one thread until models coordinate
-write-decisions reliably. That boundary, and the topologies and failure modes on either side
-of it, are what [Coordination Patterns](/coordination-patterns) and [When Multi-Agent
+By 2026, Cognition had narrowed its rule rather than removed it. Its follow-up,
+"Multi-Agents: What's Actually Working" (April 2026), describes setups where several agents
+contribute intelligence while writes stay single-threaded: a manager splits work, children
+execute, and one thread synthesizes and commits. That is Cognition's guardrail for coupled
+state and competing decisions, not a ban on every persisted subagent output.
+
+Anthropic shows the complementary case. Specialized subagents can create independently
+scoped code, reports, or charts directly in the filesystem or another external system, then
+return lightweight references. The useful boundary is coupling, not the mere fact of a write.
+Parallelize reading, exploration, analysis, and artifacts with independent ownership. Serialize
+edits to shared state and final integration until a coordination protocol makes decision
+ownership explicit. That boundary, and the topologies and failure modes on either side of it,
+are what [Coordination Patterns](/coordination-patterns) and [When Multi-Agent
 Fails](/when-multi-agent-fails) take up next.
 
 ## Run it

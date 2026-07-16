@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -65,3 +65,18 @@ Fresh-eyes review: read `prompts/critique-rubric.md`, the complete append-only c
 ## Advisories
 
 - No new advisories.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/delegation.md`. Re-verified all four REQUIRED fixes from Round 1, the sole REQUIRED fix from Round 2, and the sole REQUIRED fix from Round 3 against the current MDX, figure, widget, artifact, README, and research backbone.
+
+1. Resolved Round 3 in `src/chapters/delegation.mdx`. The single-threaded-write pattern is now attributed to Cognition and scoped to coupled state and competing decisions. The chapter separately states Anthropic's direct-persistence pattern for independently scoped code, reports, and charts, then draws the boundary around ownership and integration rather than the mere fact of a write.
+2. Corrected the same material backbone error in `docs/research/ch12-delegation.md`. Its tradeoff discussion, staged recommendation, and caveat now distinguish Cognition's shared-state guardrail from Anthropic's independently persisted artifact pattern.
+3. Re-verified Round 1's context-channel repair across the MDX, `DelegationFigure.tsx`, `DelegationWidget.tsx`, `delegate.py`, and the artifact README. They consistently model one-shot, non-fork, no-message delegation with a separate inherited baseline, a task-specific briefing, and a return that the real runtime may scan.
+4. Re-verified Round 1's live-path repair. The MDX, README, and `delegate.py` identify `--live` as one preloaded-corpus Anthropic Messages API model call, not a Claude Code or Agent SDK subagent loop. The deterministic boundary test and no-key fallback continue to hold.
+5. Re-verified Round 1's source repairs. The MDX and research retain Liu et al.'s greater-than-twenty-percent result, Chroma's qualified non-monotonic finding, and the current LangChain Handoffs link with its matching tool-based routing claim.
+6. Re-verified Round 2's opening repair. The MDX and research scope accumulation to an uncompacted loop without externalized memory and present compaction, structured note-taking, and delegation as separate context-management strategies.
+
+Advisory not taken: exhaustive fixture-body assertions remain out of scope because the prior review classified them as non-blocking scope expansion.
+
+Verification: `npm run check` passed after the corrections, including validate, prose lint, pipeline tests, all artifact gates, Vitest, typecheck, production build, and advisory lint.
