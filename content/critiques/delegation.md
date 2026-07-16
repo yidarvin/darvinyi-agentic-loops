@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-16)
 
@@ -108,3 +108,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 Advisories not taken: the pre-existing fixture-assertion advisory and Round 4's two prose suggestions remain outside the required accessibility repair.
 
 Verification: `npm run check` passed after the contrast correction, including validation, prose lint, pipeline and artifact tests, Vitest, typecheck, production build, and advisory lint. The full gate passed again after recording this resolution.
+
+## Round 5 review (2026-07-16)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history and `git log -p -- content/critiques/delegation.md`, the current MDX, `DelegationFigure.tsx`, `DelegationWidget.tsx`, all delegation artifact and fixture files, the research backbone, and the linked Anthropic, Claude Code, Liu et al., Chroma, Cognition, OpenAI Agents SDK, and LangChain primary sources. Ran `npm run check` successfully, including validation, every artifact gate, Vitest, typecheck, production build, and lint. Independently exercised `--compare`, `--show-boundary`, `--leak`, `--test`, and the no-key `--show-boundary --live` fallback. The browser UI backend was unavailable, so the widget was checked through its source, accessible DOM structure, render gate, and build. Re-verified all seven REQUIRED corrections from Rounds 1 through 4 against the current artifacts and sources.
+
+The full gate holds; the chapter is materially truthful, its figure and widget teach the stated context-boundary model accessibly, and the runnable artifact is deterministic and works as documented.
+
+## Advisories
+
+- `src/chapters/delegation.mdx:57-66` describes the common custom or general-purpose non-fork baseline. Current Claude Code documentation exempts the built-in Explore and Plan subagents from loading `CLAUDE.md` and git status, and built-ins do not preload skills. Name that scope on a future edit so readers do not apply the baseline inventory to those exceptions. The chapter's explicitly narrow lab model and central isolation lesson remain sound.
+- Carried from Round 4: `src/chapters/delegation.mdx:106-108` calls briefing quality Anthropic's "single most important lesson," while the cited post calls prompt engineering its primary lever and presents delegation guidance as one principle. Soften the ranking when that prose is otherwise being edited.
+- Carried from Round 4: `src/chapters/delegation.mdx:64-66,141-143` models the return as an Agent tool result. That is valid for foreground use, but current Claude Code runs subagents in the background by default and returns their result through a completion notification. Naming the model foreground would remove ambiguity without changing the boundary lesson.
