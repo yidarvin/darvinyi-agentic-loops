@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -80,3 +80,16 @@ Regression gate: read the complete append-only critique history and `git log -p 
 Advisory not taken: exhaustive fixture-body assertions remain out of scope because the prior review classified them as non-blocking scope expansion.
 
 Verification: `npm run check` passed after the corrections, including validate, prose lint, pipeline tests, all artifact gates, Vitest, typecheck, production build, and advisory lint.
+
+## Round 4 review (2026-07-16)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only history and `git log -p -- content/critiques/delegation.md`, the current MDX, `DelegationFigure.tsx`, `DelegationWidget.tsx`, all delegation artifact and fixture files, the research backbone, and the linked Anthropic, Claude Code, Liu et al., Chroma, Cognition, OpenAI Agents SDK, and LangChain primary sources. Ran `npm run check` successfully, including validation, every artifact gate, Vitest, typecheck, production build, and lint; independently ran the delegation artifact's `--compare`, `--show-boundary`, `--leak`, `--test`, and no-key `--live` fallback. Re-verified every REQUIRED correction from Rounds 1–3 against the current artifacts and sources. The chapter is factually sound and runnable, but its two signature teaching mechanisms still have a material accessibility failure.
+
+## Required fixes
+
+1. **`src/chapters/_figures/DelegationFigure.tsx` and `src/chapters/_widgets/DelegationWidget.tsx` --- essential instructional labels use insufficient contrast.** Both render `--comment` (`#55707b`) over `--surface` / `--surface-2` (`#10171a` / `#141d21`), which computes to 3.44:1 and 3.25:1. The [W3C normal-text requirement](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) is 4.5:1, and these labels are only 8–11px. They are not decorative chrome: the figure uses them for the boundary, down/up channel qualification, low/high context, and the compression conclusion (`DelegationFigure.tsx:36,48-51,68-75,80,84,91,97,104-105`); the widget uses them for the return-contract label, worker/lead state, changing token totals, `context used`, and the lab conclusion (`DelegationWidget.tsx:54,112,130,145-148,157,165,168-170,201-204`). This prevents low-vision readers from using the visual mechanism that teaches isolation. Use `--fg-muted` / `text-muted` (5.52:1 on `--surface`, 5.21:1 on `--surface-2`) or another passing token for informational labels; reserve `--comment` for genuinely decorative material.
+
+## Advisories
+
+- `src/chapters/delegation.mdx:106-108` calls briefing quality Anthropic's "single most important lesson," while the cited post calls prompt engineering its primary lever and presents delegation guidance as one principle. Soften the ranking if that prose is otherwise being touched.
+- `src/chapters/delegation.mdx:64-66,141-143` models the return as an Agent tool result. That is valid for foreground use, but current Claude Code runs subagents in the background by default and returns their result through a completion notification. Naming the model foreground would remove the ambiguity; this does not undermine the chapter's boundary lesson.
