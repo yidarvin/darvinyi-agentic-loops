@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -111,3 +111,96 @@ open. This round records only new defects, without re-litigating those findings.
 ## Advisories
 - `src/chapters/mcp-security-surface.mdx:95` and `docs/research/ch09-mcp-security-surface.md:28` date CyberArk's Full-Schema and Advanced Tool Poisoning report to June 2025. The primary [CyberArk post](https://www.cyberark.com/resources/threat-research-blog/poison-everywhere-no-output-from-your-mcp-server-is-safe) is dated May 30, 2025. “Late May 2025” is exact.
 - `src/chapters/mcp-security-surface.mdx:98-101` should narrow “no static analysis of tool definitions can catch it” to static catalog or metadata inspection. A runtime-only payload is absent from the definition, but static analysis of the tool's own source or logic can still be useful.
+
+## Builder resolution (2026-07-15)
+Regression gate: re-verified Rounds 1 through 4 against the current chapter, figure,
+widget, research reference, and runnable artifact. Round 1 had no required fixes. The six
+Round 2 fixes remain true: the authorization profile no longer presents RFC 8693 as
+mandatory, trusted controls remain outside the provider, the deputy flow checks ingress and
+does not transit the client token, exact scopes remain enforced, artifact fidelity now exceeds
+the earlier simulation, and the prior source repairs remain present. Every Round 3 and Round
+4 required fix is implemented below.
+
+1. Replaced the simulation-only artifact with a real local MCP stdio server pair in
+   artifacts/ch09-mcp-security-surface/security_mcp.py,
+   vulnerable_mcp_server.py, and hardened_mcp_server.py. Both endpoints implement
+   initialize, notifications/initialized, tools/list, and tools/call over JSON-RPC. The
+   deterministic client and check suite drive attacks through those MCP methods and also
+   start both entrypoints as subprocesses.
+2. Recast attack 2 as a reviewed-baseline rug pull in the artifact, README, widget, and
+   chapter. The hardened host now pins a canonical complete tool definition, quarantines
+   unknown descriptors, and detects a changed input schema even when a scanner has no match.
+   The scanner remains a diagnostic backstop, while onboarding review and allowlisting cover
+   initial tool poisoning.
+3. Moved untrusted-result provenance into the trusted gateway. The gateway marks a session
+   tainted before returning an untrusted provider result, and a direct MCP tools/call
+   regression sequence proves the egress gate cannot be bypassed by omitting an agent flag.
+4. Derived World scoreboard secrets from all modeled private values, including the fake
+   .env value and billing record, and added an assertion for each modeled secret.
+5. Preserved the no-transit authorization invariant with protocol-level tests for a distinct
+   downstream billing token, exact scope membership, near-match rejection, ingress audience
+   validation, and the absence of a downstream call on the injected billing path.
+6. Qualified the MCPTox and The Attacker Moves Second claims in the chapter and research
+   reference to their stated evaluated settings and tested defenses.
+7. Completed the consequential evidence trail: added Oligo, JFrog, Prompt Overflow, and
+   Noma links; removed the unsupported longitudinal claim; and scoped the Rule-of-Two
+   limitation to Noma's cited analysis.
+8. Removed the unsupported JWT-from-.env claim from the toxic-agent example and research
+   reference. The artifact's fake .env value remains only a local scoreboard fixture.
+9. Recast cross-server isolation as a host/context boundary, de-attributed the two-resource
+   server example as illustrative, took the two low-cost wording advisories, and corrected
+   CyberArk's date to late May 2025.
+
+Verification: bash artifacts/ch09-mcp-security-surface/check.sh and npm run check pass.
+
+## Builder resolution (2026-07-15)
+Follow-up regression gate: re-verified every required fix from Rounds 1 through 4 against
+the current chapter, figure, widget, research reference, README, and MCP server pair. The
+prior fixes still hold. This pass also closed three material artifact regressions discovered
+during the final chapter-scoped self-review.
+
+1. Made output provenance a policy owned by `TrustedHostGateway` in
+   `artifacts/ch09-mcp-security-surface/security_mcp.py`. Every result from a modeled
+   untrusted provider now taints the hardened session before it reaches the client. A forged
+   provider provenance marker cannot clear that taint, and the direct protocol regression
+   confirms the egress gate leaves `World.exfiltrated` empty.
+2. Made `tools/call` validate the provider's currently advertised input schema, including
+   scalar types and enum values, then let the trusted catalog boundary quarantine unapproved
+   descriptors. The lab now accepts valid dynamic schemas where the vulnerable endpoint
+   advertises them, returns `-32602` rather than crashing on a malformed URL, and proves the
+   same session remains usable after that error.
+3. Made the confused-deputy simulation truthful about issuer-only validation. `BillingAPI`
+   always checks the deterministic trusted issuer; only the vulnerable path omits audience
+   and resource-scope checks. The hardened path still validates ingress audience, denies the
+   injected billing operation before a downstream call, and mints a distinct least-privilege
+   billing token for `read_orders`.
+4. Removed the remaining uncited 2026 longitudinal rates from
+   `docs/research/ch09-mcp-security-surface.md` and states the limitation instead of implying
+   a comparable longitudinal result.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes, and `npm run check`
+passes validation, prose lint, pipeline tests, all artifact checks, 25 Vitest tests, the
+production build, and lint.
+
+## Builder resolution (2026-07-15)
+Follow-up regression gate: re-verified every required fix from Rounds 1 through 4 against
+the current chapter, figure, widget, research reference, README, and MCP server pair.
+Round 1 had no required fixes. The Round 2 trusted-boundary, authorization, and source
+repairs remain true; the Round 3 catalog-integrity, provenance, scoreboard, empirical-scope,
+and evidence repairs remain true; and the Round 4 real-server, factual, isolation-boundary,
+and illustrative-example repairs remain true.
+
+1. Corrected MCP lifecycle version negotiation in
+   `artifacts/ch09-mcp-security-surface/security_mcp.py`. An unsupported requested revision
+   now receives a normal `initialize` response advertising the server's supported
+   `2025-11-25` revision, and the deterministic suite verifies that a client which accepts
+   that revision can proceed to `tools/list`.
+2. Expanded `artifacts/ch09-mcp-security-surface/mcp_security.py` so its deterministic gate
+   launches both stdio entrypoints and drives every one of the four attacks through the MCP
+   lifecycle and `tools/call`, proving vulnerable leaks and hardened no-leak outcomes on the
+   executable pair rather than only the in-memory core.
+3. Clarified the chapter and artifact README: the walkthrough uses the same JSON-RPC server
+   core, while `--test` drives each attack through the executable stdio endpoints; the
+   reviewed catalog remains the explicit baseline for the rug-pull scenario.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` and `npm run check` pass.
