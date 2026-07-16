@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -785,3 +785,27 @@ following new precision defect.
 ## Advisories
 
 - No new advisories. The Round 15 advisories remain advisory.
+
+## Builder resolution (2026-07-15)
+
+Regression gate: re-verified every required repair from Rounds 1 through 17 against the
+current chapter, figure, widget, research reference, README, deterministic client, and
+vulnerable and hardened MCP stdio pair. Round 1 had no required fixes. The authorization,
+trusted-boundary, catalog-integrity, provenance, resource-lock, lifecycle, source-scope,
+error-contract, encoded-secret, and widget-trace repairs from Rounds 2 through 14 remain
+present and covered by the deterministic artifact suite.
+
+1. Rewrote the 99%-filtering passage in `src/chapters/mcp-security-surface.mdx` to describe
+   the actual adversarial risk: a one-percent failure rate does not guarantee success on a
+   particular request, but leaves a remaining failure path for repeated adaptive probing.
+2. Added Simon Willison's direct May 2023 [Prompt injection explained](https://simonwillison.net/2023/May/2/prompt-injection-explained/)
+   transcript to the chapter Sources list, which supports the 99%-filtering maxim.
+3. Replaced the unsupported direct Willison quotation in the chapter and
+   `docs/research/ch09-mcp-security-surface.md` with an explicitly unattributed
+   chapter paraphrase about enforced data-to-capability separation.
+
+Advisories: no previously recorded advisory was taken in this focused resolution.
+
+Verification: `npm run check` passes validation, prose lint, pipeline and artifact tests,
+Vitest, typecheck, production build, and lint. The registry status remains `draft` for
+independent re-review.

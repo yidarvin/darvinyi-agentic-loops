@@ -27,9 +27,10 @@ puts attacker-controlled instructions into a trusted execution context that hold
 tools and real credentials. The useful mental model is taint tracking. Treat any
 exposure to untrusted content as a taint event. Once the agent ingests attacker-controlled
 tokens, assume everything derived on that turn is compromised, and block any action that
-could send data out. Willison's summary of the stakes is worth keeping in view: in
-application security, 99% is a failing grade. A defense that stops the attack 99 times out
-of 100 is a defense the attacker beats on the hundredth try, every time.
+could send data out. Willison's security framing is worth keeping in view: 99% filtering is
+a failing grade when it leaves an adaptive attacker a remaining failure case to keep
+probing. A one-percent failure rate does not make a particular attempt certain to succeed,
+but it leaves a consequential path for repeated adversarial search.
 
 ## The lethal trifecta
 
@@ -233,8 +234,8 @@ privileged model symbolic variables instead of the raw or tainted text. CaMeL (a
 from the trusted query, uses a restricted interpreter, and enforces capability policy at
 tool calls. Under its interpreter, policy, and threat assumptions, it reports provable
 security on 77% of AgentDojo tasks against 84% undefended, a real utility cost for a bounded
-guarantee. As Willison puts it, "this data cannot reach that capability" beats "this prompt
-is probably fine."
+guarantee. For a sensitive flow, enforcing that tainted data cannot reach a capability is
+stronger than estimating that a prompt is probably benign.
 Description integrity addresses the post-approval rug-pull gap: Trail of Bits'
 mcp-context-protector blocks a newly seen server pending manual review of its instructions,
 descriptions, and parameter descriptions, then pins that reviewed configuration and checks
@@ -334,6 +335,7 @@ longer do as a result.
 ## Sources
 
 - Simon Willison: [Prompt injection](https://simonwillison.net/2022/Sep/12/prompt-injection/),
+  [Prompt injection explained](https://simonwillison.net/2023/May/2/prompt-injection-explained/),
   [the Dual LLM pattern](https://simonwillison.net/2023/Apr/25/dual-llm-pattern/), and
   [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/).
 - Invariant Labs: [the GitHub MCP toxic-agent flow](https://invariantlabs.ai/blog/mcp-github-vulnerability),
