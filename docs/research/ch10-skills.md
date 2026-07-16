@@ -30,11 +30,12 @@ surface-specific reserved-vendor-word restrictions on `name` and XML-tag
 restrictions on `name` and `description`, plus third-person authoring guidance. Below is a
 Markdown body of
 instructions/workflows/examples. Optional top-level fields (`license`, `compatibility`,
-and the free-form `metadata` map) are recognized but rarely needed. Put a version in
-`metadata` when you need one. Claude Code extends the
-frontmatter substantially (see plugins section): `allowed-tools`,
-`disable-model-invocation`, `user-invocable`, `context: fork`, `model`,
-`effort`, `paths`, `hooks`.
+experimental `allowed-tools` with implementation-varying support, and the free-form
+`metadata` map) are recognized but rarely needed. Put a version in `metadata` when you
+need one. Claude Code gives `allowed-tools` additional pre-approval semantics: listed
+tools can run without per-use approval while the Skill is active. Its further frontmatter
+extensions (see plugins section) include `disable-model-invocation`, `user-invocable`,
+`context: fork`, `model`, `effort`, `paths`, and `hooks`.
 
 **Folder structure:**
 ```

@@ -30,7 +30,7 @@ export function SkillsFigure() {
         </marker>
       </defs>
 
-      <text x="22" y="20" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
+      <text x="22" y="20" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg-muted)">
         {"// progressive disclosure: actual listing, regular session, preloaded-subagent exception"}
       </text>
 

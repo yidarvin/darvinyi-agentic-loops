@@ -181,7 +181,7 @@ export function SkillsWidget() {
         aria-label="Actual Claude Code skill listing"
         className="flex flex-wrap items-center gap-1 font-mono text-[0.7rem]"
       >
-        <span className="mr-1 text-comment">{"// actual listing"}</span>
+        <span className="mr-1 text-muted">{"// actual listing"}</span>
         {LISTING_MODES.map(({ key, label }) => (
           <button
             key={key}
@@ -197,7 +197,7 @@ export function SkillsWidget() {
           </button>
         ))}
       </div>
-      <p className="mt-1 font-mono text-[0.66rem] text-comment">
+      <p className="mt-1 font-mono text-[0.66rem] text-muted">
         {`// ${listing.summary}`}
       </p>
 
@@ -229,7 +229,7 @@ export function SkillsWidget() {
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {/* SKILL.md itself: resource directives select the bundled file they name */}
         <div className="overflow-hidden rounded border border-border bg-surface-2">
-          <div className="border-b border-border px-3 py-1.5 font-mono text-[0.7rem] text-comment">
+          <div className="border-b border-border px-3 py-1.5 font-mono text-[0.7rem] text-muted">
             {"// SKILL.md excerpts · changelog-entry/"}
           </div>
           <pre className="overflow-x-auto p-2 font-mono text-[0.72rem] leading-relaxed">
@@ -270,7 +270,7 @@ export function SkillsWidget() {
             })}
           </pre>
           <div className="border-t border-border px-3 py-2 font-mono text-[0.68rem]">
-            <div className="text-comment">{"// bundled package files · select one to trace its SKILL.md directive"}</div>
+            <div className="text-muted">{"// bundled package files · select one to trace its SKILL.md directive"}</div>
             <div role="group" aria-label="Bundled package files" className="mt-1 flex flex-wrap gap-1">
               {BUNDLED_RESOURCES.map(({ key, path }) => {
                 const active = selected === key;
@@ -311,15 +311,15 @@ export function SkillsWidget() {
 
           <dl className="mt-3 space-y-2 font-mono text-[0.7rem]">
             <div>
-              <dt className="text-comment">{"// loaded when"}</dt>
+              <dt className="text-muted">{"// loaded when"}</dt>
               <dd className="mt-0.5 text-fg/90">{profile.when}</dd>
             </div>
             <div>
-              <dt className="text-comment">{"// token cost"}</dt>
+              <dt className="text-muted">{"// token cost"}</dt>
               <dd className="mt-0.5 text-fg/90">{profile.cost}</dd>
             </div>
             <div>
-              <dt className="text-comment">{"// enters the window"}</dt>
+              <dt className="text-muted">{"// enters the window"}</dt>
               <dd className="mt-0.5 text-fg/90">{profile.enters}</dd>
             </div>
           </dl>
@@ -327,14 +327,14 @@ export function SkillsWidget() {
           <p className="mt-3 font-sans text-sm leading-relaxed text-fg/80">{profile.role}</p>
 
           {profile.pointer && (
-            <p className="mt-2 rounded border border-border bg-surface-2 px-2 py-1.5 font-mono text-[0.66rem] leading-relaxed text-comment">
+            <p className="mt-2 rounded border border-border bg-surface-2 px-2 py-1.5 font-mono text-[0.66rem] leading-relaxed text-muted">
               {profile.pointer}
             </p>
           )}
         </div>
       </div>
 
-      <p className="mt-3 font-mono text-[0.7rem] text-comment">
+      <p className="mt-3 font-mono text-[0.7rem] text-muted">
         {descriptionOmitted
           ? `// ${listingMode}: this skill's name remains listed, but its description is off-window and cannot supply routing keywords.`
           : selected === "body"

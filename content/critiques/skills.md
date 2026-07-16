@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -1022,3 +1022,31 @@ critique.
 
 - No new advisories. The still-relevant screen-reader announcement improvement remains
   recorded in Round 24.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and its git patch history, then
+re-verified every REQUIRED correction from Rounds 1 through 25 against the current chapter,
+figure, widget, research backbone, and complete `artifacts/ch10-skills` package. The prior
+portable-versus-surface split, progressive-disclosure paths, listing and lifecycle model,
+installed validator, parser boundaries, terminal-safe input path, and full-bundle security
+model remain intact. The chapter remains `draft`; this resolution grants no approval.
+
+1. **Portable `allowed-tools` classification.** Updated
+   `docs/research/ch10-skills.md` to list `allowed-tools` as an experimental portable
+   optional field with implementation-varying support. It now distinguishes that contract
+   from Claude Code's added pre-approval semantics for listed tools.
+2. **Teaching-label contrast.** Updated the essential progressive-disclosure labels in
+   `SkillsFigure.tsx` and `SkillsWidget.tsx` from the low-contrast comment color to
+   `--fg-muted` / `text-muted`, which meets the cited contrast threshold on both card
+   backgrounds. Decorative code-comment treatment remains scoped to nonessential chrome.
+3. **Malformed UTF-8 failure boundary.** Updated
+   `artifacts/ch10-skills/skills_lab.py` so `load_skill()` catches UTF-8 decoding and file
+   read failures and returns a concise nonzero `SKILL.md` diagnostic. Added a black-box
+   public `--validate` regression that writes an invalid byte, requires the UTF-8 diagnostic,
+   and rejects a traceback.
+
+Advisories taken: none in this resolution.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 112 assertions, including the
+new malformed-UTF-8 boundary. `npm run check` passes all seven stages.

@@ -354,8 +354,13 @@ def load_skill(skill_dir: str):
     path = os.path.join(skill_dir, "SKILL.md")
     if not os.path.isfile(path):
         return None, f"no SKILL.md in {skill_dir}"
-    with open(path, "r", encoding="utf-8") as fh:
-        text = fh.read()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except UnicodeDecodeError:
+        return None, f"cannot read {path}: SKILL.md must be valid UTF-8"
+    except OSError as exc:
+        return None, f"cannot read {path}: {exc}"
     meta, body, has_frontmatter, parse_errors = parse_frontmatter(text)
     return {
         "meta": meta,
@@ -936,6 +941,17 @@ def run_tests() -> int:
                 fh.write(document)
             return run_lab_quiet("--validate", skill_dir)
 
+    def public_validate_bytes(
+        document: bytes, directory_name: str = "supported-skill"
+    ) -> subprocess.CompletedProcess[str]:
+        """Exercise the public validator with a byte-level SKILL.md boundary."""
+        with tempfile.TemporaryDirectory(prefix="skills-lab-public-validator-") as temp_dir:
+            skill_dir = os.path.join(temp_dir, directory_name)
+            os.mkdir(skill_dir)
+            with open(os.path.join(skill_dir, "SKILL.md"), "wb") as fh:
+                fh.write(document)
+            return run_lab_quiet("--validate", skill_dir)
+
     def public_validate(frontmatter: str) -> subprocess.CompletedProcess[str]:
         """Exercise the public validator with a name matching its temp directory."""
         return public_validate_document(
@@ -959,6 +975,19 @@ def run_tests() -> int:
     check(
         "malformed plain YAML scalar fails through the public validator",
         malformed_cli.returncode != 0 and "ERROR P0" in malformed_cli.stdout,
+    )
+    invalid_utf8_cli = public_validate_bytes(
+        b"---\n"
+        b"name: supported-skill\n"
+        b"description: Formats entries. Use when adding one.\xff\n"
+        b"---\n"
+        b"# Body\n"
+    )
+    check(
+        "invalid UTF-8 fails through the public validator without a traceback",
+        invalid_utf8_cli.returncode != 0
+        and "SKILL.md must be valid UTF-8" in invalid_utf8_cli.stdout
+        and "Traceback" not in (invalid_utf8_cli.stdout + invalid_utf8_cli.stderr),
     )
     no_space_mapping_cli = public_validate(
         "name:supported-skill\n"
