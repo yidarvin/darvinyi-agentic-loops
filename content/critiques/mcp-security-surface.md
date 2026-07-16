@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -714,3 +714,74 @@ Advisories: no unrelated advisory changes were taken.
 Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes all deterministic
 artifact regressions, including the new encoded-secret, source-plan alignment, and invalid-ID
 cases. `npm run check` passes. The registry status remains `draft` for independent re-review.
+
+## Round 15 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, Chapter 9 notes and research reference, the full chapter MDX, figure, widget, and
+every Chapter 9 artifact file. Re-verified the resolved Rounds 2 through 14 authorization,
+trusted-boundary, catalog-integrity, provenance, resource-lock, lifecycle, source-scope,
+error-contract, encoded-secret, and widget-trace repairs against the current artifacts. Ran
+`bash artifacts/ch09-mcp-security-surface/check.sh` and `npm run check`; both pass, including
+the real stdio pair, deterministic attack regressions, Vitest, typecheck, production build,
+and lint. Spot-checked the current MCP Authorization, Security Best Practices, and Tools
+specifications; MCPTox; CaMeL; Cato's EchoLeak analysis; and the listed Willison sources. I
+also searched Willison's site for the quoted capability contrast. A rendered-browser pass was
+not available in this environment, so the visual review relied on the SVG source and successful
+production build. The new attribution defect below is not a re-litigation of a prior finding.
+
+## Required fixes
+
+1. **`src/chapters/mcp-security-surface.mdx:236-237` and `docs/research/ch09-mcp-security-surface.md:78` --- remove or substantiate the direct quotation attributed to Simon Willison.** The chapter says, “As Willison puts it, ‘this data cannot reach that capability’ beats ‘this prompt is probably fine.’” The listed Willison sources and his CaMeL analysis support the surrounding distinction between probabilistic detection and capability-constrained flow enforcement, but do not contain that quotation. The exact phrase also does not resolve in a site search. Recast it as this chapter's own paraphrase without quotation marks and attribution, or add the precise source where Willison used those words. Source checked: [CaMeL offers a promising new direction](https://simonwillison.net/2025/Apr/11/camel/), especially its capability-tracking account and its discussion of probabilistic detection.
+
+## Advisories
+
+- **`src/chapters/mcp-security-surface.mdx:20-23` --- soften the absolute model-boundary wording.** Roles and provenance can exist, but they are not a reliable hard code/data separation. “No plane” and “wherever it finds them” overstate that narrower, well-supported claim.
+- **`artifacts/ch09-mcp-security-surface/README.md:78-82` --- disclose the deliberate `repo="~"` exception to resource locking.** The lab intentionally permits the fake home-directory read in attacks 2 and 4 so the egress control remains observable. The current wording says every repository-addressed read is session-locked, which suggests broader coverage than the model demonstrates.
+- **`artifacts/ch09-mcp-security-surface/mcp_security.py:612-625` --- document or decouple the test's repository-layout dependency.** The deterministic test reads the chapter widget source outside the artifact directory. It is deterministic in this repository, but the artifact is not fully standalone if copied elsewhere.
+- **`src/chapters/_figures/McpSecuritySurfaceFigure.tsx:66-70` --- describe a rendered markdown image as an external sink or renderer, not necessarily a legitimate tool.** This preserves the EchoLeak example while keeping the conceptual model vendor-neutral.
+
+## Round 16 review (2026-07-15)
+
+Independent source follow-up: read the current chapter, research reference, full critique
+history, figure, widget, and runnable artifact. Re-ran
+`bash artifacts/ch09-mcp-security-surface/check.sh` and `npm run check`; both pass. The
+current Round 15 quotation finding remains open and is not re-litigated here. I checked each
+of the three Willison links currently listed in the chapter's Sources section, then checked
+his direct May 2023 transcript. This round records one separate missing-source-link defect.
+
+## Required fixes
+
+1. **`src/chapters/mcp-security-surface.mdx:30-32` and `:336-338` --- add the direct source for the Willison-attributed "99% is a failing grade" maxim, or remove or recast the attribution.** None of the three currently listed Willison sources, the September 2022 prompt-injection post, the April 2023 Dual LLM post, and the June 2025 lethal-trifecta post, contains the maxim. It is supported by Willison's [Prompt injection explained](https://simonwillison.net/2023/May/2/prompt-injection-explained/), whose transcript states that 99% filtering is a failing grade in security. The project rubric requires a source link for this consequential attribution.
+
+## Advisories
+
+- No new advisories. Round 15's advisories remain advisory.
+
+## Round 17 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, Chapter 9 notes and research reference, the full chapter, figure, widget, and
+every Chapter 9 artifact file. Ran `npm run check`, which passed validation, prose lint,
+all artifact checks, Vitest, typecheck, production build, and lint. I also checked the
+current MCP 2025-11-25 Authorization and Tools specifications, Cato's EchoLeak account,
+and Willison's May 2023 prompt-injection transcript. The outstanding Round 15 and Round
+16 attribution fixes remain open and are not re-litigated here. This round records the
+following new precision defect.
+
+## Required fixes
+
+1. **`src/chapters/mcp-security-surface.mdx:30-32` --- replace the deterministic
+   probability claim in the 99%-filtering example.** “A defense that stops the attack 99
+   times out of 100 is a defense the attacker beats on the hundredth try, every time”
+   turns a one-percent failure rate into a guaranteed breach on a particular attempt. That
+   is not what the number means: under independent trials, success by 100 attempts is about
+   63%, not certain, and the security point is instead that an adaptive attacker can keep
+   probing for a remaining failure case. Willison's actual account says adversaries keep
+   picking away at the one percent, not that the hundredth request deterministically wins.
+   Rewrite this as a precise adversarial-risk statement while retaining the linked source:
+   [Prompt injection explained](https://simonwillison.net/2023/May/2/prompt-injection-explained/).
+
+## Advisories
+
+- No new advisories. The Round 15 advisories remain advisory.
