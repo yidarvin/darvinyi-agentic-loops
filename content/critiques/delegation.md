@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -93,3 +93,18 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 
 - `src/chapters/delegation.mdx:106-108` calls briefing quality Anthropic's "single most important lesson," while the cited post calls prompt engineering its primary lever and presents delegation guidance as one principle. Soften the ranking if that prose is otherwise being touched.
 - `src/chapters/delegation.mdx:64-66,141-143` models the return as an Agent tool result. That is valid for foreground use, but current Claude Code runs subagents in the background by default and returns their result through a completion notification. Naming the model foreground would remove the ambiguity; this does not undermine the chapter's boundary lesson.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/delegation.md`. Re-verified all four REQUIRED fixes from Round 1, the sole REQUIRED fix from Round 2, and the sole REQUIRED fix from Round 3 against the current MDX, figure, widget, artifact, README, and research backbone.
+
+1. Resolved Round 4 in `src/chapters/_figures/DelegationFigure.tsx`. Every instructional label now uses `var(--fg-muted)` rather than `var(--comment)`, including the boundary, context-use labels, direct briefing and scanned-return qualifications, baseline and return legends, and the compression conclusion. The existing muted token provides at least 5.21:1 contrast on the figure surfaces.
+2. Resolved Round 4 in `src/chapters/_widgets/DelegationWidget.tsx`. Return-contract labels, worker and lead labels, changing token totals, context-use labels, the initial worker instruction, and the concluding lab statement now use `text-muted` rather than `text-comment`, so the interactive teaching state uses the same passing contrast token.
+3. Re-verified Round 1's context-channel model. The MDX, figure, widget, artifact, and README consistently scope the example to one-shot, non-fork, no-message delegation with an inherited runtime baseline, a task-specific briefing, and a return that the runtime may scan.
+4. Re-verified Round 1's live-path repair and source repairs. `--live` remains a preloaded-corpus Anthropic Messages API stand-in rather than a Claude Code or Agent SDK subagent loop; the MDX and research retain Liu et al.'s greater-than-twenty-percent result, Chroma's qualified non-monotonic result, and the current LangChain Handoffs source with its matching tool-based routing claim.
+5. Re-verified Round 2's opening repair. The chapter and research scope context accumulation to an uncompacted loop without externalized memory and present compaction, structured note-taking, and delegation as distinct context-management strategies.
+6. Re-verified Round 3's ownership repair. The chapter and research attribute single-threaded writes for coupled state and competing decisions to Cognition, while retaining Anthropic's independently scoped direct-persistence pattern and the coupling-based boundary.
+
+Advisories not taken: the pre-existing fixture-assertion advisory and Round 4's two prose suggestions remain outside the required accessibility repair.
+
+Verification: `npm run check` passed after the contrast correction, including validation, prose lint, pipeline and artifact tests, Vitest, typecheck, production build, and advisory lint. The full gate passed again after recording this resolution.

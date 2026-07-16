@@ -51,7 +51,7 @@ function Turn({ label, tok, tone }: { label: string; tok: number; tone?: string 
   return (
     <li className="flex items-baseline justify-between gap-2 font-mono text-[0.68rem]">
       <span className={tone ?? "text-fg/80"}>{label}</span>
-      <span className="shrink-0 text-comment">{tok}</span>
+      <span className="shrink-0 text-muted">{tok}</span>
     </li>
   );
 }
@@ -109,7 +109,7 @@ export function DelegationWidget() {
           reset
         </button>
 
-        <span className="ml-1 font-mono text-[0.66rem] text-comment">{"// return contract:"}</span>
+        <span className="ml-1 font-mono text-[0.66rem] text-muted">{"// return contract:"}</span>
         {(["summary", "transcript"] as Contract[]).map((c) => (
           <button
             key={c}
@@ -127,7 +127,7 @@ export function DelegationWidget() {
         <div className="rounded border border-border bg-surface-2 p-3">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-[0.72rem] text-accent">{"// lead context"}</span>
-            <span className="font-mono text-[0.66rem] text-comment">the orchestrator</span>
+            <span className="font-mono text-[0.66rem] text-muted">the orchestrator</span>
           </div>
           <ul className="mt-2 space-y-1">
             <Turn label="system: you are the lead" tok={40} />
@@ -142,7 +142,7 @@ export function DelegationWidget() {
             )}
           </ul>
           <div className="mt-3">
-            <div className="mb-1 flex items-baseline justify-between font-mono text-[0.64rem] text-comment">
+            <div className="mb-1 flex items-baseline justify-between font-mono text-[0.64rem] text-muted">
               <span>context used</span>
               <span>{leadTokens} tok</span>
             </div>
@@ -154,7 +154,7 @@ export function DelegationWidget() {
         <div className="rounded border border-border bg-surface-2 p-3">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-[0.72rem] text-accent">{"// subagent context"}</span>
-            <span className="font-mono text-[0.66rem] text-comment">one-shot lab worker</span>
+            <span className="font-mono text-[0.66rem] text-muted">one-shot lab worker</span>
           </div>
           <ul className="mt-2 space-y-1">
             <Turn label="baseline: system, rules, git, skills" tok={110} />
@@ -162,10 +162,10 @@ export function DelegationWidget() {
             {WORK.slice(0, step).map((w, i) => (
               <Turn key={i} label={`· ${w.label}`} tok={w.tok} />
             ))}
-            {step === 0 && <li className="font-mono text-[0.66rem] text-comment">press run: watch it fill</li>}
+            {step === 0 && <li className="font-mono text-[0.66rem] text-muted">press run: watch it fill</li>}
           </ul>
           <div className="mt-3">
-            <div className="mb-1 flex items-baseline justify-between font-mono text-[0.64rem] text-comment">
+            <div className="mb-1 flex items-baseline justify-between font-mono text-[0.64rem] text-muted">
               <span>context used</span>
               <span>{subTokens} tok</span>
             </div>
@@ -198,7 +198,7 @@ export function DelegationWidget() {
         )}
       </div>
 
-      <p className="mt-3 font-mono text-[0.7rem] text-comment">
+      <p className="mt-3 font-mono text-[0.7rem] text-muted">
         {done && contract === "transcript"
           ? "// lab model: the return is a compression boundary. return a summary, not a transcript."
           : "// lab model: one-shot, non-fork, no messages. the worker baseline stays separate."}

@@ -27,35 +27,35 @@ export function DelegationFigure() {
         </marker>
       </defs>
 
-      <text x="22" y="24" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
+      <text x="22" y="24" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg-muted)">
         {"// delegation is a context-engineering move: the mess stays in the subagent"}
       </text>
 
       {/* the membrane */}
       <line x1="445" y1="58" x2="445" y2="500" stroke="var(--border)" strokeDasharray="3 5" />
-      <text x="445" y="52" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">the boundary</text>
+      <text x="445" y="52" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">the boundary</text>
 
       {/* ---- lead panel ---- */}
       <rect x="26" y="66" width="350" height="286" rx="9" fill="var(--surface)" stroke="var(--border)" />
       <text x="44" y="92" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)">{"// lead context"}</text>
-      <text x="44" y="107" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">the orchestrator</text>
+      <text x="44" y="107" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">the orchestrator</text>
 
       <text x="44" y="136" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">· plan → persisted to memory</text>
       <text x="44" y="158" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">· user query</text>
       <text x="44" y="180" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">· Agent(research) tool call</text>
       <text x="44" y="202" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">· synthesis → answer</text>
 
-      <text x="44" y="232" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">the subagent's reading</text>
-      <text x="44" y="245" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">never lands in this window</text>
+      <text x="44" y="232" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">the subagent's reading</text>
+      <text x="44" y="245" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">never lands in this window</text>
 
-      <text x="44" y="284" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">context used: low</text>
+      <text x="44" y="284" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--fg-muted)">context used: low</text>
       <rect x="44" y="290" width="310" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)" />
       <rect x="44" y="290" width="46" height="12" rx="3" fill="var(--accent)" fillOpacity="0.6" />
 
       {/* ---- subagent panel ---- */}
       <rect x="512" y="66" width="380" height="286" rx="9" fill="var(--surface)" stroke="var(--border)" />
       <text x="530" y="92" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)">{"// subagent context"}</text>
-      <text x="530" y="107" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">a worker: fresh, isolated window</text>
+      <text x="530" y="107" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">a worker: fresh, isolated window</text>
 
       <text x="530" y="132" fontFamily="var(--font-mono)" fontSize="8.8" fill="var(--fg)">· baseline: system + environment</text>
       <text x="530" y="148" fontFamily="var(--font-mono)" fontSize="8.8" fill="var(--fg)">· rules/memory · git snapshot · skills</text>
@@ -65,43 +65,43 @@ export function DelegationFigure() {
       <text x="530" y="220" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">· read cli.py, api.py      +tokens</text>
       <text x="530" y="238" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">· draft → revise → distill</text>
 
-      <text x="530" y="266" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">all this burns here,</text>
-      <text x="530" y="279" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">then it is discarded</text>
+      <text x="530" y="266" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">all this burns here,</text>
+      <text x="530" y="279" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">then it is discarded</text>
 
-      <text x="530" y="308" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">context used: high</text>
+      <text x="530" y="308" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--fg-muted)">context used: high</text>
       <rect x="530" y="314" width="344" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)" />
       <rect x="530" y="314" width="310" height="12" rx="3" fill="var(--accent-dim)" />
 
-      <text x="530" y="342" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">the lead may spawn 1..N of these, in parallel</text>
+      <text x="530" y="342" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--fg-muted)">the lead may spawn 1..N of these, in parallel</text>
 
       {/* ---- crossing channels ---- */}
       <text x="443" y="112" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--accent)">task-specific briefing</text>
       <line x1="376" y1="122" x2="504" y2="122" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#deleg-arrow)" />
-      <text x="443" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">direct lead input in lab model</text>
+      <text x="443" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8" fill="var(--fg-muted)">direct lead input in lab model</text>
 
       <text x="443" y="258" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--accent)">final report</text>
       <line x1="504" y1="268" x2="376" y2="268" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#deleg-arrow)" />
-      <text x="443" y="286" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8" fill="var(--comment)">runtime may scan it</text>
+      <text x="443" y="286" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8" fill="var(--fg-muted)">runtime may scan it</text>
 
       {/* ---- legend: what each channel carries ---- */}
       <rect x="26" y="372" width="430" height="120" rx="9" fill="var(--surface)" stroke="var(--border)" />
       <text x="44" y="396" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--accent)">{"// worker runtime baseline"}</text>
       <text x="44" y="418" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">system/env · rules/memory · git snapshot</text>
       <text x="44" y="435" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">preloaded skills</text>
-      <text x="44" y="462" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">briefing adds task-specific facts and boundaries</text>
+      <text x="44" y="462" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">briefing adds task-specific facts and boundaries</text>
 
       <rect x="466" y="372" width="426" height="120" rx="9" fill="var(--surface)" stroke="var(--border)" />
       <text x="484" y="396" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--accent)">{"// normal return"}</text>
       <text x="484" y="418" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">final report becomes an Agent tool result</text>
       <text x="484" y="435" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">runtime may scan or mark the report</text>
-      <text x="484" y="462" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">the lab compares distilled result vs transcript</text>
+      <text x="484" y="462" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg-muted)">the lab compares distilled result vs transcript</text>
 
       {/* ---- lesson band ---- */}
       <rect x="26" y="512" width="866" height="72" rx="8" fill="var(--surface)" stroke="var(--border)" />
       <text x="44" y="540" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--accent)">
         {"// isolation is the point; parallelism is the bonus."}
       </text>
-      <text x="44" y="564" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">
+      <text x="44" y="564" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg-muted)">
         {"if the subagent returns its full context instead of a distilled result, you pay the tokens twice and lose the whole benefit."}
       </text>
     </svg>
