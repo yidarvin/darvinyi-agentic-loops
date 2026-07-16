@@ -197,8 +197,8 @@ access that does not match the stated purpose. A skill that fetches an external 
 fresh instructions into the loop on every run, which is the [indirect injection](/mcp-security-surface)
 problem wearing a new coat, and a trusted skill can be compromised when its dependencies
 change under it. On Anthropic's surface, frontmatter metadata enters the system prompt.
-The platform separately disallows XML-like angle brackets in frontmatter. That is not a
-portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain
+The platform separately disallows XML-like angle brackets in `name` and `description`. That
+is not a portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain
 with an injection hidden in a URL parameter, then used intentionally permitted Files API
 egress to exfiltrate data. It involved no skill, integration, external or user-installed
 tool, or MCP server. The lesson is narrower and stronger:
@@ -238,12 +238,12 @@ directory can discover and trigger, complete with a `references/FORMAT.md` read 
 `scripts/` validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does
 three things the chapter describes. Its default teaching lint checks the bundle's supported
 portable subset: ASCII name syntax, directory matching, and description bounds. It rejects
-unsupported nonblank top-level YAML syntax instead of reporting malformed frontmatter as
-clean. It is not a general YAML or full-schema validator. For production, use the target
+malformed or unsupported YAML forms instead of reporting malformed frontmatter as clean. It
+is not a general YAML or full-schema validator. For production, use the target
 harness's maintained validator and a deployment gate. `skills-ref` is a demonstration-only
 reference implementation, useful for comparison but not production certification. An explicit
 Anthropic profile adds that surface's reserved-word and angle-bracket checks. Third-person
-phrasing, what-and-when coverage, and the 500-line budget remain labelled authoring warnings,
+phrasing, a concrete `when` cue, and the 500-line budget remain labelled authoring warnings,
 not portable failures. The lab models startup cost for listed, model-invocable skills in a
 regular session, makes the user-only exception visible, and offers a preloaded-subagent mode
 where named full skill bodies arrive at startup instead. Its discovery simulator is
@@ -251,7 +251,7 @@ deliberately illustrative: it uses a two-keyword proxy and prints a possible loa
 sequence, not evidence that a production model would trigger. A deliberately broken
 `bad-skill/` is included so you can watch the layers fail, and `--test` exercises the
 portable boundary cases, the surface profile, raw stdin validation, the installed-validator
-path, and both lifecycle modes.
+path, literal shell-syntax preservation, and both lifecycle modes.
 
 <RunnableArtifact
   name="skills_lab"

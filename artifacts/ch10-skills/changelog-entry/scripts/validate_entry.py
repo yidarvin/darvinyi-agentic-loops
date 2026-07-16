@@ -6,8 +6,7 @@ Because it is a script, the check is identical every time, and a harness can ret
 output without first loading this source into the model's context window.
 
 Usage:
-    python3 validate_entry.py "Added: --export flag to the CLI"
-    echo "Fixed: crash on startup" | python3 validate_entry.py
+    python3 validate_entry.py < /absolute/path/to/candidate-entry.txt
 
 Exit 0 and print OK when the entry is well formed; exit 1 and print a specific
 reason when it is not.
@@ -51,7 +50,10 @@ def read_stdin_entry() -> str:
 
 
 def main(argv: list[str]) -> int:
-    entry = " ".join(argv[1:]) if len(argv) > 1 else read_stdin_entry()
+    if len(argv) > 1:
+        print("FAIL: this validator reads one literal candidate from standard input; write it to a file and redirect that file into this command")
+        return 2
+    entry = read_stdin_entry()
     problem = validate(entry)
     if problem:
         print(f"FAIL: {problem}")

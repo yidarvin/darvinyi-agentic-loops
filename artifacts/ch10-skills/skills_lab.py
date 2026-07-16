@@ -20,10 +20,10 @@ Three ideas from the Skills chapter, made executable:
 No third-party packages, API key, or network are required. Python 3.9+ is required;
 Bash is required for the fresh-install smoke test and ``check.sh``. Token counts are
 estimates (~4 characters per token), and the discovery match is a two-keyword proxy rather
-than a production harness. The parser handles plain or basic quoted mappings and folded or
-literal block scalars used by this artifact. It rejects unsupported YAML collections,
-top-level syntax, and plain YAML forms that resolve to non-string values, rather than
-pretending to validate them.
+than a production harness. The parser handles this artifact's strict plain or basic quoted
+mappings, two-space continuations, and folded or literal block scalars. It rejects
+unsupported YAML collections, top-level syntax, non-printing frontmatter characters, and
+plain YAML forms that resolve to non-string values, rather than pretending to validate them.
 
 Usage:
     python3 skills_lab.py                              # overview of the bundled skill
@@ -33,7 +33,7 @@ Usage:
     python3 skills_lab.py --budget 3 --session preloaded
     python3 skills_lab.py --simulate "..."              # illustrative discovery path
     python3 skills_lab.py --simulate "..." --session preloaded
-    python3 skills_lab.py --entry "Added: X"            # run the bundled validator
+    python3 skills_lab.py --entry-file PATH              # run the bundled validator safely
     python3 skills_lab.py --test                        # assertions; non-zero on failure
 """
 from __future__ import annotations
@@ -60,7 +60,15 @@ EAGER_TOOL_CATALOG_EXAMPLE = 25_000
 # The full Agent Skills specification permits more YAML and Unicode lowercase names;
 # use the target harness's maintained validator before a production deployment.
 VALID_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-KEY_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$")
+# YAML requires separation space after a mapping colon when a value follows it.
+# Keep this teaching subset stricter than a general parser: an empty value may end at
+# the colon, but `name:foo` is never treated as a key-value mapping.
+KEY_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):(?: +(.*))?$")
+BLOCK_SCALAR_HEADER = re.compile(r"[>|]")
+UNSUPPORTED_PLAIN_PREFIX = re.compile(
+    r"^(?:[!&*]|[>|]|\[|\{|\]|\}|,|@|`|%|[-?:](?:\s|$))"
+)
+INLINE_COMMENT = re.compile(r"(?:^|\s)#")
 PERSON = re.compile(
     r"\b(?:i(?!/)(?:'m|'ve|'ll|'d)?|me|my|mine|you(?:'re|'ve|'ll|'d)?|your|yours|yourself)\b",
     re.IGNORECASE,
@@ -71,14 +79,37 @@ YAML_NUMBER = re.compile(
     r"[-+]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][-+]?[0-9_]+)?$"
     r"|[-+]?\.[0-9_]+(?:[eE][-+]?[0-9_]+)?$"
     r"|[-+]?\.(?:inf|nan)$"
-    r"|0[xo][0-9a-fA-F_]+$",
+    r"|0[xo][0-9a-fA-F_]+$"
+    r"|0b[01_]+$",
     re.IGNORECASE,
+)
+YAML_DATE_OR_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?: ?(?:Z|[+-]\d{2}:?\d{2}))?)?$"
 )
 
 
 # --------------------------------------------------------------------------- #
 # parsing
 # --------------------------------------------------------------------------- #
+def strip_yaml_comment(value: str) -> str:
+    """Remove a YAML inline comment from an unquoted scalar or block header."""
+    return INLINE_COMMENT.split(value, maxsplit=1)[0].rstrip()
+
+
+def has_tab_indentation(line: str) -> bool:
+    """YAML indentation uses spaces; a leading tab is unsupported in this subset."""
+    indentation = line[: len(line) - len(line.lstrip(" \t"))]
+    return "\t" in indentation
+
+
+def has_unsupported_control(text: str) -> bool:
+    """Keep non-printing bytes out of the teaching subset's accepted grammar."""
+    return any(
+        (ord(char) < 32 and char not in "\n\r") or ord(char) == 127
+        for char in text
+    )
+
+
 def parse_scalar(value: str, key: str, errors: list[str]) -> str:
     """Parse the teaching subset's plain and basic quoted scalar values."""
     if value.startswith(("[", "{")):
@@ -89,25 +120,51 @@ def parse_scalar(value: str, key: str, errors: list[str]) -> str:
     if not value.startswith(("'", '"')):
         # A YAML comment begins at a hash preceded by whitespace. Strip it before
         # checking scalar type, so `description: # explanation` remains empty.
-        value = re.split(r"(?:^|\s)#", value, maxsplit=1)[0].rstrip()
+        value = strip_yaml_comment(value)
         if not value:
             return ""
 
+        clear_digit_led_name = (
+            key == "name"
+            and VALID_NAME.fullmatch(value) is not None
+            and any(char.isalpha() or char == "-" for char in value)
+        )
+        if (
+            (not value[0].isascii() or not value[0].isalpha())
+            and not clear_digit_led_name
+        ) or UNSUPPORTED_PLAIN_PREFIX.match(value):
+            errors.append(
+                f"{key} has unsupported plain-scalar YAML syntax; quote it as a string"
+            )
+            return value
+
         lowered = value.casefold()
         if (
-            lowered in {"~", "null", "true", "false"}
+            lowered in {"~", "null", "true", "false", "yes", "no", "on", "off", "y", "n"}
             or YAML_NUMBER.fullmatch(value)
+            or YAML_DATE_OR_TIMESTAMP.fullmatch(value)
         ):
             errors.append(
                 f"{key} has a YAML non-string scalar; quote it as a string"
             )
             return ""
+        if re.search(r":(?:\s|$)", value):
+            errors.append(
+                f"{key} has unsupported plain-scalar YAML syntax; quote it as a string"
+            )
+            return value
         return value
     if value[0] == "'":
         if len(value) < 2 or not value.endswith("'"):
             errors.append(f"{key} has an unterminated single-quoted scalar")
             return value
-        return value[1:-1].replace("''", "'")
+        inner = value[1:-1]
+        # YAML escapes a literal apostrophe by doubling it. Reject any lone quote
+        # rather than accepting a malformed scalar as this subset's clean result.
+        if "'" in inner.replace("''", ""):
+            errors.append(f"{key} has invalid single-quoted scalar syntax")
+            return value
+        return inner.replace("''", "'")
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
@@ -116,66 +173,139 @@ def parse_scalar(value: str, key: str, errors: list[str]) -> str:
     if not isinstance(parsed, str):
         errors.append(f"{key} must be a string scalar")
         return value
+    if any(0xD800 <= ord(char) <= 0xDFFF for char in parsed):
+        errors.append(f"{key} has an invalid Unicode surrogate escape")
+        return value
     return parsed
 
 
 def parse_frontmatter(text: str):
     """Split a SKILL.md into (meta, body, has_frontmatter).
 
-    A minimal YAML reader: enough for plain or basic quoted scalar mappings, indented
-    continuation lines, and folded (``>``) or literal (``|``) block scalars used by
-    this bundle. It is deliberately not a general YAML implementation or complete
-    schema parser.
+    A minimal YAML reader: enough for letter-led plain or basic quoted scalar mappings,
+    two-space plain continuations, and bare folded (``>``) or literal (``|``) block
+    scalars with two-space content used by this bundle. It is deliberately not a general
+    YAML implementation or complete schema parser.
     """
+    preflight_errors = []
+    opening = re.match(r"\A---\r?\n", text)
+    closing = (
+        re.compile(r"^---\r?$", re.MULTILINE).search(text, opening.end())
+        if opening
+        else None
+    )
+    # Scan the raw frontmatter slice before splitlines() can reinterpret a forbidden
+    # control byte as a line boundary. The Markdown body is intentionally outside this
+    # frontmatter lint.
+    if closing and has_unsupported_control(text[opening.end():closing.start()]):
+        preflight_errors.append(
+            "unsupported control character; this teaching lint accepts printable frontmatter only"
+        )
+
     lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}, text, False, []
+    if not lines or lines[0] != "---":
+        return {}, text, False, preflight_errors
     end = None
     for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
+        if lines[i] == "---":
             end = i
             break
     if end is None:
-        return {}, text, False, []
+        return {}, text, False, preflight_errors
 
-    meta: dict[str, str] = {}
-    parse_errors: list[str] = []
-    unsupported_nested_keys: set[str] = set()
-    key = None
     frontmatter = lines[1:end]
+    meta: dict[str, str] = {}
+    parse_errors: list[str] = preflight_errors
+    key: Optional[str] = None
+    allows_plain_continuation = False
     i = 0
     while i < len(frontmatter):
         line = frontmatter[i]
+        if has_tab_indentation(line):
+            parse_errors.append(
+                "tab indentation is unsupported YAML syntax; this teaching lint accepts space indentation only"
+            )
+            i += 1
+            continue
         match = KEY_LINE.match(line)
         if match and not line[:1].isspace():
             key = match.group(1)
-            value = match.group(2).strip()
-            if re.fullmatch(r"[>|][1-9]?[+-]?|[>|][+-]?[1-9]?", value):
-                style = value[0]
+            value = (match.group(2) or "").strip()
+            allows_plain_continuation = False
+            if key in meta:
+                parse_errors.append(
+                    f"duplicate top-level field {key!r}; this teaching lint accepts each field once"
+                )
+            block_header = strip_yaml_comment(value)
+            if BLOCK_SCALAR_HEADER.fullmatch(block_header):
+                style = block_header[0]
                 block: list[str] = []
                 i += 1
                 while i < len(frontmatter) and (
                     not frontmatter[i].strip() or frontmatter[i][:1].isspace()
                 ):
-                    block.append(frontmatter[i].strip())
+                    block_line = frontmatter[i]
+                    if has_tab_indentation(block_line):
+                        parse_errors.append(
+                            "tab indentation is unsupported YAML syntax; this teaching lint accepts space indentation only"
+                        )
+                    elif block_line.strip():
+                        # This small parser accepts the artifact's two-space block
+                        # indentation only. More or less indentation might be valid
+                        # YAML in another context, but is unsupported here and must
+                        # not receive a clean result.
+                        indentation = len(block_line) - len(block_line.lstrip(" "))
+                        if indentation != 2:
+                            parse_errors.append(
+                                "block scalar content must use two-space indentation in this teaching subset"
+                            )
+                        else:
+                            block.append(block_line[2:])
+                    else:
+                        block.append("")
                     i += 1
                 if style == ">":
                     meta[key] = " ".join(part for part in block if part).strip()
                 else:
                     meta[key] = "\n".join(block).strip()
+                key = None
                 continue
             meta[key] = parse_scalar(value, key, parse_errors)
+            # Only an unquoted plain scalar may continue on indented lines in this
+            # subset. YAML quoted scalars need their closing quote on the same line;
+            # treating a following indented line as continuation would accept malformed
+            # frontmatter as clean.
+            allows_plain_continuation = (
+                bool(meta[key])
+                and not value.startswith(("'", '"'))
+                and not INLINE_COMMENT.search(value)
+            )
         elif key is not None and line[:1].isspace():
-            continuation = line.strip()
-            if (
-                continuation.startswith(("- ", "? ", ": ", "[", "{"))
-                or KEY_LINE.match(continuation)
-            ) and key not in unsupported_nested_keys:
+            indentation = len(line) - len(line.lstrip(" "))
+            continuation = line[indentation:].strip()
+            if not continuation or continuation.startswith("#"):
+                pass
+            elif indentation != 2:
                 parse_errors.append(
-                    f"{key} has unsupported nested YAML collection syntax; this teaching lint accepts scalar values only"
+                    f"{key} has unsupported indentation; this teaching lint accepts two-space plain continuations only"
                 )
-                unsupported_nested_keys.add(key)
-            meta[key] = (meta[key] + " " + continuation).strip()
+            elif not allows_plain_continuation:
+                parse_errors.append(
+                    f"{key} has unsupported nested YAML syntax; keep scalar values on the key line"
+                )
+            elif (
+                not continuation[0].isascii()
+                or not continuation[0].isalpha()
+                or continuation.startswith(("'", '"', "- ", "? ", ": ", "[", "{", "!", "&", "*", ">", "|", ",", "]", "}", "%", "@", "`"))
+                or re.search(r":(?:\s|$)", continuation)
+            ):
+                parse_errors.append(
+                    f"{key} has unsupported nested YAML syntax; this teaching lint accepts plain scalar continuations only"
+                )
+            else:
+                meta[key] = (meta[key] + " " + strip_yaml_comment(continuation)).strip()
+                if INLINE_COMMENT.search(continuation):
+                    allows_plain_continuation = False
         elif line.strip() and not line.lstrip().startswith("#"):
             parse_errors.append(
                 "unsupported top-level YAML syntax; this teaching lint accepts top-level key-value fields only"
@@ -215,12 +345,12 @@ def validate_skill(skill, surface: str = "portable") -> tuple[list, list]:
     warnings: list[tuple[str, str]] = []
     meta, body = skill["meta"], skill["body"]
 
+    for detail in skill.get("parse_errors", []):
+        errors.append(("P0", detail))
+
     if not skill["has_fm"]:
         errors.append(("P1", "no YAML frontmatter (the file must open with a --- fence)"))
         return errors, warnings
-
-    for detail in skill.get("parse_errors", []):
-        errors.append(("P0", detail))
 
     name = meta.get("name", "")
     description = meta.get("description", "")
@@ -413,15 +543,20 @@ def validator_path(skill) -> str:
     return os.path.join(skill["dir"], "scripts", "validate_entry.py")
 
 
-def run_entry(skill, entry: str) -> int:
-    """Run the bundled validator with the documented Python invocation."""
+def run_entry_file(skill, candidate_path: str) -> int:
+    """Run the validator with a candidate file, keeping data out of shell source."""
     script = validator_path(skill)
     if not os.path.isfile(script):
         print(f"no bundled validator at {script}")
         return 1
-    print(f"// runs python3 {script!r} {entry!r}")
-    proc = subprocess.run(["python3", script, entry], capture_output=True, text=True)
+    try:
+        with open(candidate_path, "r", encoding="utf-8", newline="") as candidate:
+            proc = subprocess.run(["python3", script], stdin=candidate, capture_output=True, text=True)
+    except OSError as exc:
+        print(f"cannot read candidate file {candidate_path!r}: {exc}")
+        return 1
     output = (proc.stdout + proc.stderr).strip()
+    print(f"// runs python3 {script!r} < {candidate_path!r}")
     print(f"  output: {output}")
     print(f"  exit:   {proc.returncode}   (output, not source, enters the model context)")
     return proc.returncode
@@ -622,6 +757,251 @@ def run_tests() -> int:
     malformed_errors, _ = validate_skill(malformed_skill)
     check("unsupported top-level YAML syntax trips P0", "P0" in codes(malformed_errors))
 
+    def public_validate_document(
+        document: str, directory_name: str = "supported-skill"
+    ) -> subprocess.CompletedProcess[str]:
+        """Exercise the public validator with an arbitrary temporary SKILL.md."""
+        with tempfile.TemporaryDirectory(prefix="skills-lab-public-validator-") as temp_dir:
+            skill_dir = os.path.join(temp_dir, directory_name)
+            os.mkdir(skill_dir)
+            with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write(document)
+            return run_lab_quiet("--validate", skill_dir)
+
+    def public_validate(frontmatter: str) -> subprocess.CompletedProcess[str]:
+        """Exercise the public validator with a name matching its temp directory."""
+        return public_validate_document(
+            "---\n"
+            "name: supported-skill\n"
+            + frontmatter
+            + "---\n"
+            "# Body\n"
+        )
+
+    def check_public_p0(label: str, frontmatter: str) -> None:
+        result = public_validate(frontmatter)
+        check(
+            label,
+            result.returncode != 0 and "ERROR P0" in result.stdout,
+        )
+
+    malformed_cli = public_validate(
+        "description: Formats entries: Use when adding one.\n"
+    )
+    check(
+        "malformed plain YAML scalar fails through the public validator",
+        malformed_cli.returncode != 0 and "ERROR P0" in malformed_cli.stdout,
+    )
+    no_space_mapping_cli = public_validate(
+        "name:supported-skill\n"
+        "description: Formats entries. Use when adding one.\n"
+    )
+    check(
+        "no-space YAML mapping fails through the public validator",
+        no_space_mapping_cli.returncode != 0 and "ERROR P0" in no_space_mapping_cli.stdout,
+    )
+    quoted_continuation_cli = public_validate(
+        "description: 'Formats entries.'\n"
+        "  Use when adding one.\n"
+    )
+    check(
+        "quoted scalar continuation fails through the public validator",
+        quoted_continuation_cli.returncode != 0 and "ERROR P0" in quoted_continuation_cli.stdout,
+    )
+    malformed_single_quote_cli = public_validate(
+        "description: 'It's a formatter. Use when adding one.'\n"
+    )
+    check(
+        "malformed single-quoted scalar fails through the public validator",
+        malformed_single_quote_cli.returncode != 0 and "ERROR P0" in malformed_single_quote_cli.stdout,
+    )
+    escaped_single_quote_cli = public_validate(
+        "description: 'It''s a formatter. Use when adding one.'\n"
+    )
+    check(
+        "escaped single-quoted scalar stays supported",
+        escaped_single_quote_cli.returncode == 0
+        and "clean: passes this lab's checked subset" in escaped_single_quote_cli.stdout,
+    )
+    digit_led_name_cli = public_validate_document(
+        "---\n"
+        "name: 1-skill\n"
+        "description: Formats entries. Use when adding one.\n"
+        "---\n"
+        "# Body\n",
+        "1-skill",
+    )
+    check(
+        "clear digit-led ASCII name stays supported",
+        digit_led_name_cli.returncode == 0
+        and "clean: passes this lab's checked subset" in digit_led_name_cli.stdout,
+    )
+    uneven_block_indent_cli = public_validate(
+        "description: >\n"
+        "   Formats entries.\n"
+        "  Use when adding one.\n"
+    )
+    check(
+        "uneven block indentation fails through the public validator",
+        uneven_block_indent_cli.returncode != 0 and "ERROR P0" in uneven_block_indent_cli.stdout,
+    )
+    inline_comment_continuation_cli = public_validate(
+        "description: Formats entries. # note\n"
+        "  Use when adding one.\n"
+    )
+    check(
+        "plain scalar continuation after an inline comment fails through the public validator",
+        inline_comment_continuation_cli.returncode != 0 and "ERROR P0" in inline_comment_continuation_cli.stdout,
+    )
+    dotted_nested_cli = public_validate(
+        "description: Formats entries.\n"
+        "  nested.key: Use when adding one.\n"
+    )
+    check(
+        "dotted nested mapping fails through the public validator",
+        dotted_nested_cli.returncode != 0 and "ERROR P0" in dotted_nested_cli.stdout,
+    )
+    check_public_p0(
+        "legacy octal-looking YAML number fails through the public validator",
+        "description: 0123\n",
+    )
+    check_public_p0(
+        "timestamp-looking YAML scalar fails through the public validator",
+        "description: 2026-07-16T12:34:56 +00\n",
+    )
+    control_character_cli = public_validate(
+        "description: Formats\x07 entries. Use when adding one.\n"
+    )
+    check(
+        "control character fails through the public validator",
+        control_character_cli.returncode != 0 and "ERROR P0" in control_character_cli.stdout,
+    )
+    splitline_control_cli = public_validate(
+        "description: Formats entries.\x0b  Use when adding one.\n"
+    )
+    check(
+        "line-splitting control character fails through the public validator",
+        splitline_control_cli.returncode != 0 and "ERROR P0" in splitline_control_cli.stdout,
+    )
+    lone_surrogate_cli = public_validate(
+        'description: "Formats entries. Use when adding \\uD800 one."\n'
+    )
+    check(
+        "lone Unicode surrogate escape fails through the public validator",
+        lone_surrogate_cli.returncode != 0 and "ERROR P0" in lone_surrogate_cli.stdout,
+    )
+    indented_open_fence_cli = public_validate_document(
+        "  ---\n"
+        "name: supported-skill\n"
+        "description: Formats entries. Use when adding one.\n"
+        "  ---\n"
+    )
+    check(
+        "indented opening fence cannot produce a clean result",
+        indented_open_fence_cli.returncode != 0 and "ERROR P1" in indented_open_fence_cli.stdout,
+    )
+    indented_block_fence_cli = public_validate_document(
+        "---\n"
+        "name: supported-skill\n"
+        "description: >\n"
+        "  Formats entries.\n"
+        "  ---\n"
+        "this is not YAML\n"
+        "---\n"
+        "# Body\n"
+    )
+    check(
+        "indented block fence cannot close frontmatter early",
+        indented_block_fence_cli.returncode != 0 and "ERROR P0" in indented_block_fence_cli.stdout,
+    )
+    body_tab_cli = public_validate_document(
+        "---\n"
+        "name: supported-skill\n"
+        "description: Formats entries. Use when adding one.\n"
+        "---\n"
+        "# Body\n"
+        "\tA literal tab belongs to the Markdown body, not frontmatter.\n"
+    )
+    check(
+        "Markdown-body tabs do not affect frontmatter validation",
+        body_tab_cli.returncode == 0
+        and "clean: passes this lab's checked subset" in body_tab_cli.stdout,
+    )
+    for style in (">", "|"):
+        block_comment_cli = public_validate(
+            f"description: {style} # supported YAML block comment\n"
+            "  Formats entries.\n"
+            "  Use when adding one.\n"
+        )
+        check(
+            f"{style} block scalar with a header comment stays supported",
+            block_comment_cli.returncode == 0
+            and "clean: passes this lab's checked subset" in block_comment_cli.stdout,
+        )
+    check_public_p0(
+        "block scalar modifiers fail through the public validator",
+        "description: >-\n  Formats entries. Use when adding one.\n",
+    )
+    for label, scalar in (
+        ("YAML anchor", "&summary Formats entries. Use when adding one."),
+        ("YAML tag", "!summary Formats entries. Use when adding one."),
+        ("YAML alias", "*summary"),
+    ):
+        check_public_p0(
+            f"unsupported {label} fails through the public validator",
+            f"description: {scalar}\n",
+        )
+    duplicate_cli = public_validate(
+        "description: Formats entries. Use when adding one.\n"
+        "description: Another description. Use when adding one.\n"
+    )
+    check(
+        "duplicate top-level fields fail through the public validator",
+        duplicate_cli.returncode != 0 and "ERROR P0" in duplicate_cli.stdout,
+    )
+    comment_only_nested_cli = public_validate("description:\n  # comment only\n")
+    check(
+        "comment-only nested description stays empty",
+        comment_only_nested_cli.returncode != 0 and "ERROR P6" in comment_only_nested_cli.stdout,
+    )
+    continuation_comment_cli = public_validate(
+        "description: Formats entries.\n"
+        "  # Use when adding one.\n"
+    )
+    check(
+        "plain-scalar continuation comments do not suppress a missing-when warning",
+        continuation_comment_cli.returncode == 0 and "warn  W2" in continuation_comment_cli.stdout,
+    )
+    check_public_p0(
+        "tab-indented YAML fails through the public validator",
+        "description: Formats entries.\n\tUse when adding one.\n",
+    )
+    check_public_p0(
+        "nested quoted scalar fails through the public validator",
+        "description:\n  \"Formats entries. Use when adding one.\"\n",
+    )
+    for label, scalar in (
+        ("malformed block header", "> Formats entries. Use when adding one."),
+        ("sequence indicator", "- Formats entries. Use when adding one."),
+        ("mapping indicator", "? Formats entries. Use when adding one."),
+        ("reserved comma indicator", ", Formats entries. Use when adding one."),
+        ("reserved closing-bracket indicator", "] Formats entries. Use when adding one."),
+        ("reserved percent indicator", "% Formats entries. Use when adding one."),
+    ):
+        check_public_p0(
+            f"unsupported {label} fails through the public validator",
+            f"description: {scalar}\n",
+        )
+    for label, scalar in (
+        ("legacy YAML boolean", "yes"),
+        ("binary YAML number", "0b101"),
+        ("YAML date", "2026-07-16"),
+    ):
+        check_public_p0(
+            f"non-string {label} fails through the public validator",
+            f"description: {scalar}\n",
+        )
+
     zero_budget = run_lab_quiet("--budget", "0")
     check("zero budget remains valid", zero_budget.returncode == 0)
     negative_budget = run_lab_quiet("--budget", "-1")
@@ -664,7 +1044,14 @@ def run_tests() -> int:
         bash_available = shutil.which("bash") is not None
         check("Bash is available for the documented install and check workflows", bash_available)
         if bash_available:
-            check("root-aware installed command works outside the skill directory", run_installed_workflow_quiet(good, "Added: root-aware path") == 0)
+            installed = run_installed_workflow_quiet(good, "Added: root-aware path")
+            check("root-aware installed command works outside the skill directory", installed.returncode == 0)
+            literal_shell_syntax = run_installed_workflow_quiet(good, "Added: $(printf injected)")
+            check(
+                "installed stdin workflow preserves literal shell syntax without executing it",
+                literal_shell_syntax.returncode == 0
+                and "OK: Added: $(printf injected)" in literal_shell_syntax.stdout,
+            )
             check(
                 "fresh Claude Code install creates its missing skill directory and runs outside it",
                 run_fresh_install_quiet("Added: fresh install path") == 0,
@@ -681,7 +1068,7 @@ def simulate_quiet(skill, request: str) -> bool:
 
 
 def run_entry_quiet(skill, entry: str) -> int:
-    proc = subprocess.run(["python3", validator_path(skill), entry], capture_output=True, text=True)
+    proc = subprocess.run(["python3", validator_path(skill)], input=entry, capture_output=True, text=True)
     return proc.returncode
 
 
@@ -692,24 +1079,28 @@ def run_entry_stdin_quiet(skill, entry: str) -> int:
     return proc.returncode
 
 
-def run_installed_workflow_quiet(skill, entry: str) -> int:
-    """Exercise the literal Claude Code path from a directory outside the skill."""
-    env = os.environ.copy()
-    env["CLAUDE_SKILL_DIR"] = skill["dir"]
-    proc = subprocess.run(
-        [
-            "bash",
-            "-c",
-            'python3 "$CLAUDE_SKILL_DIR/scripts/validate_entry.py" "$1"',
-            "skills-lab",
-            entry,
-        ],
-        cwd=os.path.dirname(HERE),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode
+def run_installed_workflow_quiet(skill, entry: str) -> subprocess.CompletedProcess:
+    """Exercise the documented root-aware stdin path outside the skill directory."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline="", prefix="skills-lab-candidate-"
+    ) as candidate:
+        candidate.write(entry + "\n")
+        candidate.flush()
+        env = os.environ.copy()
+        env["CLAUDE_SKILL_DIR"] = skill["dir"]
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                'python3 "$CLAUDE_SKILL_DIR/scripts/validate_entry.py" < "$1"',
+                "skills-lab",
+                candidate.name,
+            ],
+            cwd=os.path.dirname(HERE),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
 
 
 def run_fresh_install_quiet(entry: str) -> int:
@@ -733,7 +1124,7 @@ def run_fresh_install_quiet(entry: str) -> int:
         installed, error = load_skill(installed_dir)
         if install.returncode != 0 or installed is None or error is not None:
             return 1
-        return run_installed_workflow_quiet(installed, entry)
+        return run_installed_workflow_quiet(installed, entry).returncode
 
 
 def run_lab_quiet(*args: str) -> subprocess.CompletedProcess[str]:
@@ -767,7 +1158,7 @@ def main(argv: list[str]) -> int:
         default="portable",
         help="compatibility profile for validation (default: portable)",
     )
-    parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget/--simulate/--entry")
+    parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget, --simulate, or --entry-file")
     parser.add_argument("--budget", metavar="N", type=nonnegative_int, help="print the startup cost of N listed skills")
     parser.add_argument(
         "--session",
@@ -776,7 +1167,7 @@ def main(argv: list[str]) -> int:
         help="Claude Code lifecycle to model: regular session or a subagent with named skills preloaded",
     )
     parser.add_argument("--simulate", metavar="REQUEST", help="illustrate discovery for a request string")
-    parser.add_argument("--entry", metavar="LINE", help="run the skill's bundled validator on a changelog entry")
+    parser.add_argument("--entry-file", metavar="PATH", help="run the bundled validator with literal entry data from a file")
     parser.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
     args = parser.parse_args(argv[1:])
 
@@ -802,8 +1193,8 @@ def main(argv: list[str]) -> int:
     if args.simulate is not None:
         simulate(skill, args.simulate, args.session)
         return 0
-    if args.entry is not None:
-        return 0 if run_entry(skill, args.entry) == 0 else 1
+    if args.entry_file is not None:
+        return 0 if run_entry_file(skill, args.entry_file) == 0 else 1
 
     print("=== a skills lab: linted, priced, and simulated ===\n")
     print_validation(skill, args.surface)
@@ -814,7 +1205,7 @@ def main(argv: list[str]) -> int:
     print()
     print("run --test for assertions, --validate bad-skill for portable failures,")
     print("--surface anthropic for that profile, --budget 100 to price a listing, or")
-    print("--entry \"Added: X\" to run the bundled validator.")
+    print("--entry-file PATH to run the bundled validator without putting candidate text in shell source.")
     return 0
 
 

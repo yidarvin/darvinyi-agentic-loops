@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -640,3 +640,64 @@ a separate trust-boundary defect.
 - **`src/chapters/_figures/SkillsFigure.tsx:74-76` --- the two 35-character labels in the
   216px right-hand card likely cross its border at the declared 10px mono size.** Split or
   shorten them. The teaching relationship remains correct, so this is non-blocking.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique file and its git patch history, then
+re-verified every required correction from Rounds 1 through 17 against the current chapter,
+figure, widget, research backbone, and complete artifact. The portable-versus-surface split,
+regular-session and preloaded-subagent lifecycle, source attributions, root-aware install
+path, permissions boundary, and prior failure cases remain intact. The chapter remains
+`draft`; this resolution does not grant approval.
+
+1. **Malformed frontmatter.** Updated `artifacts/ch10-skills/skills_lab.py` to emit P0
+   for unsupported unquoted `: ` plain-scalar syntax, including the exact
+   `description: Formats entries: Use when adding one.` case. It also rejects unsupported
+   anchors, tags, aliases, duplicate fields, nested nodes, tab indentation, reserved
+   indicators, and legacy typed scalars, while accepting documented folded or literal block
+   scalars with a header comment. Its test suite creates temporary skills and runs the public
+   `--validate` command to prove malformed or unsupported input fails rather than prints
+   clean. The chapter and README now describe the teaching lint's limited frontmatter
+   contract accurately.
+2. **Description-warning contract.** Corrected `src/chapters/skills.mdx` to describe the
+   teaching lint's actual advisory checks: third-person phrasing, a concrete `when` cue, and
+   the body budget. The chapter continues to teach that the portable specification recommends
+   both what and when, without claiming this deliberately limited lint detects both.
+3. **Literal candidate boundary.** Replaced every installed-skill recipe that embedded a
+   candidate entry in a shell command. `changelog-entry/SKILL.md`, its README, the widget
+   excerpt, `check.sh`, and `skills_lab.py` now move a literal candidate through a file and
+   standard input. `validate_entry.py` rejects argv candidates, so the documented interface
+   cannot regress into a shell-template boundary. The artifact test runs the root-aware
+   command outside the skill directory with `Added: $(printf injected)` and confirms that
+   exact literal reaches the validator unchanged.
+
+Advisories taken: narrowed the Anthropic angle-bracket shorthand to `name` and
+`description`, shortened the two tight figure labels, and corrected the bundled skill notes
+to name Step 6 as the project-write step.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 79 assertions. `npm run check`
+passes all seven stages, including validation, prose lint, artifacts, render tests, TypeScript,
+production build, and advisory lint.
+
+## Builder resolution (2026-07-16)
+
+Regression addendum: re-read the complete critique history and re-verified every required
+correction from Rounds 1 through 17 against the current chapter, figure, widget, research
+backbone, and complete artifact. The draft status remains unchanged and this resolution does
+not grant approval.
+
+1. **Conservative frontmatter grammar.** Tightened
+   `artifacts/ch10-skills/skills_lab.py` so unsupported YAML cannot be reported as clean:
+   mappings require a proper separator, scalar continuations and block bodies use a strict
+   two-space subset, quoted scalars validate their escaping, fences must be column-zero, and
+   frontmatter rejects non-printing controls and lone Unicode surrogate escapes. Clear
+   digit-led portable names remain supported. Public `--validate` regressions cover each
+   boundary, including the Round 15 malformed `: ` scalar.
+2. **Artifact contract and trust boundary.** Kept the Round 16 contract precise by naming
+   only the implemented third-person, concrete-`when`, and body-budget warnings. Kept the
+   Round 17 candidate boundary file-to-stdin throughout the installed skill, README, widget,
+   lab, and check script, with the validator rejecting argv input and preserving literal
+   shell syntax.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 95 assertions. `npm run check`
+is rerun after this record is written.

@@ -47,13 +47,16 @@ python3 skills_lab.py --simulate "add a changelog entry for the new export flag"
 # In preloaded-subagent mode, the named skill body already arrived at startup.
 python3 skills_lab.py --simulate "add a changelog entry for the new export flag" --session preloaded
 
-# Run the skill's own bundled validator (level-3 execution: output only).
-python3 skills_lab.py --entry "Added: --export flag to the CLI"
+# Write the literal candidate with an editor or structured file-writing tool, then run the
+# skill's bundled validator (level-3 execution: output only). Do not put candidate text in
+# a shell command.
+python3 skills_lab.py --entry-file /absolute/path/to/candidate-entry.txt
 
-# Exercise the same root-aware command the installed Claude Code skill uses.
+# Exercise the same root-aware stdin command the installed Claude Code skill uses.
+# The candidate file was written before this command, so its contents are not shell source.
 (
   export CLAUDE_SKILL_DIR="$PWD/changelog-entry"
-  python3 "$CLAUDE_SKILL_DIR/scripts/validate_entry.py" "Added: --export flag to the CLI"
+  python3 "$CLAUDE_SKILL_DIR/scripts/validate_entry.py" < /absolute/path/to/candidate-entry.txt
 )
 
 # Assertions: the good skill passes, the bad one fails on the exact rules it breaks.
@@ -79,10 +82,12 @@ cp -R changelog-entry/. ~/.claude/skills/changelog-entry/
 ```
 
 Then ask for a changelog entry, or use the harness's explicit invocation mechanism if it
-has one. In Claude Code, `${CLAUDE_SKILL_DIR}` resolves to this installed directory, so the
-skill runs `python3 "${CLAUDE_SKILL_DIR}/scripts/validate_entry.py" "Type: summary"` from
-any project directory. Another harness needs an equivalent skill-root variable or an
-absolute path. The validator touches no network and does not write project files. The
+has one. The skill writes the exact candidate with the harness's structured file-writing
+tool before it validates it. In Claude Code, `${CLAUDE_SKILL_DIR}` resolves to this installed
+directory, so the skill runs the root-aware validator with `/absolute/path/to/candidate-entry.txt`
+redirected to standard input from any project directory. The candidate stays in a
+file and never becomes shell source. Another harness needs an equivalent skill-root variable
+or an absolute path. The validator touches no network and does not write project files. The
 workflow deliberately writes the project's `CHANGELOG.md` only after validation, so the
 agent needs explicit permission for that project write.
 
@@ -111,11 +116,12 @@ different lifecycle behavior.
 ## Teaching-lint scope
 
 `skills_lab.py` is deliberately dependency-free. Its default profile is a teaching lint
-for this bundle's supported portable subset: plain or basic quoted scalar key-value
-fields, indented continuations, folded (`>`) or literal (`|`) description blocks, ASCII
-name syntax, and directory matching. Plain comments are stripped, while YAML null,
-boolean, and numeric values are rejected where a string is required. Unsupported nonblank
-top-level syntax also fails instead of producing a clean result. A clean result means only
+for this bundle's supported portable subset: strict plain or basic quoted scalar key-value
+fields, two-space plain continuations, bare folded (`>`) or literal (`|`) description
+blocks with two-space content, ASCII name syntax, and directory matching.
+Plain comments are stripped, while YAML null, boolean, numeric, malformed, unsupported
+plain-scalar, and non-printing frontmatter values are rejected where a string is required.
+Unsupported nonblank top-level syntax also fails instead of producing a clean result. A clean result means only
 that the checked subset passed; it does not certify arbitrary YAML, Unicode name forms,
 or the complete optional Agent Skills schema. For production, use the target harness's
 maintained validator and your own deployment gate. `skills-ref` is a demonstration-only

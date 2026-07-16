@@ -72,8 +72,8 @@ export function SkillsFigure() {
       <text x="646" y="142" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">startup · model-invocable only</text>
 
       <rect x="632" y="170" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.3" strokeDasharray="4 3" />
-      <text x="646" y="190" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">regular: first / distinct / changed</text>
-      <text x="646" y="206" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">identical re-invocation: short note</text>
+      <text x="646" y="190" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">regular: new / changed body</text>
+      <text x="646" y="206" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">identical: short note</text>
 
       <rect x="632" y="234" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
       <text x="646" y="254" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">reference text read</text>
