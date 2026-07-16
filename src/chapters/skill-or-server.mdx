@@ -6,10 +6,11 @@ though you would eventually have to pick one. That framing is wrong. A skill and
 answer different questions, and the useful question is never which is better but which
 layer your problem lives in. One test settles most cases after you subtract access the
 agent already has: do you need a reusable access boundary, or a procedure? Reusable,
-shared, stateful, or centrally governed access is a server. Judgment is a skill. A
-workflow-local skill can also direct a bundled script that calls an API when its runtime
-supplies network access and credentials. And the honest answer for real production work is
-usually both, layered, with a skill that drives a server.
+shared, stateful, or centrally governed access is a server. Centrally distributing a Skill
+is a deployment choice, not a new access boundary. Judgment is a skill. A workflow-local
+skill can also direct a bundled script that calls an API when its runtime supplies network
+access and credentials. And the honest answer for real production work is usually both,
+layered, with a skill that drives a server.
 
 The question feels urgent because Simon Willison lit a fuse in October 2025, calling Skills
 "maybe a bigger deal than MCP" and citing MCP's token cost for his own cooling interest.
@@ -84,7 +85,7 @@ a server. A missing procedure, or a workflow-local script the runtime can run sa
 for a skill. Both calls for both. Neither means adopt what exists and build nothing at all,
 because a heavy setup is its own cost.
 
-<Figure id="11.1" caption="The decision as a plane of effective build work. First subtract access that an existing CLI or server already provides. The horizontal axis then asks whether a new reusable or shared access boundary is needed. The vertical axis asks whether skill work is needed, either procedure or a workflow-local script that uses runtime-provided network access and credentials. Low on both is neither: adopt what exists or build nothing. Skill work without a shared boundary is a skill. Shared access without skill work is a server. Both are layered, a skill that drives a server. Seven cases are plotted, including a workflow-local deploy script in the skill region. The side panel states the mapping and corrections before building a server.">
+<Figure id="11.1" caption="The decision as a plane of effective build work. First subtract access that an existing CLI or server already provides. The horizontal axis then asks whether a new reusable or shared access boundary is needed. The vertical axis asks whether skill work is needed, either procedure or a workflow-local script that uses runtime-provided network access and credentials. Low on both is neither: adopt what exists or build nothing. Skill work without a shared boundary is a skill. Shared access without skill work is a server. Both are layered, a skill that drives a server. Eight cases are plotted, including a centrally delivered review policy and a workflow-local deploy script in the skill region. The side panel separates central Skill delivery from an unmet shared access adapter.">
   <SkillOrServerFigure />
 </Figure>
 
@@ -108,17 +109,21 @@ runtime supplies network access and credentials. Keep that route workflow-local.
 good fit for a deployment script that runs only inside its deployment procedure, not for a
 capability the agent should call freely across contexts.
 
-Third, a capability that must serve many agents or clients under central governance pulls
-toward a server even when a skill could technically make the request, because a server is
-the auditable chokepoint you can observe, rate-limit, and swap. Fourth, follow the data. If
-the knowledge changes between invocations, you need a live path. That path can be an existing
-CLI or server, a workflow-local runtime-backed script, or a new server. If the knowledge is
-stable enough to write down once and stay right for weeks, a skill file is simpler.
+Third, separate governance of instruction from governance of access. A centrally provisioned
+review policy, runbook, or brand-guidelines Skill has judgment work but no new connection, so
+it remains a Skill. The [Agent Skills client guide](https://agentskills.io/client-implementation/adding-skills-support)
+explicitly allows organization-wide and externally provisioned Skills. A server belongs when
+the *access adapter* must serve many clients under central governance, because it is the
+auditable chokepoint you can observe, rate-limit, and swap. Fourth, follow the data. If the
+knowledge changes between invocations, you need a live path. That path can be an existing CLI
+or server, a workflow-local runtime-backed script, or a new server. If the knowledge is stable
+enough to write down once and stay right for weeks, a skill file is simpler.
 
 Run your own capability through the same logic. Flip the access or the judgment answer and
-watch the verdict cross a boundary.
+watch the verdict cross a boundary. Central Skill delivery leaves it on the Skill side; an
+unmet shared access adapter moves it right.
 
-<Widget name="skill_or_server" hint="Answer the six questions for a capability you actually have, or click a plotted case. Flip an input and watch the effective build work move across the plane. The routing is the same classify() the artifact runs.">
+<Widget name="skill_or_server" hint="Answer the seven questions for a capability you actually have, or click a plotted case. Flip an input and watch the effective build work move across the plane. The routing is the same classify() the artifact runs.">
   <SkillOrServerWidget />
 </Widget>
 
@@ -161,7 +166,8 @@ every client that reads `SKILL.md`.
 static file with no auth model. Its bundled script can make a workflow-local call when the
 runtime supplies network access and credentials, but that does not turn the skill into a
 reusable access service. Use an existing CLI or server when it already provides one. Build or
-adopt a server when access must be reusable, shared, stateful, or centrally governed.
+adopt a server when a reusable, shared, stateful, or centrally governed access adapter is
+missing.
 
 **The unlayered extreme**. A beautiful skill for a task the agent cannot reach, which one
 practitioner called an expensive search engine, or a rich server with no procedural guidance
@@ -193,16 +199,17 @@ succeed. The problem is producing the release notes for a version, which has an 
 reach the commits merged after a tag, and a judgment half, turn them into a clean,
 categorized section. The lab deliberately puts its access half behind a server process so
 the reusable-boundary pattern stays visible. Its classifier also models a workflow-local
-Skill script that uses runtime-provided network access and credentials. Its offline fixture
-truthfully supports `v0.3.0` to `v0.4.0` and rejects another tag rather than inventing a
-range. Run `--server-only` and you get raw commits with chores and docs mixed in: connectivity
-delivered, no judgment applied. Run `--skill-only` and the formatter is correct and produces
-nothing, because it was never handed the data: judgment starved of access. Run `--hybrid` and
-the skill calls the server's `list_commits_since` tool over a real process boundary, then runs
-its bundled formatter on the result, and you get the notes. The `--decide` mode is the
-chapter's question in code, the same routing the widget uses, and `--test` asserts the
-framework routes the canonical cases and all three paths behave. Zero dependencies, no API
-key, no network: the server reads a bundled commit fixture so the whole thing runs offline.
+Skill script that uses runtime-provided network access and credentials, and separates central
+Skill delivery from a missing shared access adapter. Its offline fixture truthfully supports
+`v0.3.0` to `v0.4.0` and rejects another tag rather than inventing a range. Run `--server-only`
+and you get raw commits with chores and docs mixed in: connectivity delivered, no judgment
+applied. Run `--skill-only` and the formatter is correct and produces nothing, because it was
+never handed the data: judgment starved of access. Run `--hybrid` and the skill calls the
+server's `list_commits_since` tool over a real process boundary, then runs its bundled
+formatter on the result, and you get the notes. The `--decide` mode is the chapter's question
+in code, the same routing the widget uses, and `--test` asserts the framework routes the
+canonical cases and all three paths behave. Zero dependencies, no API key, no network: the
+server reads a bundled commit fixture so the whole thing runs offline.
 
 <RunnableArtifact
   name="hybrid_lab"
@@ -221,8 +228,9 @@ half works alone and the hybrid does.
 <ExerciseCard n="01" title="Classify three of your own">
 Pick three capabilities you actually want an agent to have. For each, run
 `python3 hybrid_lab.py --decide` with the flags that match it (`--access`, `--judgment`,
-`--shared`, `--cli-exists`, `--script-access`, `--live`) and write the verdict down. The ones that come back
-`both` are the ones you were most likely to have built as a single lopsided artifact.
+`--shared-access`, `--skill-distributed`, `--cli-exists`, `--script-access`, `--live`) and write the
+verdict down. The ones that come back `both` are the ones you were most likely to have built as
+a single lopsided artifact.
 </ExerciseCard>
 
 <ExerciseCard n="02" title="Watch each half fail">
@@ -239,7 +247,10 @@ is not a missing procedure. Add `--judgment` and it routes to a skill that teach
 Then run `--decide --access --live --cli-exists`; it remains neither because the CLI can fetch
 the fresh data. Finally, run `--decide --access --live --script-access`. It routes to a skill
 because one workflow can bundle a runtime-backed script. Explain why that local script does
-not create a shared, centrally governed server boundary.
+not create a shared, centrally governed server boundary. Then run `--decide --judgment
+--skill-distributed`; it remains a Skill because central delivery governs instruction, not
+access. Contrast it with `--decide --shared-access`, which routes to a server because the
+shared access adapter itself is missing.
 </ExerciseCard>
 
 <ExerciseCard n="04" title="Audit a wrapper before you ship it">
@@ -253,7 +264,7 @@ one about interface stability and one about token cost on load.
 
 - [Agent Skills specification](https://agentskills.io/specification) and its
   [client implementation guide](https://agentskills.io/client-implementation/adding-skills-support),
-  for the folder format and progressive-disclosure model.
+  for the folder format, progressive-disclosure model, and centrally provisioned Skills.
 - [Model Context Protocol architecture](https://modelcontextprotocol.io/docs/learn/architecture),
   [stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
   and [authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),

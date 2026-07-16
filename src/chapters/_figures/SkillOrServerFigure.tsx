@@ -2,7 +2,8 @@
 // The structure it encodes: effective shared access and skill work are two independent
 // axes, not two ends of one scale. Subtract existing access first. A workflow-local Skill
 // script can use runtime-provided network access and credentials, while reusable, shared,
-// stateful, or governed access belongs behind a server boundary. The key claim the plane
+// stateful, or governed *access* belongs behind a server boundary. Centrally distributing
+// a Skill governs instruction rollout, not the access axis. The key claim the plane
 // makes visible is that "both" is a corner of the space (top-right), not a compromise
 // between the other two. Real cases are plotted where they fall. Inline SVG, themed with
 // the CSS variables, mono labels, legible on a phone via the min-w wrapper.
@@ -29,6 +30,7 @@ const POINTS: Point[] = [
   { label: "git status", ax: 0.2, jx: 0.14, dx: 10, dy: 4, anchor: "start" },
   { label: "postgres access", ax: 0.86, jx: 0.2, dx: -10, dy: -8, anchor: "end" },
   { label: "brand guidelines", ax: 0.12, jx: 0.66, dx: 10, dy: 4, anchor: "start" },
+  { label: "shared review policy", ax: 0.1, jx: 0.93, dx: 10, dy: 4, anchor: "start" },
   { label: "gh pr create", ax: 0.38, jx: 0.54, dx: 10, dy: 4, anchor: "start" },
   { label: "workflow-local deploy", ax: 0.22, jx: 0.82, dx: 10, dy: -8, anchor: "start" },
   { label: "release notes", ax: 0.6, jx: 0.56, dx: 10, dy: 14, anchor: "start" },
@@ -41,7 +43,7 @@ export function SkillOrServerFigure() {
       viewBox="0 0 900 520"
       className="w-full min-w-[860px]"
       role="img"
-      aria-label="A plane with two axes that show the effective work still missing after existing access is subtracted. The horizontal axis asks whether a new reusable or shared access boundary is needed, from low on the left to high on the right. The vertical axis asks whether skill work is needed, including procedure or a workflow-local script, from low at the bottom to high at the top. The plane splits into four quadrants. Bottom-left is neither: adopt what already exists or build nothing. Top-left is a skill: procedure or a workflow-local script using runtime-provided network access and credentials. Bottom-right is a server: reusable shared access. Top-right is both, layered: a skill that orchestrates a server. Seven real cases are plotted: git status sits in neither; brand guidelines, gh pr create with conventions, and a workflow-local deploy sit in skill; postgres access sits in server; release notes and Slack with team norms sit in both. A side panel states the mapping and corrections before building a server."
+      aria-label="A plane with two axes that show the effective work still missing after existing access is subtracted. The horizontal axis asks whether a new reusable or shared access boundary is needed, from low on the left to high on the right. The vertical axis asks whether skill work is needed, including procedure or a workflow-local script, from low at the bottom to high at the top. The plane splits into four quadrants. Bottom-left is neither: adopt what already exists or build nothing. Top-left is a skill: procedure or a workflow-local script using runtime-provided network access and credentials. Bottom-right is a server: reusable shared access. Top-right is both, layered: a skill that orchestrates a server. Eight real cases are plotted: git status sits in neither; brand guidelines, a centrally shared review policy, gh pr create with conventions, and a workflow-local deploy sit in skill; postgres access sits in server; release notes and Slack with team norms sit in both. A side panel makes clear that central Skill delivery stays in the skill region, while an unmet shared access adapter belongs behind a server."
       fill="none"
     >
       <rect x="1" y="1" width="898" height="518" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
@@ -109,7 +111,7 @@ export function SkillOrServerFigure() {
       })}
 
       {/* side panel: the test and the mapping */}
-      <rect x="596" y="70" width="282" height="360" rx="9" fill="var(--surface)" stroke="var(--border)" />
+      <rect x="596" y="70" width="282" height="370" rx="9" fill="var(--surface)" stroke="var(--border)" />
       <text x="614" y="96" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">{"// the single test"}</text>
       <text x="614" y="118" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">what work remains after</text>
       <text x="614" y="135" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">you subtract existing access?</text>
@@ -127,14 +129,16 @@ export function SkillOrServerFigure() {
 
       <line x1="614" y1="276" x2="860" y2="276" stroke="var(--border)" />
 
-      <text x="614" y="300" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">three corrections before</text>
-      <text x="614" y="315" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">you build a server:</text>
-      <text x="614" y="338" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">· a CLI/server already exists</text>
-      <text x="626" y="352" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">→ adopt it; add Skill only for procedure</text>
-      <text x="614" y="374" fontFamily="var(--font-mono)" fontSize="9" fill="var(--fg)">· runtime gives net + credentials</text>
-      <text x="626" y="388" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">→ Skill can bundle a local script</text>
-      <text x="614" y="412" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">shared across clients</text>
-      <text x="626" y="424" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">→ a server boundary</text>
+      <text x="614" y="296" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">four corrections before</text>
+      <text x="614" y="310" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">you build a server:</text>
+      <text x="614" y="331" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--fg)">· a CLI/server already exists</text>
+      <text x="626" y="344" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--comment)">→ adopt it; add Skill only for procedure</text>
+      <text x="614" y="360" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--fg)">· runtime gives net + credentials</text>
+      <text x="626" y="373" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--comment)">→ Skill can bundle a local script</text>
+      <text x="614" y="389" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--fg)">· a Skill is centrally delivered</text>
+      <text x="626" y="402" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--comment)">→ instruction governance, still a Skill</text>
+      <text x="614" y="418" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--fg)">· an access adapter remains missing</text>
+      <text x="626" y="431" fontFamily="var(--font-mono)" fontSize="8.7" fill="var(--comment)">→ shared/reusable access needs a server</text>
 
       {/* lesson band */}
       <rect x="22" y="466" width="856" height="42" rx="8" fill="var(--surface)" stroke="var(--border)" />

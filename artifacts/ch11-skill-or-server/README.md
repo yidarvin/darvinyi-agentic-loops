@@ -55,7 +55,7 @@ python3 hybrid_lab.py --skill-only --from fixtures/commits.json
 # The production shape: the skill calls the server tool, then formats the result.
 python3 hybrid_lab.py --hybrid
 
-# The decision framework in code: six questions -> skill / server / both / neither.
+# The decision framework in code: seven questions -> skill / server / both / neither.
 python3 hybrid_lab.py --decide --access --judgment --live     # => both
 python3 hybrid_lab.py --decide --judgment                     # => skill
 python3 hybrid_lab.py --decide --access --live                # => server
@@ -63,7 +63,9 @@ python3 hybrid_lab.py --decide --access --cli-exists          # => neither (adop
 python3 hybrid_lab.py --decide --access --live --cli-exists   # => neither (the CLI fetches fresh data)
 python3 hybrid_lab.py --decide --access --judgment --live --cli-exists # => skill (procedure over the CLI)
 python3 hybrid_lab.py --decide --access --live --script-access # => skill (a workflow-local script fetches)
-python3 hybrid_lab.py --decide --access --shared --cli-exists # => server (governance still needs a shared boundary)
+python3 hybrid_lab.py --decide --judgment --skill-distributed # => skill (central delivery governs instructions)
+python3 hybrid_lab.py --decide --shared-access               # => server (an unmet shared access boundary)
+python3 hybrid_lab.py --decide --access --shared-access --cli-exists # => server (a local CLI is not the missing shared adapter)
 
 # Assertions: the framework routes the canonical cases, and the three paths behave.
 python3 hybrid_lab.py --test
@@ -88,13 +90,14 @@ supplies network access and credentials. In a real workflow, first adopt an exis
 CLI or server; add a skill only when procedure is missing, and add a server when
 reusable, shared, stateful, or centrally governed access is missing.
 
-## The six questions behind `--decide`
+## The seven questions behind `--decide`
 
 `--decide` routes on the same logic as the chapter's widget:
 
 - `--access` the hard part is reaching a live external system, holding state, or authenticating to a third party.
 - `--judgment` the hard part is knowing what to do: a workflow, a procedure, domain expertise the agent lacks.
-- `--shared` the same capability must serve many agents or clients under central governance.
+- `--shared-access` an **unmet** reusable access adapter must serve many agents or clients under central governance. This is about the access boundary, not how a Skill is delivered.
+- `--skill-distributed` the Skill itself will be centrally provisioned or managed for many agents. It governs instruction distribution, not access.
 - `--cli-exists` a CLI the agent can shell out to, or an existing server, already provides the access. This does not itself create a procedure gap.
 - `--script-access` a workflow-local Skill may bundle a script that uses runtime-provided network access and credentials. It is not a shared server boundary.
 - `--live` the data changes between invocations and must be fetched fresh.
@@ -104,8 +107,11 @@ routes to a skill; both route to both. An existing CLI or server with no missing
 procedure routes to `neither`: adopt it and build nothing. Add a skill only when a
 procedure is missing. `--live` requires a fresh fetch, but an existing CLI/server or a
 workflow-local script can make that fetch, so freshness does not require a duplicate
-server. `--shared` is separate: a local CLI or script does not provide the central,
-auditable boundary, so it still routes to a server.
+server. `--shared-access` is separate: answer yes only when the *access adapter* is
+still missing and must be shared or centrally governed. A locally executable CLI does
+not supply that missing adapter. `--skill-distributed` never moves the capability onto
+the server axis: centrally deployed review policy, runbook, or brand-guidelines Skills
+remain Skills.
 
 ## The estimates, stated plainly
 

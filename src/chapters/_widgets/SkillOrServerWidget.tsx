@@ -1,17 +1,18 @@
 import { useState } from "react";
 
 // SkillOrServerWidget: the signature widget for "Skill or Server". One focused move:
-// answer six yes/no questions about a capability and watch it route to skill, server,
+// answer seven yes/no questions about a capability and watch it route to skill, server,
 // both, or neither, with the reasoning and a dot that lands in the matching quadrant of
 // the same access-by-judgment plane the figure draws. Flipping the access or judgment
 // answer moves the verdict across a boundary, so the reader feels the decision rather
 // than reading it. The routing and effective build axes mirror classify() in the
 // chapter's artifact exactly: existing access removes the need to build anything unless
 // procedure is missing; a workflow-local script can use runtime-provided credentials;
-// central governance still needs a shared server boundary. React state only, no
+// central Skill delivery stays instruction, while an unmet shared *access* adapter needs
+// a server boundary. React state only, no
 // persistence.
 
-type Key = "access" | "judgment" | "shared" | "cliOrExisting" | "scriptAccess" | "live";
+type Key = "access" | "judgment" | "sharedAccess" | "skillDistributed" | "cliOrExisting" | "scriptAccess" | "live";
 type Verdict = "skill" | "server" | "both" | "neither";
 
 interface Question {
@@ -23,8 +24,9 @@ interface Question {
 const QUESTIONS: Question[] = [
   { key: "access", short: "access", ask: "Is the hard part reaching a live external system, holding state, or authenticating to a third party?" },
   { key: "judgment", short: "judgment", ask: "Is the hard part knowing what to do: a workflow, a procedure, or domain expertise the agent lacks?" },
-  { key: "shared", short: "shared", ask: "Must the same capability serve many agents or clients under central governance?" },
-  { key: "cliOrExisting", short: "cli or existing", ask: "Does a CLI the agent can shell out to, or an existing server, already provide access? Existing access is not a missing procedure. A local CLI does not satisfy shared governance." },
+  { key: "sharedAccess", short: "shared access", ask: "Is an unmet reusable access adapter still needed for many agents or clients under central governance? Say yes only for the access boundary, not when a Skill is merely centrally distributed." },
+  { key: "skillDistributed", short: "skill delivery", ask: "Will this Skill be centrally provisioned or managed across agents? That governs instruction distribution; it does not create a server access gap." },
+  { key: "cliOrExisting", short: "cli or existing", ask: "Does a CLI the agent can shell out to, or an existing server, already provide access? Existing access is not a missing procedure. Answer shared access yes only when its reusable adapter is still missing." },
   { key: "scriptAccess", short: "local script", ask: "Can a workflow-local Skill script safely use runtime-provided network access and credentials? This is not a shared server boundary." },
   { key: "live", short: "live data", ask: "Does the data change between invocations, so it must be fetched fresh each time?" },
 ];
@@ -32,12 +34,13 @@ const QUESTIONS: Question[] = [
 type Answers = Record<Key, boolean>;
 
 const PRESETS: { label: string; answers: Answers }[] = [
-  { label: "postgres access", answers: { access: true, judgment: false, shared: true, cliOrExisting: false, scriptAccess: false, live: true } },
-  { label: "brand guidelines", answers: { access: false, judgment: true, shared: false, cliOrExisting: false, scriptAccess: false, live: false } },
-  { label: "gh pr create", answers: { access: true, judgment: true, shared: false, cliOrExisting: true, scriptAccess: false, live: false } },
-  { label: "workflow-local deploy", answers: { access: true, judgment: false, shared: false, cliOrExisting: false, scriptAccess: true, live: true } },
-  { label: "slack + team norms", answers: { access: true, judgment: true, shared: true, cliOrExisting: false, scriptAccess: false, live: true } },
-  { label: "release notes", answers: { access: true, judgment: true, shared: false, cliOrExisting: false, scriptAccess: false, live: true } },
+  { label: "postgres access", answers: { access: true, judgment: false, sharedAccess: true, skillDistributed: false, cliOrExisting: false, scriptAccess: false, live: true } },
+  { label: "brand guidelines", answers: { access: false, judgment: true, sharedAccess: false, skillDistributed: false, cliOrExisting: false, scriptAccess: false, live: false } },
+  { label: "team review policy", answers: { access: false, judgment: true, sharedAccess: false, skillDistributed: true, cliOrExisting: false, scriptAccess: false, live: false } },
+  { label: "gh pr create", answers: { access: true, judgment: true, sharedAccess: false, skillDistributed: false, cliOrExisting: true, scriptAccess: false, live: false } },
+  { label: "workflow-local deploy", answers: { access: true, judgment: false, sharedAccess: false, skillDistributed: false, cliOrExisting: false, scriptAccess: true, live: true } },
+  { label: "slack + team norms", answers: { access: true, judgment: true, sharedAccess: true, skillDistributed: false, cliOrExisting: false, scriptAccess: false, live: true } },
+  { label: "release notes", answers: { access: true, judgment: true, sharedAccess: false, skillDistributed: false, cliOrExisting: false, scriptAccess: false, live: true } },
 ];
 
 interface Result {
@@ -51,15 +54,18 @@ interface Result {
 // The same routing as hybrid_lab.py's classify(): a reusable access gap needs a server;
 // judgment needs a skill; both needs both. A CLI or existing server can provide a fresh
 // fetch without creating a procedure gap. A Skill can also run a workflow-local script
-// when its runtime supplies network access and credentials. Shared governance remains a
-// server concern because neither a local CLI nor a local script is that boundary.
+// when its runtime supplies network access and credentials. Central Skill distribution
+// stays instruction; only an unmet reusable or shared *access* adapter creates the
+// server axis.
 function classify(a: Answers): Result {
-  const { access, judgment, shared, cliOrExisting, scriptAccess, live } = a;
+  const { access, judgment, sharedAccess, skillDistributed, cliOrExisting, scriptAccess, live } = a;
+  const distributionNote = "Central Skill provisioning governs instruction distribution; it does not create a shared access boundary.";
+  const withDistribution = (reasons: string[]) => skillDistributed ? [...reasons, distributionNote] : reasons;
 
-  if (!access && !judgment && !shared && !live) {
+  if (!access && !judgment && !sharedAccess && !live) {
     return {
       verdict: "neither",
-      reasons: ["The agent can already do this in one step. Build nothing; if it forgets, a line in context is enough."],
+      reasons: withDistribution(["The agent can already do this in one step. Build nothing; if it forgets, a line in context is enough."]),
       example: "e.g. a two-line summary of git status",
       effectiveAccessBoundary: false,
       effectiveSkillWork: false,
@@ -69,21 +75,19 @@ function classify(a: Answers): Result {
   // Fresh data requires a path to the system, not necessarily a server. Existing access
   // can supply it, or a Skill can bundle a workflow-local script when the runtime supplies
   // network and credentials. The mini-plane tracks effective build needs, not raw toggles.
-  const accessNeeded = access || live;
-  const existingAccess = accessNeeded && cliOrExisting;
-  const workflowScript = accessNeeded && scriptAccess && !cliOrExisting && !shared;
-  const effectiveAccessBoundary = shared || (accessNeeded && !cliOrExisting && !scriptAccess);
+  const accessNeeded = access || live || sharedAccess;
+  const existingAccess = (access || live) && cliOrExisting;
+  const workflowScript = accessNeeded && scriptAccess && !cliOrExisting && !sharedAccess;
+  const effectiveAccessBoundary = sharedAccess || (accessNeeded && !cliOrExisting && !scriptAccess);
   const effectiveSkillWork = judgment || workflowScript;
 
   if (effectiveAccessBoundary && effectiveSkillWork) {
-    const reasons = shared && cliOrExisting
-      ? ["Judgment is hard, and shared governance still needs a server boundary. Reuse an existing shared server if it meets policy; otherwise adopt one, then layer a skill over it."]
-      : ["Both a reusable access boundary and a procedure are hard. Layer them: a server for the connection, a skill that supplies the procedure and calls its tools."];
-    if (shared) reasons.push("Shared across clients under governance, which wants a server as the auditable chokepoint.");
+    const reasons = ["Both a reusable access boundary and a procedure are hard. Layer them: a server for the connection, a skill that supplies the procedure and calls its tools."];
+    if (sharedAccess) reasons.push("The missing access adapter must serve many clients under governance, so a server is the auditable chokepoint.");
     if (live) reasons.push("The data changes between runs, so it must be fetched live, not written down once.");
     return {
       verdict: "both",
-      reasons,
+      reasons: withDistribution(reasons),
       example: "e.g. Slack access plus your team's posting norms",
       effectiveAccessBoundary,
       effectiveSkillWork,
@@ -91,14 +95,12 @@ function classify(a: Answers): Result {
   }
 
   if (effectiveAccessBoundary) {
-    const reasons = shared && cliOrExisting
-      ? ["Access may already exist, but shared governance still needs a server boundary. Reuse an existing shared server if it meets policy; otherwise adopt one."]
-      : ["The hard part is reusable or centrally governed access, and neither an existing tool nor a workflow-local script covers it. Build or adopt an MCP server."];
-    if (shared) reasons.push("It serves many clients with governance, which a server centralizes even when a local CLI can reach the data.");
+    const reasons = ["The hard part is an unmet reusable access boundary, and neither an existing tool nor a workflow-local script covers it. Build or adopt an MCP server."];
+    if (sharedAccess) reasons.push("It is a shared access adapter for many clients under governance, which a server centralizes.");
     if (live) reasons.push("The data changes between runs, so it must be fetched live.");
     return {
       verdict: "server",
-      reasons,
+      reasons: withDistribution(reasons),
       example: "e.g. an internal Postgres your agent queries live",
       effectiveAccessBoundary,
       effectiveSkillWork,
@@ -112,7 +114,7 @@ function classify(a: Answers): Result {
       if (live) reasons.push("The script fetches fresh data when the workflow runs.");
       return {
         verdict: "skill",
-        reasons,
+        reasons: withDistribution(reasons),
         example: "e.g. a workflow-local deploy script",
         effectiveAccessBoundary,
         effectiveSkillWork,
@@ -123,7 +125,7 @@ function classify(a: Answers): Result {
       if (live) reasons.push("The existing access can fetch fresh data; freshness does not require a second server.");
       return {
         verdict: "skill",
-        reasons,
+        reasons: withDistribution(reasons),
         example: "e.g. gh pr create wrapped with your PR conventions",
         effectiveAccessBoundary,
         effectiveSkillWork,
@@ -131,7 +133,7 @@ function classify(a: Answers): Result {
     }
     return {
       verdict: "skill",
-      reasons: ["The agent can already reach what it needs; the hard part is knowing what to do with it. That is a skill."],
+      reasons: withDistribution(["The agent can already reach what it needs; the hard part is knowing what to do with it. That is a skill."]),
       example: "e.g. your brand guidelines and report formatting",
       effectiveAccessBoundary,
       effectiveSkillWork,
@@ -143,7 +145,7 @@ function classify(a: Answers): Result {
     if (live) reasons.push("The existing access can fetch fresh data; freshness does not require a second server.");
     return {
       verdict: "neither",
-      reasons,
+      reasons: withDistribution(reasons),
       example: "e.g. use an existing CLI directly",
       effectiveAccessBoundary,
       effectiveSkillWork,
@@ -152,7 +154,7 @@ function classify(a: Answers): Result {
 
   return {
     verdict: "neither",
-    reasons: ["No reusable access boundary or procedure is missing. Build nothing."],
+    reasons: withDistribution(["No reusable access boundary or procedure is missing. Build nothing."]),
     example: "e.g. a two-line summary of git status",
     effectiveAccessBoundary,
     effectiveSkillWork,
@@ -167,13 +169,13 @@ const VERDICT_COPY: Record<Verdict, string> = {
 };
 
 // The mini plane draws effective build needs. Existing access moves left without creating
-// skill work; a workflow-local script moves up; central governance stays right because it
-// still needs a shared server boundary.
+// skill work; a workflow-local script moves up; centrally delivered Skills stay left; only
+// an unmet shared access adapter moves right.
 function dot(accessBoundary: boolean, skillWork: boolean): { x: number; y: number } {
   return { x: accessBoundary ? 162 : 78, y: skillWork ? 50 : 116 };
 }
 
-const START: Answers = { access: false, judgment: true, shared: false, cliOrExisting: false, scriptAccess: false, live: false };
+const START: Answers = { access: false, judgment: true, sharedAccess: false, skillDistributed: false, cliOrExisting: false, scriptAccess: false, live: false };
 
 export function SkillOrServerWidget() {
   const [answers, setAnswers] = useState<Answers>(START);
@@ -206,7 +208,7 @@ export function SkillOrServerWidget() {
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {/* the six questions */}
+        {/* the seven questions */}
         <div className="rounded border border-border bg-surface-2 p-3">
           <div className="mb-2 font-mono text-[0.7rem] text-comment">{"// answer for your capability"}</div>
           <ul className="space-y-2">
@@ -242,7 +244,7 @@ export function SkillOrServerWidget() {
           </div>
 
           {/* mini plane, echoing the figure */}
-          <svg viewBox="0 0 220 150" className="mt-2 w-full" role="img" aria-label={`The capability lands in the ${result.verdict} region of the effective shared-access-boundary by skill-work plane. Existing access is accounted for before the dot is placed, and a workflow-local script counts as skill work rather than a shared server boundary.`}>
+          <svg viewBox="0 0 220 150" className="mt-2 w-full" role="img" aria-label={`The capability lands in the ${result.verdict} region of the effective shared-access-boundary by skill-work plane. Existing access is accounted for before the dot is placed, a workflow-local script counts as skill work rather than a shared server boundary, and centrally provisioned Skills stay on the skill side.`}>
             <rect x="40" y="12" width="160" height="126" rx="4" fill="var(--surface-2)" stroke="var(--border)" />
             {/* both quadrant tint (top-right) */}
             <rect x="120" y="12" width="80" height="63" fill="var(--accent)" fillOpacity="0.1" />
@@ -258,7 +260,7 @@ export function SkillOrServerWidget() {
           </svg>
 
           <p className="mt-1 font-mono text-[0.62rem] leading-snug text-comment">
-            {"// effective build needs: existing access shifts left; local scripts move up; shared governance stays right."}
+            {"// existing access shifts left; local scripts move up; shared Skill delivery stays left."}
           </p>
 
           <ul className="mt-2 space-y-1.5 text-[0.82rem] leading-snug text-fg/80">

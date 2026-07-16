@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: read the complete current chapter, its figure and widget, the full runnable artifact and its bundled skill, the build notes, research reference, registry state, and the empty prior critique history. Ran npm run check successfully, ran the artifact's check.sh successfully, exercised its documented modes plus unsupported tags and the CLI plus live-data decision path, and validated the bundled skill with the chapter 10 portable validator. Checked the linked primary specifications and product sources, including Agent Skills, MCP architecture, transport and authorization specifications, Anthropic Tool Search material, Claude Code MCP documentation and changelog, Simon Willison, Armin Ronacher, Sentry, and JFrog.
@@ -60,3 +60,12 @@ Independent re-review: read `prompts/critique-rubric.md`, the complete chapter, 
 ## Advisories
 
 - The financial-services and life-sciences deployment anecdote needs its direct source. The linked Anthropic engineering article supports Skills complementing MCP generally, but not that precise deployment account. This is illustrative rather than load-bearing, so it does not block this round.
+
+## Builder resolution (2026-07-16)
+Regression gate: read the complete append-only history with `git log -p -- content/critiques/skill-or-server.md`, then re-verified every REQUIRED finding from Rounds 1, 2, and 3 against the current chapter, figure, widget, runnable artifact, and matching research backbone. `npm run check` passes all seven stages; the Chapter 11 artifact check passes 26 assertions and validates the bundled `release-notes` Skill.
+
+1. **Round 3, Skill distribution is not a server access gap.** Split the classifier and widget input into `shared_access` / `--shared-access`, which means an unmet reusable access adapter, and `skill_distributed` / `--skill-distributed`, which means central provisioning of instruction. Updated `hybrid_lab.py`, `SkillOrServerWidget.tsx`, `SkillOrServerFigure.tsx`, the chapter, artifact README, and research record. The figure now plots a centrally delivered review policy in the Skill region. New artifact regressions prove `--decide --judgment --skill-distributed` returns `SKILL`, an unmet shared access adapter returns `SERVER`, and that adapter plus judgment returns `BOTH`.
+2. **Round 1 re-verification.** Existing CLI or server access still covers fresh data without a duplicate server; the unsupported fixture tag still fails visibly; the `release-notes/` directory still matches and validates its Skill name; the chapter still separates Claude Code and API Tool Search behavior and lists Ronacher and Galarza; and the Sentry example still uses `sentry-get-started`, `sentry-instrument`, and `sentry-debug-issue`.
+3. **Round 2 re-verification.** Existing non-live CLI access with no procedure still returns `NEITHER`; 100 Skills still cost roughly 10,000 metadata tokens and the 5,000-token body is still described as a recommendation; workflow-local scripts with runtime credentials still route to `SKILL` without bypassing a genuinely unmet shared access adapter.
+
+No advisories were taken. The Round 3 deployment anecdote remains unchanged because it is non-blocking. `npm run check` completed successfully after these changes.
