@@ -24,7 +24,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 10 | skills                       | Skills                                          | DONE    |
 | 11 | skill-or-server              | Skill or Server                                 | DONE    |
 | 12 | delegation                   | Delegation                                      | DONE    |
-| 13 | coordination-patterns        | Coordination Patterns                           | PENDING |
+| 13 | coordination-patterns        | Coordination Patterns                           | DONE    |
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | PENDING |
 | 15 | memory-taxonomy              | The Memory Taxonomy                             | PENDING |
 | 16 | prompt-caching-economics     | Prompt Caching and the Economics of Remembering | PENDING |
