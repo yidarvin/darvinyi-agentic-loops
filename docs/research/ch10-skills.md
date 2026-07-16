@@ -5,9 +5,10 @@ Research reference for *Agentic Loops*, Chapter 10 (pairs with the MCP arc as th
 ## TL;DR
 - An Agent Skill is a folder containing a `SKILL.md` (YAML frontmatter + Markdown instructions) plus optional bundled scripts, reference docs, and assets; it packages procedural knowledge that an agent loads on demand via **progressive disclosure**, complementing rather than competing with MCP.
 - The core innovation is context economy: only ~100 tokens of metadata per listed,
-  model-invocable Skill load at startup, each activated `SKILL.md` body (target <5k
-  tokens / <500 lines) loads when needed, reference text enters only when read, and
-  bundled scripts can execute without their source entering the context window.
+  model-invocable Skill load at startup; in Claude Code, each first, distinct, or changed
+  rendered `SKILL.md` body (target <5k tokens / <500 lines) loads when needed, while an
+  identical re-invocation adds a short already-loaded note; reference text enters only when
+  read, and bundled scripts can execute without their source entering the context window.
 - Launched October 16 2025 and published as an open standard December 18 2025 (agentskills.io, with a spec and reference SDK), Skills run across Claude.ai, Claude Code, the Claude Developer Platform/API, and Claude Cowork; the SKILL.md format has been adopted by OpenAI (Codex, ChatGPT), Microsoft, Cursor, and others — making it, per Simon Willison, "maybe a bigger deal than MCP."
 
 ## What Agent Skills are
@@ -53,7 +54,7 @@ Roles (skill-creator): `scripts/` = "executable code for deterministic/repetitiv
 | Level | When loaded | Token cost | Content |
 |---|---|---|---|
 | 1: Metadata | Startup for listed, model-invocable Skills | ~100 tokens/Skill | name + description |
-| 2: Instructions | On each activation | <5k tokens recommended | SKILL.md body; activations can stack |
+| 2: Instructions | On first, distinct, or changed Claude Code rendering | <5k tokens recommended | Full SKILL.md body; an identical re-invocation gets a short already-loaded note; distinct skills can stack |
 | 3+: Resources | As needed | Effectively unlimited | Reference text enters when read; script output enters after execution while source can remain on disk |
 
 Sequence when a Skill triggers: (1) context = system prompt + the metadata of listed,
@@ -88,14 +89,23 @@ full `SKILL.md`. User-only skills are an explicit exception on surfaces that sup
 
 The `description` is the primary discovery mechanism and the highest-leverage authoring decision. The portable specification says it should explain both what it does and when to use it, including specific trigger terms. Anthropic authoring guidance additionally prefers the **third person** ("Processes Excel files and generates reports," never "I can help..." or "You can use..."), because its description is injected into the system prompt. The PDF Skill's description is deliberately "pushy": "Use this skill whenever the user wants to do anything with PDF files... If the user mentions a .pdf file or asks to produce one, use this skill."
 
-Subtlety: Claude only consults Skills for tasks it can't trivially handle — "simple, one-step queries like 'read this PDF' may not trigger a skill even if the description matches perfectly, because Claude can handle them directly... Complex, multi-step, or specialized queries reliably trigger skills."
+**Anthropic-specific tendency:** Anthropic's current [skill-creator](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md)
+says simple one-step queries such as "read this PDF" may not trigger even when the
+description matches, because Claude can handle them directly; matching complex, multi-step,
+or specialized queries reliably trigger. Treat that as current Anthropic model-and-harness
+guidance, not a portable guarantee. Evaluate triggering in fresh target-harness sessions with
+realistic positive and near-miss prompts.
 
-**Explicit invocation** also exists: in Claude Code any Skill is a slash command (`/skill-name`); on API/Claude.ai the model decides. Claude Code switches: `disable-model-invocation: true` (user-only, e.g. `/deploy`, with no startup description cost) and `user-invocable: false` (Claude-only, e.g. background knowledge).
+**Explicit invocation** also exists: in Claude Code user-invocable Skills appear as slash
+commands (`/skill-name`); on API/Claude.ai the model decides. Claude Code switches:
+`disable-model-invocation: true` (user-only, e.g. `/deploy`, with no startup description
+cost) and `user-invocable: false` (Claude-only and hidden from the `/` menu, e.g.
+background knowledge).
 
 ## Code execution environment
 Skills "run in a code execution environment where Claude has filesystem access, bash commands, and code execution capabilities." Skills are directories on a VM (API: copied to `/skills/{directory}/`); Claude uses ordinary bash to navigate.
 
-Three payoffs: **on-demand file access** (read just the one needed file; the rest "consume zero tokens"); **efficient script execution** (when Claude runs `validate_form.py`, "the script's code never loads into the context window. Only the script's output... consumes tokens" — "far more efficient than having Claude generate equivalent code"); **no practical limit on bundled content**. Rationale: "sorting a list via token generation is far more expensive than simply running a sorting algorithm... many applications require the deterministic reliability that only code can provide." Willison's `slack-gif-creator` test shows the reliability loop: run a bundled script, then a bundled validator checks Slack's 2MB limit and the model retries if too large.
+Three payoffs: **on-demand file access** (read just the one needed file; the rest "consume zero tokens"); **efficient script execution** (when Claude runs `validate_form.py`, "the script's code never loads into the context window. Only the script's output... consumes tokens" — "far more efficient than having Claude generate equivalent code"); **no practical limit on bundled content**. Rationale: "sorting a list via token generation is far more expensive than simply running a sorting algorithm... many applications require the deterministic reliability that only code can provide." Willison's `slack-gif-creator` test shows the feedback-loop pattern: run a bundled script, then a bundled validator checks Slack's 2MB limit and the model can adjust and rerun if the output is too large.
 
 **Runtime constraints differ sharply by surface** (critical): API — no network, no runtime package install (pre-installed only), isolated ephemeral container unless a container ID is reused; claude.ai — network varies by admin settings, can install from npm/PyPI + GitHub when egress enabled; Claude Code — full network (like any program on the machine), local package install only.
 
@@ -104,7 +114,7 @@ Supported across Claude.ai, Claude Code, the Agent SDK, and the API; included in
 
 **Shipped document Skills:** Claude's docx/pptx/xlsx/fillable-pdf abilities are Skills. Pre-built by `skill_id`: `pptx`, `xlsx`, `docx`, `pdf`. Production versions in `anthropics/skills` `document-skills/` (source-available, not open source); many example Skills are Apache-2.0.
 
-**Claude Code:** custom filesystem Skills only (no API upload). Discovery precedence: enterprise > personal (`~/.claude/skills/`) > project (`.claude/skills/`) > plugin (`<plugin>/skills/`); same-named skill overrides bundled. Bundles prompt-based Skills (`/code-review`, `/debug`, `/loop`, `/claude-api`). Skills load live (edits apply mid-session).
+**Claude Code:** custom filesystem Skills only (no API upload). Discovery precedence: enterprise > personal (`~/.claude/skills/`) > project (`.claude/skills/`) > plugin (`<plugin>/skills/`); same-named skill overrides bundled. Bundles prompt-based Skills (`/code-review`, `/debug`, `/loop`, `/claude-api`). Edits to watched `SKILL.md` files can affect later discovery or future invocation in the current session, but already invoked rendered content stays in context and is not reread automatically.
 
 **API / Agent SDK:** via the code execution tool. Three beta headers: `code-execution-2025-08-25`, `skills-2025-10-02`, `files-api-2025-04-14`. Specified in `container` with `type` (`anthropic`/`custom`), `skill_id`, optional `version`; up to **8 Skills/request**; uploads capped at **30 MB**. Custom Skills via `/v1/skills` (CRUD + versioning); Anthropic Skills use date versions (`20251013`), custom use epoch-timestamp or `latest`. Notes: changing the Skills list breaks prompt caching; long-running Skills surface a `pause_turn` stop reason to feed back.
 
@@ -140,7 +150,7 @@ description: A clear description of what this skill does and when to use it
 ## Skills and Claude Code plugins
 Layered extensibility model: **CLAUDE.md** (always-on context) → **Skills** (on-demand knowledge/workflows, same context window, probabilistic or explicit) → **Subagents** (isolated context, return a summary; a Skill can run in a forked subagent via `context: fork`, and a subagent can preload Skills via `skills:`) → **Hooks** (deterministic lifecycle interceptors; enforce where Skills only encourage) → **MCP servers** (external connections) → **Plugins** (the packaging/distribution layer bundling skills, hooks, subagents, MCP servers).
 
-Context nuance: in Claude Code an invoked Skill's content "enters the conversation as a single message and stays there for the rest of the session" — a recurring per-turn cost, not re-read each turn. Auto-compaction carries the most recent invocation of each Skill forward within a 25,000-token budget.
+Context nuance: in Claude Code an invoked Skill's content "enters the conversation as a single message and stays there for the rest of the session" — a recurring per-turn cost, not re-read each turn. An identical rendered re-invocation adds only a short already-loaded note; a changed rendering, such as different arguments or dynamic-context output, appends the full body again. Distinct rendered Skill bodies can coexist. Auto-compaction carries the most recent invocation of each Skill forward within a 25,000-token budget.
 
 **Distribution:** a Skill can ship via a plugin's `skills/` directory (namespaced `plugin-name:skill-name`, can't conflict with local). Install from marketplaces: `/plugin marketplace add anthropics/skills` then `/plugin install document-skills@anthropic-agent-skills`. Custom commands (`.claude/commands/`) effectively merged into Skills — a file at `.claude/commands/deploy.md` and a Skill at `.claude/skills/deploy/SKILL.md` both create `/deploy`, but Skills add supporting-file dirs, richer frontmatter, automatic model invocation. Claude Code also extends the standard: dynamic context injection (`` !`git diff HEAD` `` inlines shell output), argument substitution (`$ARGUMENTS`, `$0`, named args), per-skill tool pre-approval (`allowed-tools`).
 
@@ -152,8 +162,8 @@ Complementary: a Skill can invoke MCP tools (Claude Code best practice: fully-qu
 ## Security considerations
 Because Skills execute arbitrary code, a malicious/compromised Skill is a real threat. Anthropic: "Use Skills only from trusted sources: those you created yourself or obtained from Anthropic... a malicious Skill can direct Claude to invoke tools or execute code in ways that don't match the Skill's stated purpose." Risk categories: **audit thoroughly** (review every bundled file for unexpected network/file access); **external sources are risky** (Skills fetching external URLs may pull in malicious instructions — indirect injection; "even trustworthy Skills can be compromised if their external dependencies change"); **tool misuse** and **data exposure**; **"treat like installing software."**
 
-Independent research: Anthropic's frontmatter reaches its system prompt, so that surface
-disallows XML-like angle brackets as an injection defense. Oasis Security demonstrated a
+Independent research: Anthropic's frontmatter reaches its system prompt. That surface
+separately disallows XML-like angle brackets. Oasis Security demonstrated a
 Claude.ai chain with invisible URL prompt injection and exfiltration through intentionally
 permitted Anthropic Files API egress. It used no skill, integration, tool, or MCP server.
 That does not establish a sandbox escape. It shows that a sandbox alone cannot stop prompt

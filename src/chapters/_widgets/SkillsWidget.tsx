@@ -4,10 +4,11 @@ import { useState } from "react";
 // real SKILL.md and watch its load profile appear. The reader should feel that the parts
 // of one small file live at different levels of progressive disclosure and cost the
 // context window very differently. The description is resident only when the skill is
-// listed for model invocation; each activated body loads alongside other activated skills;
-// a referenced doc enters context when read; a bundled script can return output without
-// first loading its source. Selecting a part in the source highlights every line that
-// belongs to it and shows where and when it loads.
+// listed for model invocation; a first, distinct, or changed rendered body loads in Claude
+// Code, while an identical re-invocation adds a short already-loaded note; a referenced doc
+// enters context when read; a bundled script can return output without first loading its
+// source. Selecting a part in the source highlights every line that belongs to it and shows
+// where and when it loads.
 // React state only, no persistence. Profiles distinguish portable design from Agent
 // Skills-specific limits where those limits are useful examples.
 
@@ -53,10 +54,10 @@ const PROFILES: Record<PartKey, Profile> = {
     label: "SKILL.md body",
     level: "level 2 · instructions",
     hot: false,
-    when: "after this skill is activated, alongside any other activated skills",
-    cost: "< 5k tokens recommended per activated skill",
-    enters: "yes after activation; multiple skill bodies can stack",
-    role: "The procedure the model follows once the skill is activated. It is absent until that point, which is the whole point: a hundred listed skills can sit available without paying for every body. The 500-line target is authoring guidance, not portable syntax, and several activated bodies may coexist in the window.",
+    when: "after this skill's first, distinct, or changed rendering in Claude Code",
+    cost: "< 5k tokens recommended for a full rendered body; identical re-invocation adds a short note",
+    enters: "a full body for first, distinct, or changed rendering; a short already-loaded note for an identical re-invocation",
+    role: "The procedure the model follows once the skill is activated. It is absent until that point, which is the whole point: a hundred listed skills can sit available without paying for every body. In Claude Code, an identical re-invocation adds a short already-loaded note rather than another body; a changed render, such as new arguments or dynamic context, adds the full body. Distinct activated skill bodies may coexist. The 500-line target is authoring guidance, not portable syntax.",
   },
   reference: {
     key: "reference",
@@ -150,6 +151,7 @@ export function SkillsWidget() {
             onMouseEnter={() => setSelected(key)}
             onFocus={() => setSelected(key)}
             aria-pressed={selected === key}
+            aria-label={`SKILL.md part: ${PROFILES[key].label}`}
             className={`rounded border px-2 py-1 transition-colors motion-reduce:transition-none ${
               selected === key
                 ? "border-accent/50 bg-accent/15 text-accent"
@@ -198,7 +200,7 @@ export function SkillsWidget() {
           </pre>
           <div className="border-t border-border px-3 py-2 font-mono text-[0.68rem]">
             <div className="text-comment">{"// bundled resources/"}</div>
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div role="group" aria-label="Bundled resources" className="mt-1 flex flex-wrap gap-1">
               {BUNDLED_RESOURCES.map(({ key, path }) => {
                 const active = selected === key;
                 return (
@@ -208,6 +210,7 @@ export function SkillsWidget() {
                     onMouseEnter={() => setSelected(key)}
                     onFocus={() => setSelected(key)}
                     aria-pressed={active}
+                    aria-label={`Bundled resource: ${path}`}
                     className={`rounded border px-1.5 py-0.5 transition-colors motion-reduce:transition-none ${
                       active
                         ? "border-accent/50 bg-accent/15 text-accent"

@@ -57,7 +57,7 @@ The loading model is the design, and it has a name: progressive disclosure. Cont
 reveals itself in three levels, each loaded at a different moment and costing the context
 window a different amount.
 
-<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. Level 2 loads the body of every activated skill, so activations can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding filesystem round trips at runtime.">
+<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. In Claude Code, level 2 loads a full body for a first, distinct, or changed rendering, while an identical re-invocation adds a short already-loaded note. Distinct activated skills can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding filesystem round trips at runtime.">
   <SkillsFigure />
 </Figure>
 
@@ -68,8 +68,10 @@ does not enter at startup and its full body arrives only when the user invokes i
 documentation puts listed metadata near a hundred tokens per skill. Independent
 measurements land lower, around thirty to fifty tokens each by
 [Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so a hundred listed,
-model-invocable skills cost roughly three to five thousand tokens at session start. Level
-two is the `SKILL.md` body of each activated skill. Several activations can stack. The
+model-invocable skills cost roughly three to five thousand tokens at session start. In
+Claude Code, level two adds the full `SKILL.md` body for a first, distinct, or changed
+rendering. An identical re-invocation adds a short already-loaded note instead. Distinct
+activated skills can stack, while exact re-invocation behavior remains host-specific. The
 under-five-thousand-token and 500-line targets are authoring recommendations, not grammar.
 At level three, a reference document enters context only when the agent reads it; a script
 can execute and return output without first loading its source. Unread resources and
@@ -84,8 +86,9 @@ full schemas until a tool is needed, while GitHub's MCP server lets an operator 
 available surface with `--toolsets` or `--tools`. An eagerly injected, large tool catalog
 is an expensive configuration, not the normal architecture of every MCP host. Progressive
 disclosure still trades startup tokens for filesystem round trips: the model has to `bash`
-out to read a body and any referenced file, which one analysis from MCPJam estimated at
-three to four times the tool calls of loading everything upfront. Which trade wins depends
+out to read a body and any referenced file, which MCPJam argued can take roughly three to
+four times the tool calls of loading everything upfront in its illustrated comparison.
+Which trade wins depends
 on the harness, latency budget, and task. The next chapter, Skill or Server, takes up that
 comparison; hybrids are common.
 
@@ -102,19 +105,23 @@ The portable specification says the description should state both what the skill
 when to use it, with words a matching task would contain. Anthropic's authoring guidance
 also prefers third person because its description is injected into the system prompt as
 fact about the world: "Formats and validates a changelog entry," not "I can help you
-format." That is strong surface guidance, not portable validity. A description can match
-perfectly and still not fire. The model only reaches for a skill on tasks it cannot already
-handle in one step. Ask it to read a single PDF and it just reads it. Ask for a multi-step,
-format-sensitive operation and the skill reliably triggers. Discovery is a judgment about
-difficulty, not only about keywords.
+format." That is strong surface guidance, not portable validity. Anthropic's current
+[`skill-creator`](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md)
+makes a narrower, Anthropic-specific claim: a simple one-step request such as reading a
+PDF may not trigger a skill even when its description matches, while a matching complex,
+multi-step, or specialized request reliably triggers. Treat that as current guidance for
+that model and harness, not a portable Agent Skills guarantee. On a target harness, use
+fresh sessions with realistic positive prompts and near-miss negatives to measure
+activation as well as output quality.
 
-Model invocation is not the only door. Some surfaces offer an explicit command, and some
-offer controls that make a skill user-only or model-only. Claude Code's
-`disable-model-invocation` and `user-invocable` frontmatter fields are useful examples.
-The first hides a user-only skill from the model's startup listing, which removes its
-startup context cost until a user invokes it. They are surface extensions, not portable
-assumptions. Design the body so either route leads to the same workflow, then test both
-routes where the target harness supports them.
+Model invocation is not the only door. Some surfaces offer an explicit command for
+user-invocable skills, and some offer controls that make a skill user-only or model-only.
+Claude Code's `disable-model-invocation` and `user-invocable` frontmatter fields are useful
+examples. The first hides a user-only skill from the model's startup listing, which removes
+its startup context cost until a user invokes it; `user-invocable: false` hides a model-only
+skill from the `/` menu. They are surface extensions, not portable assumptions. Design the
+body so either route leads to the same workflow, then test both routes where the target
+harness supports them.
 
 ## Code that can stay out of the window
 
@@ -128,8 +135,8 @@ expensive, and far less reliable, than running a sort. Anywhere a task is determ
 shipping the code beats asking the model to reconstruct it every time. Willison's
 `slack-gif-creator` skill shows the pattern at its cleanest: the model runs a bundled
 builder, then a bundled validator checks the result against Slack's file-size limit, and
-if it fails the model adjusts and runs again. A feedback loop the skill author wrote once,
-executed deterministically, correcting the model's non-deterministic output.
+if it fails the model can adjust and run it again. A feedback loop the skill author wrote
+once, executed deterministically, correcting the model's non-deterministic output.
 
 The caveat that bites in practice is that a portable folder does not create a portable
 execution environment. Network egress, package installation, filesystem reach, and
@@ -152,11 +159,12 @@ and confusing the two wastes a turn.
 
 The widget below is one small, correct `SKILL.md`, the changelog skill from the artifact.
 Select any part and watch where and when it loads. Its description sits at level one when
-the skill is listed for model invocation. Its body waits at level two for an activation,
-alongside the body of any other activated skill. The reference and the script live at level
-three: reading the reference brings its text into context, while executing the script can
-return output without loading source first. It is the same file in five different
-relationships with the context window.
+the skill is listed for model invocation. In Claude Code, its full body waits at level two
+for a first, distinct, or changed rendering; an identical re-invocation gets a short
+already-loaded note. Distinct skill bodies can coexist. The reference and the script live
+at level three: reading the reference brings its text into context, while executing the
+script can return output without loading source first. It is the same file in five
+different relationships with the context window.
 
 <Widget name="skill_anatomy" hint="Hover or select a part of the SKILL.md, or a highlighted line, to see which level of progressive disclosure it lives at, when it loads, and what it costs the context window.">
   <SkillsWidget />
@@ -179,10 +187,11 @@ or obtained from a party you trust, and audit every bundled file for network cal
 access that does not match the stated purpose. A skill that fetches an external URL can pull
 fresh instructions into the loop on every run, which is the [indirect injection](/mcp-security-surface)
 problem wearing a new coat, and a trusted skill can be compromised when its dependencies
-change under it. Anthropic rejects XML-like angle brackets in frontmatter because that
-surface injects the metadata into the system prompt. That is not a portable Agent Skills
-rule. Separately, Oasis Security demonstrated a Claude.ai chain that hid an injection in a
-URL parameter, then used intentionally permitted Files API egress to exfiltrate data. It
+change under it. On Anthropic's surface, frontmatter metadata enters the system prompt.
+The platform separately disallows XML-like angle brackets in frontmatter. That is not a
+portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain
+with an injection hidden in a URL parameter, then used intentionally permitted Files API
+egress to exfiltrate data. It
 involved no skill, integration, tool, or MCP server. The lesson is narrower and stronger:
 a sandbox alone cannot stop prompt injection or egress it deliberately permits. Control
 egress, filesystem access, and permissions explicitly.
@@ -254,7 +263,8 @@ near-miss negatives. Tune the words, then measure the actual trigger behavior.
 
 <ExerciseCard n="02" title="Price the context">
 Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred listed,
-model-invocable skills against the cost of one activated skill's body. Now state, in one
+model-invocable skills against the cost of a full body on a first, distinct, or changed
+rendering. Now state, in one
 sentence, why a large listed skill library can stay cheap while triggering the wrong heavy
 skill consumes its full body budget. Then name the exception: a Claude Code user-only skill with
 `disable-model-invocation: true` is absent from startup context until manual invocation.
@@ -300,6 +310,9 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
 - [Anthropic's skill-authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices),
   for the under-500-line body budget, degrees-of-freedom heuristic, execute-versus-read
   wording, feedback loops, and evaluation-first development.
+- [Anthropic's `skill-creator` Skill](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md),
+  for the current Anthropic-specific simple-versus-complex triggering guidance and
+  fresh-session trigger evaluation.
 - [Firecrawl, "Agent Skills Explained"](https://www.firecrawl.dev/blog/agent-skills), for
   the 30-to-50-token metadata estimate and its 100-skill arithmetic. This is an external
   measurement, not a platform guarantee.

@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -319,3 +319,48 @@ intended loading paths.
 ## Advisories
 
 - **`src/chapters/_widgets/SkillsWidget.tsx:146-160,202-220`: the resource controls duplicate accessible names.** The top control strip and bundled-resource strip expose indistinguishable buttons for the same resources. The interaction works, but a labelled resource group or contextual accessible names would make keyboard and screen-reader navigation calmer.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and `git log -p --
+content/critiques/skills.md`, including Rounds 1 through 9. Re-verified every required
+correction against the current chapter, figure, widget, research backbone, and complete
+`artifacts/ch10-skills` package. The corrections from Rounds 1 through 6 remain intact:
+portable and Anthropic-specific rules stay separated, the Oasis case remains accurately
+scoped, the root-aware installed validator workflow and clean-home install still pass, and
+the artifact retains meaningful parser and budget failures. The chapter remains `draft`;
+this resolution does not grant approval.
+
+1. **Source-labelled startup arithmetic.** Updated `SkillsFigure.tsx` to show Firecrawl's
+   30-to-50-token estimate beside Anthropic's roughly-100-token rule of thumb, with the
+   matching 100-skill totals of roughly 3 to 5k and 10k tokens. The figure now agrees with
+   the chapter's source-qualified prose.
+2. **Discovery and invocation scope.** Reworked `src/chapters/skills.mdx` and
+   `docs/research/ch10-skills.md` to attribute the simple-versus-complex triggering
+   tendency to Anthropic's current `skill-creator`, label it as Anthropic-specific, retain
+   fresh target-harness evaluation guidance, and add the source to the chapter. The research
+   backbone now correctly limits slash commands to user-invocable Claude Code Skills and
+   states that `user-invocable: false` hides a Skill from the `/` menu.
+3. **Evidence precision.** Recast the `slack-gif-creator` example in the chapter and
+   research as a feedback loop the model can use to adjust and rerun, rather than an
+   observed retry. Removed the unsupported causal rationale for Anthropic's XML-like
+   angle-bracket rule while retaining the two documented facts separately.
+4. **One-line validator boundary.** Changed
+   `artifacts/ch10-skills/changelog-entry/scripts/validate_entry.py` to reject every
+   Python-recognized line break, not only `\\n`. Added real-script regression assertions for
+   carriage return and the Unicode line separator in `skills_lab.py --test`.
+5. **Level-two lifecycle.** Synchronized the figure, chapter caption and prose, widget,
+   lab output and simulator, artifact README, and research backbone with Claude Code's
+   lifecycle: first, distinct, or changed renderings add the full body; an identical
+   re-invocation adds a short already-loaded note; distinct Skill bodies can coexist.
+6. **Advisories taken.** Qualified the MCPJam figure in the chapter, raised essential
+   figure-label contrast, distinguished later discovery from already-loaded Skill content in
+   the research backbone, and gave the widget's part and bundled-resource controls distinct
+   accessible names and a labelled resource group.
+7. **Teaching-lint scalar boundary.** Tightened `skills_lab.py` so a comment-only
+   description remains empty and YAML null, boolean, or numeric scalars are rejected rather
+   than reported clean as strings. Added deterministic parser regression coverage and updated
+   the artifact README's supported-subset contract.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 53 assertions, including the
+new line-break and scalar-boundary cases. `npm run check` passes all seven stages.

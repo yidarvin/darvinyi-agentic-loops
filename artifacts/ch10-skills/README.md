@@ -95,16 +95,21 @@ and may decline a skill whose description matches a one-step request it can hand
 directly. Treat `--simulate` as an illustration, then evaluate with fresh models in the
 target harness against positive and near-miss prompts.
 
+For the Claude Code lifecycle this lab illustrates, a first, distinct, or changed rendered
+body enters in full; an identical re-invocation adds only a short already-loaded note.
+Distinct skill bodies can coexist. Other harnesses can choose different lifecycle behavior.
+
 ## Teaching-lint scope
 
 `skills_lab.py` is deliberately dependency-free. Its default profile is a teaching lint
 for this bundle's supported portable subset: plain or basic quoted scalar key-value
 fields, indented continuations, folded (`>`) or literal (`|`) description blocks, ASCII
-name syntax, and directory matching. A clean result means only that the checked subset
-passed; it does not certify arbitrary YAML, Unicode name forms, or the complete optional
-Agent Skills schema. For production, use the target harness's maintained validator and your
-own deployment gate. `skills-ref` is a demonstration-only reference implementation useful
-for comparison, not a production certification.
+name syntax, and directory matching. Plain comments are stripped, while YAML null,
+boolean, and numeric values are rejected where a string is required. A clean result means
+only that the checked subset passed; it does not certify arbitrary YAML, Unicode name forms,
+or the complete optional Agent Skills schema. For production, use the target harness's
+maintained validator and your own deployment gate. `skills-ref` is a demonstration-only
+reference implementation useful for comparison, not a production certification.
 `--surface anthropic` adds Anthropic's reserved-vendor-name and angle-bracket restrictions.
 Third-person wording, a concrete `when` cue, and the 500-line body budget are authoring
 warnings, not portable structural failures.

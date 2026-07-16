@@ -26,7 +26,7 @@ def validate(entry: str) -> Optional[str]:
         return "entry has leading or trailing whitespace"
     if not entry:
         return "entry is empty"
-    if "\n" in entry:
+    if len(entry.splitlines()) != 1:
         return "entry must be a single line"
     if ":" not in entry:
         return "entry must begin with a type and a colon, e.g. 'Added: ...'; " \

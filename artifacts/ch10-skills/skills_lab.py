@@ -20,8 +20,8 @@ No third-party packages, API key, or network are required. Python 3.9+ is requir
 Bash is required for the fresh-install smoke test and ``check.sh``. Token counts are
 estimates (~4 characters per token), and the discovery match is a two-keyword proxy rather
 than a production harness. The parser handles plain or basic quoted mappings and folded or
-literal block scalars used by this artifact. It rejects unsupported YAML collections rather
-than pretending to validate them.
+literal block scalars used by this artifact. It rejects unsupported YAML collections and
+plain YAML forms that resolve to non-string values, rather than pretending to validate them.
 
 Usage:
     python3 skills_lab.py                              # overview of the bundled skill
@@ -63,6 +63,13 @@ PERSON = re.compile(
 )
 WHEN_CUE = re.compile(r"\b(when|whenever|use this|use for)\b")
 REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
+YAML_NUMBER = re.compile(
+    r"[-+]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][-+]?[0-9_]+)?$"
+    r"|[-+]?\.[0-9_]+(?:[eE][-+]?[0-9_]+)?$"
+    r"|[-+]?\.(?:inf|nan)$"
+    r"|0[xo][0-9a-fA-F_]+$",
+    re.IGNORECASE,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -76,6 +83,21 @@ def parse_scalar(value: str, key: str, errors: list[str]) -> str:
         )
         return value
     if not value.startswith(("'", '"')):
+        # A YAML comment begins at a hash preceded by whitespace. Strip it before
+        # checking scalar type, so `description: # explanation` remains empty.
+        value = re.split(r"(?:^|\s)#", value, maxsplit=1)[0].rstrip()
+        if not value:
+            return ""
+
+        lowered = value.casefold()
+        if (
+            lowered in {"~", "null", "true", "false"}
+            or YAML_NUMBER.fullmatch(value)
+        ):
+            errors.append(
+                f"{key} has a YAML non-string scalar; quote it as a string"
+            )
+            return ""
         return value
     if value[0] == "'":
         if len(value) < 2 or not value.endswith("'"):
@@ -291,7 +313,7 @@ def print_cost(skill) -> None:
     cost = cost_model(skill)
     print("// progressive-disclosure cost (token estimates, ~4 chars/token)")
     print(f"  level 1  metadata (name + description)  ~{cost['level1']:>5} tokens   listed, model-invocable")
-    print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   each activation; bodies can stack")
+    print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   Claude Code: first/distinct/changed render; identical re-invocation gets a short note")
     if cost["resources"]:
         print("  level 3+ bundled resources                            accessed on demand:")
         for rel, size in cost["resources"]:
@@ -347,7 +369,7 @@ def simulate(skill, request: str) -> bool:
         return False
     print("  => this proxy triggers. possible loading sequence:")
     print(f"     level 1  already listed: name + description (~{est_tokens(description)} description tokens)")
-    print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); other activated bodies can stack")
+    print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); Claude Code: first/distinct/changed render, identical re-invocation gets a short note")
     for rel in sorted(set(REF_PATH.findall(body))):
         if rel.startswith("scripts/"):
             print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
@@ -489,6 +511,34 @@ def run_tests() -> int:
     check("quoted empty description parses as empty", quoted_meta.get("description") == "")
     check("quoted empty description trips P6", "P6" in codes(quoted_errors))
 
+    comment_meta, comment_body, comment_frontmatter, comment_parse_errors = parse_frontmatter(
+        "---\nname: comment-description\ndescription: # use when needed\n---\n# Body"
+    )
+    comment_skill = {
+        "meta": comment_meta,
+        "body": comment_body,
+        "has_fm": comment_frontmatter,
+        "parse_errors": comment_parse_errors,
+        "dir": os.path.join(HERE, "comment-description"),
+    }
+    comment_errors, _ = validate_skill(comment_skill)
+    check("comment-only description parses as empty", comment_meta.get("description") == "")
+    check("comment-only description trips P6", "P6" in codes(comment_errors))
+
+    for label, scalar in (("null", "null"), ("boolean", "true"), ("numeric", "42")):
+        scalar_meta, scalar_body, scalar_frontmatter, scalar_parse_errors = parse_frontmatter(
+            f"---\nname: {label}-description\ndescription: {scalar}\n---\n# Body"
+        )
+        scalar_skill = {
+            "meta": scalar_meta,
+            "body": scalar_body,
+            "has_fm": scalar_frontmatter,
+            "parse_errors": scalar_parse_errors,
+            "dir": os.path.join(HERE, f"{label}-description"),
+        }
+        scalar_errors, _ = validate_skill(scalar_skill)
+        check(f"{label} description trips P0", "P0" in codes(scalar_errors))
+
     inline_collection_meta, inline_collection_body, inline_collection_frontmatter, inline_collection_parse_errors = parse_frontmatter(
         "---\nname: inline-collection\ndescription: [not, a scalar]\n---\n# Body"
     )
@@ -548,6 +598,8 @@ def run_tests() -> int:
         check("validator has no arbitrary 120-char cap", run_entry_quiet(good, "Added: " + ("x" * 200)) == 0)
         check("validator rejects leading stdin whitespace", run_entry_stdin_quiet(good, " Added: trimmed?\n") == 1)
         check("validator rejects trailing stdin whitespace", run_entry_stdin_quiet(good, "Added: trimmed? \n") == 1)
+        check("validator rejects a carriage-return line break", run_entry_quiet(good, "Added: good\rInjected") == 1)
+        check("validator rejects a Unicode line-separator break", run_entry_quiet(good, "Added: good\u2028Injected") == 1)
         bash_available = shutil.which("bash") is not None
         check("Bash is available for the documented install and check workflows", bash_available)
         if bash_available:
