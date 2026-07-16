@@ -2,6 +2,7 @@
 name: changelog-entry
 description: Formats and validates a Keep a Changelog entry. Use when adding a
   changelog entry, recording a change, or editing CHANGELOG.md.
+compatibility: Requires Python 3.9+ for the bundled validator; writing CHANGELOG.md needs project-write permission.
 ---
 # Changelog entry
 

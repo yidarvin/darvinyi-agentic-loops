@@ -200,23 +200,27 @@ agent's own machine, so the only safe default is a source you can vouch for.
 Do not bake platform quotas, beta headers, or caching behavior into a portable skill. Pin
 those details to the target surface's current documentation and revisit them at upgrade
 time. The deeper comparison, when the gap you are filling is procedural knowledge versus
-live connectivity, is the next chapter, Skill or Server. Mahesh Murag's one-liner is the
-seed of it: MCP provides secure connectivity to external software and data, while skills
-provide the procedural knowledge for using those tools effectively. The two compose. A
-skill that orchestrates MCP tools is a common production shape.
+live connectivity, is the next chapter, Skill or Server. Mahesh Murag framed the split
+succinctly: MCP provides secure connectivity to external software and data; skills provide
+the procedural knowledge for using those tools effectively. The formulation comes from a
+[VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard).
+The two compose. A skill that orchestrates MCP tools is a common production shape.
 
 ## Run it
 
-The artifact is a skills lab with no dependencies, no API key, and no network. It ships a
-real, correct skill, `changelog-entry/`, that a compatible local skill directory can
-discover and trigger, complete with a `references/FORMAT.md` read one hop away and a
+The artifact has no third-party packages, API key, or network requirement. It needs a
+`python3` command backed by Python 3.9+, plus Bash for its documented install and check
+paths. It ships a real, correct skill, `changelog-entry/`, that a compatible local skill
+directory can discover and trigger, complete with a `references/FORMAT.md` read one hop away and a
 `scripts/` validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does
 three things the chapter describes. Its default teaching lint checks the bundle's supported
 portable subset: ASCII name syntax, directory matching, and description bounds. It is not a
-general YAML or full-schema validator; use `skills-ref validate` for production validation.
-An explicit Anthropic profile adds that surface's reserved-word and angle-bracket checks.
-Third-person phrasing, what-and-when coverage, and the 500-line budget remain labelled
-authoring warnings, not portable failures. The lab prices listed, model-invocable skills at startup and makes the
+general YAML or full-schema validator. For production, use the target harness's maintained
+validator and a deployment gate. `skills-ref` is a demonstration-only reference implementation,
+useful for comparison but not production certification. An explicit Anthropic profile adds that
+surface's reserved-word and angle-bracket checks. Third-person phrasing, what-and-when
+coverage, and the 500-line budget remain labelled authoring warnings, not portable failures.
+The lab prices listed, model-invocable skills at startup and makes the
 user-only exception visible. Its discovery simulator is deliberately illustrative: it uses
 a two-keyword proxy and prints a possible loading sequence, not evidence that a production
 model would trigger. A deliberately broken `bad-skill/` is included so you can watch the
@@ -227,13 +231,14 @@ stdin validation, and the installed-validator path.
   name="skills_lab"
   path="artifacts/ch10-skills/"
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch10-skills"
-  runtime="python 3.9+"
+  runtime="python3 (Python 3.9+) + Bash for install/check"
   run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --test"]}>
 One real skill you can install and trigger, plus a teaching lint that checks its supported
 portable subset and an optional Anthropic profile, a progressive-disclosure cost model that
 prices listed skills, and an illustrative discovery simulator. A broken skill demonstrates
 the boundary between portable rules and surface-specific checks, while test mode covers the
-remaining boundaries. Zero dependencies, no key, no network.
+remaining boundaries. No third-party packages, API key, or network; Bash powers the
+documented install and check path.
 </RunnableArtifact>
 
 ## Exercises
@@ -281,9 +286,14 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   (Barry Zhang, Keith Lazuka, Mahesh Murag, October 16 2025), for the definition, folder
   structure, three-level progressive-disclosure model, description-authoring rules, and the
   "context window is a public good" and new-hire-onboarding framings.
+- [VentureBeat, "Anthropic launches enterprise Agent Skills and opens the standard"](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard),
+  for Mahesh Murag's Skills/MCP formulation.
 - [The Agent Skills specification](https://agentskills.io/specification), for the portable
   format, frontmatter contract, directory structure, progressive-disclosure guidance, and
   reference validator.
+- [The Agent Skills `skills-ref` README](https://github.com/agentskills/agentskills/tree/main/skills-ref),
+  which identifies the reference library as demonstration-only rather than a production
+  validator.
 - [Anthropic's Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview),
   for current execution-environment constraints, cross-surface behavior, API limits, and
   the sharp boundary between prompt instructions and filesystem-based Skills.

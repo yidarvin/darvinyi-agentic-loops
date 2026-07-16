@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -210,3 +210,39 @@ current artifacts without repeating them below.
 ## Advisories
 
 - `artifacts/ch10-skills/changelog-entry/SKILL.md:2-4,22-25` remains model-invocable by default even though its workflow later writes `CHANGELOG.md`. Claude Code recommends `disable-model-invocation: true` for side-effect workflows. The existing permission language means this does not establish an unsafe automatic write, so it is not blocking, but a manual-only write skill or a separate read-only discovery skill would align the exemplar more closely with the chapter's security guidance.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history, including Rounds 1 through 6,
+and re-verified every prior required correction against the current chapter, figure, widget,
+research backbone, and `artifacts/ch10-skills` files. The resolved Rounds 1 through 3
+corrections remain intact: the Oasis example and portable-versus-surface distinction are
+accurate, the progressive-disclosure model includes stacked bodies and both resource paths,
+the startup and MCP comparisons are scoped to their harnesses, and the root-aware validator
+workflow still passes. The chapter remains `draft`; this resolution does not grant approval.
+
+1. **Murag attribution.** Rewrote the Skills/MCP passage in `src/chapters/skills.mdx` to
+   attribute the formulation to its VentureBeat interview, added that source to the chapter,
+   and linked the same attribution in `docs/research/ch10-skills.md`.
+2. **Runtime contract.** Declared `python3` with Python 3.9+ and Bash requirements in the
+   runnable-artifact block, artifact README, and lab docstring. The bundled skill's
+   compatibility metadata now states its Python and project-write requirements. The artifact
+   still has no third-party packages, API key, or network requirement.
+3. **Fresh installation.** Replaced the README's incomplete copy command with a directory-
+   creating, content-copying install sequence, documented its overlay-update behavior, and
+   added a test that runs those exact commands against an empty temporary home before
+   executing the installed root-aware validator from outside the skill directory.
+4. **Meaningful budget failure.** Made `--budget` reject negative counts through argparse
+   with a clear nonzero error, retained zero as valid, and added both boundaries to
+   `skills_lab.py --test`.
+5. **Production validation.** Removed every claim that `skills-ref validate` is a production
+   validator. The chapter, README, lab output, and docstring now direct production users to
+   the target harness's maintained validator plus a deployment gate, and describe
+   `skills-ref` as a demonstration-only reference implementation.
+6. **Cheap advisory repairs.** The teaching parser now reports unsupported inline and nested
+   YAML collections as P0 errors instead of accepting them as strings; `--validate` and
+   `--skill` now honor caller-relative paths; and `FORMAT.md` labels its Unreleased and
+   category-order rules as bundled conventions rather than universal Keep a Changelog rules.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 46 assertions, including the
+clean-home install and negative-budget cases. `npm run check` passes all seven stages.

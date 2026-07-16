@@ -7,8 +7,8 @@ belongs to. Paraphrased from [Keep a Changelog 1.1.0](https://keepachangelog.com
 ## The file
 
 A `CHANGELOG.md` is a reverse-chronological list of notable changes, written for
-humans, one section per version. The top section is always `## [Unreleased]`,
-where new entries accumulate until a release is cut.
+humans, one section per version. This bundled convention keeps an `## [Unreleased]`
+section at the top, where new entries accumulate until a release is cut.
 
 ```
 ## [Unreleased]
@@ -22,7 +22,7 @@ where new entries accumulate until a release is cut.
 
 ## The six change types
 
-Group entries under one of these `###` headings, in this order:
+This bundled skill groups entries under these `###` headings, in this order:
 
 - **Added** for new features.
 - **Changed** for changes in existing behavior.
@@ -35,9 +35,9 @@ Only include the headings that have entries. An empty type heading is noise.
 
 ## Cutting a release
 
-When a version ships, rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and
-open a fresh empty `## [Unreleased]` above it. Keep the existing type headings and
-their entries as written.
+For this bundled convention, when a version ships, rename `## [Unreleased]` to
+`## [x.y.z] - YYYY-MM-DD` and open a fresh empty `## [Unreleased]` above it. Keep
+the existing type headings and their entries as written.
 
 ## Style
 

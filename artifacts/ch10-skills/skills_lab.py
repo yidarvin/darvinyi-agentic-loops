@@ -5,19 +5,23 @@ Three ideas from the Skills chapter, made executable:
 
   1. Lint this bundle's supported portable frontmatter subset: the required
      ASCII name syntax, directory match, and description bounds. It is a
-     teaching lint, not a replacement for ``skills-ref validate`` on arbitrary
-     YAML or the complete Agent Skills schema. The optional ``--surface
-     anthropic`` profile adds Anthropic-only compatibility restrictions;
-     authoring advice stays a warning in either profile.
+     teaching lint, not a general YAML implementation, full-schema validator,
+     or production gate. In production, use the target harness's maintained
+     validator together with your own deployment gate. ``skills-ref`` remains
+     a demonstration-only reference implementation for comparison. The optional
+     ``--surface anthropic`` profile adds Anthropic-only compatibility
+     restrictions; authoring advice stays a warning in either profile.
   2. Price progressive disclosure: what one listed, model-invocable skill costs
      at each loading level, and what listing N such skills costs at startup.
   3. Simulate discovery with an intentionally crude keyword proxy. It illustrates
      the loading path but cannot establish how a production model will trigger.
 
-No dependencies, no API key, no network. Token counts are estimates (~4 characters per
-token), and the discovery match is a two-keyword proxy rather than a production harness.
-The parser handles plain or basic quoted mappings and folded or literal block scalars used
-by this artifact. It is not a general YAML implementation.
+No third-party packages, API key, or network are required. Python 3.9+ is required;
+Bash is required for the fresh-install smoke test and ``check.sh``. Token counts are
+estimates (~4 characters per token), and the discovery match is a two-keyword proxy rather
+than a production harness. The parser handles plain or basic quoted mappings and folded or
+literal block scalars used by this artifact. It rejects unsupported YAML collections rather
+than pretending to validate them.
 
 Usage:
     python3 skills_lab.py                              # overview of the bundled skill
@@ -34,8 +38,10 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -48,7 +54,7 @@ EAGER_TOOL_CATALOG_EXAMPLE = 25_000
 # The teaching lint deliberately supports the artifact's ASCII name subset: one to 64
 # lowercase alphanumeric segments joined by single hyphens. The directory must match.
 # The full Agent Skills specification permits more YAML and Unicode lowercase names;
-# use its reference validator for universal validation.
+# use the target harness's maintained validator before a production deployment.
 VALID_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 KEY_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$")
 PERSON = re.compile(
@@ -64,6 +70,11 @@ REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
 # --------------------------------------------------------------------------- #
 def parse_scalar(value: str, key: str, errors: list[str]) -> str:
     """Parse the teaching subset's plain and basic quoted scalar values."""
+    if value.startswith(("[", "{")):
+        errors.append(
+            f"{key} has unsupported YAML collection syntax; this teaching lint accepts scalar values only"
+        )
+        return value
     if not value.startswith(("'", '"')):
         return value
     if value[0] == "'":
@@ -103,6 +114,7 @@ def parse_frontmatter(text: str):
 
     meta: dict[str, str] = {}
     parse_errors: list[str] = []
+    unsupported_nested_keys: set[str] = set()
     key = None
     frontmatter = lines[1:end]
     i = 0
@@ -128,7 +140,16 @@ def parse_frontmatter(text: str):
                 continue
             meta[key] = parse_scalar(value, key, parse_errors)
         elif key is not None and line[:1].isspace():
-            meta[key] = (meta[key] + " " + line.strip()).strip()
+            continuation = line.strip()
+            if (
+                continuation.startswith(("- ", "? ", ": ", "[", "{"))
+                or KEY_LINE.match(continuation)
+            ) and key not in unsupported_nested_keys:
+                parse_errors.append(
+                    f"{key} has unsupported nested YAML collection syntax; this teaching lint accepts scalar values only"
+                )
+                unsupported_nested_keys.add(key)
+            meta[key] = (meta[key] + " " + continuation).strip()
         i += 1
     body = "\n".join(lines[end + 1:]).strip("\n")
     return meta, body, True, parse_errors
@@ -235,7 +256,8 @@ def print_validation(skill, surface: str = "portable") -> tuple[list, list]:
     for code, message in errors:
         print(f"  ERROR {code}  {message}")
     if not errors and not warnings:
-        print("  clean: passes this lab's checked subset; run skills-ref validate for the full Agent Skills schema")
+        print("  clean: passes this lab's checked subset")
+        print("  production: use the target harness's maintained validator and a deployment gate; skills-ref is reference-only")
     elif not errors:
         print(f"  valid with {len(warnings)} authoring warning(s)")
     else:
@@ -284,6 +306,8 @@ def print_cost(skill) -> None:
 
 
 def print_budget(skill, count: int) -> None:
+    if count < 0:
+        raise ValueError("budget count must be zero or greater")
     cost = cost_model(skill)
     level1 = cost["level1"]
     startup = level1 * count
@@ -342,7 +366,7 @@ def run_entry(skill, entry: str) -> int:
     if not os.path.isfile(script):
         print(f"no bundled validator at {script}")
         return 1
-    print(f"// bash executes python3 {script!r} {entry!r}")
+    print(f"// runs python3 {script!r} {entry!r}")
     proc = subprocess.run(["python3", script, entry], capture_output=True, text=True)
     output = (proc.stdout + proc.stderr).strip()
     print(f"  output: {output}")
@@ -465,6 +489,53 @@ def run_tests() -> int:
     check("quoted empty description parses as empty", quoted_meta.get("description") == "")
     check("quoted empty description trips P6", "P6" in codes(quoted_errors))
 
+    inline_collection_meta, inline_collection_body, inline_collection_frontmatter, inline_collection_parse_errors = parse_frontmatter(
+        "---\nname: inline-collection\ndescription: [not, a scalar]\n---\n# Body"
+    )
+    inline_collection_skill = {
+        "meta": inline_collection_meta,
+        "body": inline_collection_body,
+        "has_fm": inline_collection_frontmatter,
+        "parse_errors": inline_collection_parse_errors,
+        "dir": os.path.join(HERE, "inline-collection"),
+    }
+    inline_collection_errors, _ = validate_skill(inline_collection_skill)
+    check("inline YAML collection trips P0", "P0" in codes(inline_collection_errors))
+
+    nested_collection_meta, nested_collection_body, nested_collection_frontmatter, nested_collection_parse_errors = parse_frontmatter(
+        "---\nname: nested-collection\ndescription:\n  - not a scalar\n---\n# Body"
+    )
+    nested_collection_skill = {
+        "meta": nested_collection_meta,
+        "body": nested_collection_body,
+        "has_fm": nested_collection_frontmatter,
+        "parse_errors": nested_collection_parse_errors,
+        "dir": os.path.join(HERE, "nested-collection"),
+    }
+    nested_collection_errors, _ = validate_skill(nested_collection_skill)
+    check("nested YAML collection trips P0", "P0" in codes(nested_collection_errors))
+
+    indented_flow_collection_meta, indented_flow_collection_body, indented_flow_collection_frontmatter, indented_flow_collection_parse_errors = parse_frontmatter(
+        "---\nname: indented-flow-collection\ndescription:\n  [not, a scalar]\n---\n# Body"
+    )
+    indented_flow_collection_skill = {
+        "meta": indented_flow_collection_meta,
+        "body": indented_flow_collection_body,
+        "has_fm": indented_flow_collection_frontmatter,
+        "parse_errors": indented_flow_collection_parse_errors,
+        "dir": os.path.join(HERE, "indented-flow-collection"),
+    }
+    indented_flow_collection_errors, _ = validate_skill(indented_flow_collection_skill)
+    check("indented flow YAML collection trips P0", "P0" in codes(indented_flow_collection_errors))
+
+    zero_budget = run_lab_quiet("--budget", "0")
+    check("zero budget remains valid", zero_budget.returncode == 0)
+    negative_budget = run_lab_quiet("--budget", "-1")
+    check(
+        "negative budget returns a clear nonzero error",
+        negative_budget.returncode != 0 and "must be zero or greater" in negative_budget.stderr,
+    )
+
     if good:
         check("relevant request triggers this proxy", simulate_quiet(good, "add a changelog entry for the export flag"))
         check("irrelevant request does not trigger this proxy", not simulate_quiet(good, "reboot the database server"))
@@ -477,7 +548,14 @@ def run_tests() -> int:
         check("validator has no arbitrary 120-char cap", run_entry_quiet(good, "Added: " + ("x" * 200)) == 0)
         check("validator rejects leading stdin whitespace", run_entry_stdin_quiet(good, " Added: trimmed?\n") == 1)
         check("validator rejects trailing stdin whitespace", run_entry_stdin_quiet(good, "Added: trimmed? \n") == 1)
-        check("root-aware installed command works outside the skill directory", run_installed_workflow_quiet(good, "Added: root-aware path") == 0)
+        bash_available = shutil.which("bash") is not None
+        check("Bash is available for the documented install and check workflows", bash_available)
+        if bash_available:
+            check("root-aware installed command works outside the skill directory", run_installed_workflow_quiet(good, "Added: root-aware path") == 0)
+            check(
+                "fresh Claude Code install creates its missing skill directory and runs outside it",
+                run_fresh_install_quiet("Added: fresh install path") == 0,
+            )
 
     print(f"\n{passed} passed, {failed} failed")
     return 0 if failed == 0 else 1
@@ -521,9 +599,52 @@ def run_installed_workflow_quiet(skill, entry: str) -> int:
     return proc.returncode
 
 
+def run_fresh_install_quiet(entry: str) -> int:
+    """Run the README's install commands with an empty HOME, then exercise the skill."""
+    with tempfile.TemporaryDirectory(prefix="skills-lab-home-") as fake_home:
+        env = os.environ.copy()
+        env["HOME"] = fake_home
+        install = subprocess.run(
+            [
+                "bash",
+                "-c",
+                "mkdir -p ~/.claude/skills/changelog-entry\n"
+                "cp -R changelog-entry/. ~/.claude/skills/changelog-entry/",
+            ],
+            cwd=HERE,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        installed_dir = os.path.join(fake_home, ".claude", "skills", "changelog-entry")
+        installed, error = load_skill(installed_dir)
+        if install.returncode != 0 or installed is None or error is not None:
+            return 1
+        return run_installed_workflow_quiet(installed, entry)
+
+
+def run_lab_quiet(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run this CLI as a subprocess to test parser-level argument failures."""
+    return subprocess.run(
+        [sys.executable, os.path.abspath(__file__), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # cli
 # --------------------------------------------------------------------------- #
+def nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return parsed
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="A zero-dependency lab for Agent Skills.")
     parser.add_argument("--validate", metavar="DIR", help="lint this bundle's supported frontmatter subset")
@@ -534,7 +655,7 @@ def main(argv: list[str]) -> int:
         help="compatibility profile for validation (default: portable)",
     )
     parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget/--simulate/--entry")
-    parser.add_argument("--budget", metavar="N", type=int, help="print the startup cost of N listed skills")
+    parser.add_argument("--budget", metavar="N", type=nonnegative_int, help="print the startup cost of N listed skills")
     parser.add_argument("--simulate", metavar="REQUEST", help="illustrate discovery for a request string")
     parser.add_argument("--entry", metavar="LINE", help="run the skill's bundled validator on a changelog entry")
     parser.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
@@ -544,15 +665,14 @@ def main(argv: list[str]) -> int:
         return run_tests()
 
     if args.validate:
-        skill, error = load_skill(args.validate if os.path.isabs(args.validate)
-                                  else os.path.join(HERE, args.validate))
+        skill, error = load_skill(args.validate)
         if error:
             print(error)
             return 1
         errors, _ = print_validation(skill, args.surface)
         return 0 if not errors else 1
 
-    skill, error = load_skill(args.skill if os.path.isabs(args.skill) else os.path.join(HERE, args.skill))
+    skill, error = load_skill(args.skill)
     if error:
         print(error)
         return 1

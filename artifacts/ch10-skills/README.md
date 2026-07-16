@@ -5,8 +5,10 @@ It ships a real, correct skill you can install and use, plus a tool that makes t
 chapter's three ideas executable: a frontmatter teaching lint, the progressive-disclosure cost
 model, and discovery.
 
-- **Runtime:** Python 3.9+ (standard library only)
-- **Requires:** nothing. No API key, no network, no packages.
+- **Runtime:** a `python3` command backed by Python 3.9+ (standard library only).
+- **Shell:** Bash for the documented install commands, fresh-install smoke test, and
+  `check.sh`.
+- **External requirements:** no API key, network, or third-party packages.
 
 ## What's here
 
@@ -49,6 +51,7 @@ python3 skills_lab.py --entry "Added: --export flag to the CLI"
 )
 
 # Assertions: the good skill passes, the bad one fails on the exact rules it breaks.
+# This includes a fresh-install smoke test, so Bash is required here.
 python3 skills_lab.py --test
 
 # The self-contained check works from this directory.
@@ -56,6 +59,8 @@ bash check.sh
 ```
 
 From the repository root, run `bash artifacts/ch10-skills/check.sh` instead.
+For `--validate DIR` and `--skill DIR`, relative paths resolve from the directory where you
+run the command.
 
 ## Install the changelog-entry skill (optional)
 
@@ -63,7 +68,8 @@ The `changelog-entry/` directory is a valid skill. Copy it into the skill direct
 your compatible agent harness scans. For example, Claude Code uses:
 
 ```bash
-cp -r changelog-entry ~/.claude/skills/changelog-entry
+mkdir -p ~/.claude/skills/changelog-entry
+cp -R changelog-entry/. ~/.claude/skills/changelog-entry/
 ```
 
 Then ask for a changelog entry, or use the harness's explicit invocation mechanism if it
@@ -73,6 +79,10 @@ any project directory. Another harness needs an equivalent skill-root variable o
 absolute path. The validator touches no network and does not write project files. The
 workflow deliberately writes the project's `CHANGELOG.md` only after validation, so the
 agent needs explicit permission for that project write.
+
+Running the two install commands again is an overlay update: files with the same name are
+replaced, while files removed from a newer bundle stay in the target. Review and deliberately
+replace or archive an existing skill directory when a clean update matters.
 
 ## The estimates, stated plainly
 
@@ -92,8 +102,9 @@ for this bundle's supported portable subset: plain or basic quoted scalar key-va
 fields, indented continuations, folded (`>`) or literal (`|`) description blocks, ASCII
 name syntax, and directory matching. A clean result means only that the checked subset
 passed; it does not certify arbitrary YAML, Unicode name forms, or the complete optional
-Agent Skills schema.
-For a production skill, use the official `skills-ref validate` reference validator.
+Agent Skills schema. For production, use the target harness's maintained validator and your
+own deployment gate. `skills-ref` is a demonstration-only reference implementation useful
+for comparison, not a production certification.
 `--surface anthropic` adds Anthropic's reserved-vendor-name and angle-bracket restrictions.
 Third-person wording, a concrete `when` cue, and the 500-line body budget are authoring
 warnings, not portable structural failures.
