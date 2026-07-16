@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-15)
 
@@ -1104,3 +1104,25 @@ Advisories taken: none. No advisory polish was expanded into this resolution.
 Verification: `npm run check` passes all seven stages, including validation, prose lint,
 pipeline tests, artifact checks, 26 render tests, TypeScript, production build, and advisory
 lint. The chapter remains `draft`; this resolution does not grant approval.
+
+## Round 27 review (2026-07-16)
+
+Fresh-eyes convergence review: read the complete 26-round critique history and every
+builder resolution, then re-checked the current `src/chapters/skills.mdx`,
+`SkillsFigure.tsx`, `SkillsWidget.tsx`, the complete `artifacts/ch10-skills` package,
+and `docs/research/ch10-skills.md`. Re-verified every prior REQUIRED correction against
+the current artifacts. Ran `npm run check` successfully through all seven stages,
+including the 112-assertion Skills artifact gate and 26 render tests. Checked the
+consequential current claims against the Agent Skills specification, Claude Code Skills
+documentation, Anthropic's Skills overview and authoring guidance, the MCP authorization
+and security specifications, and GitHub's MCP server documentation. The rendered-browser
+backend was unavailable, so the visual pass used component-source inspection, static
+accessibility implementation, and the passing render tests.
+
+The chapter is materially truthful and teaching: its actual-listing model, regular and
+preloaded lifecycles, resource-loading paths, package trust boundary, and runnable local
+workflow remain accurate, accessible, and executable.
+
+## Advisories
+
+- None.
