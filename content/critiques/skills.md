@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -443,3 +443,84 @@ Firecrawl's unsourced figure as an external estimate rather than an independent 
 
 Verification: `npm run check` passes all seven stages, including the 53-assertion skills
 artifact check, 26 render tests, TypeScript, production build, and lint.
+
+## Round 12 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history, including the builder
+resolutions, the current `src/chapters/skills.mdx`, `SkillsFigure.tsx`,
+`SkillsWidget.tsx`, every file in `artifacts/ch10-skills`, and
+`docs/research/ch10-skills.md`. Re-verified every required correction from Rounds 1
+through 11 against the current artifacts. Ran `npm run check` through all seven stages
+and `bash artifacts/ch10-skills/check.sh` with 53 passing assertions; exercised the
+documented budget and discovery commands plus the expected malformed-skill failure.
+Spot-checked the consequential claims against the current Agent Skills specification,
+Anthropic launch and authoring documentation, Claude Code Skills documentation, the
+GitHub MCP server documentation, the `skills-ref` README, and the Oasis report. The
+visual pass used component-source inspection and the passing render tests because no
+rendered-browser backend was available.
+
+The chapter is materially truthful and teaching. It distinguishes the portable format
+from surface-specific behavior, teaches the progressive-disclosure boundaries accurately,
+and ships a runnable, deterministic artifact with clear requirements and meaningful
+failure modes.
+
+## Advisories
+
+- **Carried forward, `src/chapters/_figures/SkillsFigure.tsx:13-14`.** The shared
+  wrapper makes the 860px diagram usable through horizontal scrolling, but a compact
+  narrow-screen variant would reduce phone-reader panning.
+- **Carried forward, `src/chapters/_widgets/SkillsWidget.tsx:173-225`.** The source
+  excerpt remains keyboard-operable and labelled, but its line-by-line controls create a
+  long tab sequence. A grouped or roving-selection pattern would make traversal calmer.
+
+## Round 13 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history, current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in
+`artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Ran `npm run check`
+successfully through all seven stages, including the 53-assertion skills artifact gate,
+and exercised the documented malformed-skill failure. Checked the consequential loading
+and API claims against the current [Claude Code Skills documentation](https://code.claude.com/docs/en/skills),
+[Anthropic Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview),
+and [Agent Skills API quickstart](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/quickstart).
+The figure and widget pass used component-source inspection and the passing render tests.
+
+This round does not re-litigate Round 9's identical-render correction. It finds the
+separate, documented preloaded-subagent path, which no prior round recorded and which the
+current chapter, figure, widget, and lab all omit.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:60,64-78,160-169,267-273`, `src/chapters/_figures/SkillsFigure.tsx:9-16,42-46,73-75`, `src/chapters/_widgets/SkillsWidget.tsx:5-10,53-61`, `artifacts/ch10-skills/README.md:98-100`, and `artifacts/ch10-skills/skills_lab.py:316,372` --- the Claude Code level-two lifecycle is presented as universal, hiding the preloaded-subagent startup path.** The chapter correctly describes a regular session's first, distinct, or changed render, but current Claude Code documentation explicitly limits that behavior to regular sessions. A subagent configured with preloaded `skills` instead receives the full skill content at startup. That exception changes the central context-cost model, not merely its wording. Qualify the existing path as a regular-session lifecycle and teach the preloaded-subagent exception in the figure, widget, prose, exercise, and lab output. Either model the alternate path in the lab with a tested option or explicitly scope it to regular sessions. Update the research record at `docs/research/ch10-skills.md:7-11,54-66,151-153` in the same change. Evidence: [Claude Code Skills documentation](https://code.claude.com/docs/en/skills) distinguishes the regular-session lifecycle from preloaded subagents.
+
+2. **`docs/research/ch10-skills.md:119,185,192` --- the factual backbone states that Skills API use always requires three beta headers.** The current official overview requires a code-execution tool plus `skills-2025-10-02`; `files-api-2025-04-14` is needed only when the Files API uploads input or downloads output. The current quickstart uses the generally available `code_execution_20260521` with only the Skills header, while older code-execution versions must retain the header appropriate to that tool version. Replace the unconditional three-header prescription and its repeated recommendation/caveat with this conditional guidance. The research document is this chapter's factual source of record, so leaving version-sensitive API setup wrong risks reintroducing it into later revisions. Evidence: [Anthropic Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) and [API quickstart](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/quickstart).
+
+## Advisories
+
+- **`src/chapters/skills.mdx:43-45`, `src/chapters/_widgets/SkillsWidget.tsx:38-50`, and `docs/research/ch10-skills.md:24-26,165-166`.** Narrow the Anthropic restriction wording: reserved vendor words apply to `name`, while XML tags are prohibited in `name` and `description`, rather than every frontmatter field. The portable-versus-surface distinction remains sound.
+- **`docs/research/ch10-skills.md:182`.** The Codex path and `--enable skills` wording reads as current setup guidance, while the current Codex manual documents automatic discovery from `.agents/skills` and `$HOME/.agents/skills`. If this is intentionally a historical observation, date and source it; otherwise update it to the current locations. This is non-blocking because the sentence is framed as historical adoption context.
+
+## Round 14 review (2026-07-16)
+
+Independent re-review: read the complete critique history; the current chapter, figure,
+widget, full `artifacts/ch10-skills` package, and research backbone; then checked the
+consequential claims against the current Agent Skills specification, Anthropic and Claude
+Code documentation, the MCP authorization and security documentation, and Oasis's report.
+Ran `npm run check` successfully through all seven stages and
+`bash artifacts/ch10-skills/check.sh` with 53 passing assertions. I also exercised the
+budget, discovery, and expected malformed-skill paths, and directly reproduced the teaching
+lint's malformed-frontmatter clean pass. Round 13's two required fixes remain unaddressed in
+the current artifacts and are not repeated below.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:143-175,199-216` --- the teaching lint reports malformed YAML frontmatter as clean.** With otherwise valid `name` and `description` fields, an unindented line such as `this is not YAML` before the closing `---` fence is invalid YAML, but `parse_frontmatter()` silently ignores it and `validate_skill()` returns `([], [])`. The artifact and chapter present this as a frontmatter teaching lint whose clean result marks its supported portable subset, so a syntax error cannot produce a clean pass merely because the parser is intentionally partial. Treat any unsupported nonblank top-level frontmatter line as `P0`, and add this exact regression case to `--test`. Evidence: [the Agent Skills specification requires YAML frontmatter](https://agentskills.io/specification).
+
+2. **`src/chapters/skills.mdx:83-90` --- the vendor-neutral loading model makes a Bash/filesystem retrieval path sound intrinsic to progressive disclosure.** The chapter says an agent "has to `bash` out" to read a body and references. The portable [Agent Skills specification](https://agentskills.io/specification) defines staged loading, not a shell or filesystem protocol; [Anthropic's implementation](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) specifically illustrates a Bash read. Scope this sentence to a filesystem-and-shell or Anthropic-style harness, then retain the broader latency tradeoff as host-dependent. As written, it conflicts with the chapter's vendor-neutral conceptual spine.
+
+3. **`src/chapters/skills.mdx:211-219` --- the Skills/MCP distinction presents MCP as secure by default.** The attributed shorthand "MCP provides secure connectivity" is not a protocol guarantee. The current [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) makes authorization optional and assigns security requirements to implementations; the official [security guidance](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) documents concrete attack classes and mitigations. Preserve the useful distinction as connectivity versus procedure, but say that authentication, transport, authorization, and least-privilege deployment determine whether an MCP integration is secure. Add a primary MCP security source alongside the VentureBeat attribution.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:175-180`.** Label the Claude A/B author-and-fresh-tester workflow as an Anthropic example. It transfers well as a general evaluation pattern, so this does not block approval, but that label would better preserve the vendor-neutral spine.
+- **`src/chapters/skills.mdx:194-199`.** Oasis describes no integrations or *external* tools, while its chain uses built-in code execution and Files API egress. Replace "no ... tool" with "no external or user-installed tool" to avoid obscuring the built-in capability that enabled the exfiltration path.
