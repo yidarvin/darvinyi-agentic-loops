@@ -68,6 +68,13 @@ client. Neither a provider-supplied hint nor a credulous client decides that pro
 direct protocol sequence that omits any agent-level metadata still hits the egress gate
 after an untrusted result, private read, and external send.
 
+`http_get` is deliberately the lab's external sink. In hardened mode it fails closed until
+the trusted host records an out-of-band human-approval handoff. The gateway does not infer
+that approval from an agent flag or recover provenance by scanning a string. That conservative
+boundary also blocks a modeled secret supplied directly in a `tools/call` payload, even if no
+modeled private read preceded it. A production host can grant narrower, separately authorized
+egress paths, but this pair keeps the sensitive sink explicit and fail-closed.
+
 For every repository-addressed read, including `read_issue`, the trusted host checks the
 per-session allowed repository before the provider can return content. An issue from a
 different repository is denied before it can become model context. A separately configured
@@ -78,14 +85,17 @@ Sensitivity is tracked independently. A private inbox or RAG retrieval can conta
 attacker-controlled text while also returning private data, so one source can set both
 labels before the result reaches the client. The deterministic suite drives that combined
 source through the hardened stdio endpoint and proves the egress gate blocks the send.
-It also proves that a direct private-data send without a preceding untrusted result needs
-explicit human approval. The policy therefore cannot label a plain [B]+[C] path as benign.
-It does not try to discover sensitivity by scanning returned strings.
+It also proves that a direct private-data send, and a direct modeled-secret payload with no
+preceding modeled read, each need explicit human approval. The policy therefore cannot label a
+plain [B]+[C] path as benign or treat missing source metadata as permission. It does not try to
+discover sensitivity by scanning returned strings.
 
 The World scoreboard records only simulated external sends. It reports success only when
 one of the modeled private values reaches that boundary. Its tracked secret set is derived
 from every value in PRIVATE_FILES plus the modeled billing record, so the fake .env value
-cannot silently evade the result.
+cannot silently evade the result. It preserves the raw boundary record while normalizing
+ordinary URL transport encoding for classification, so percent-encoding cannot turn a
+modeled secret into a false safe result.
 
 The test suite also feeds a malformed provider `inputSchema` to the hardened endpoint. The
 trusted catalog boundary quarantines it before argument validation, returns a deterministic

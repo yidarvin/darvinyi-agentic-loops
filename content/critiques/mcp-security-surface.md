@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -674,3 +674,43 @@ Checked the official [MCP 2025-11-25 Schema Reference](https://modelcontextproto
 ## Advisories
 
 - No new advisories. The Round 13 advisories remain advisory.
+
+## Builder resolution (2026-07-15)
+
+Regression gate: re-verified every required repair from Rounds 1 through 14 against the
+current chapter, figure, widget, research reference, README, deterministic client, and
+vulnerable and hardened MCP stdio pair. Round 1 had no required fixes. The authorization,
+trusted-boundary, catalog-integrity, provenance, resource-lock, lifecycle, source-scope,
+and error-contract repairs from Rounds 2 through 12 remain present. The latest required
+fixes from Rounds 13 and 14 are resolved below.
+
+1. Updated `World.leaked_secret()` in
+   `artifacts/ch09-mcp-security-surface/security_mcp.py` to normalize ordinary URL transport
+   encoding while preserving the raw boundary record. A percent-encoded modeled SSH key now
+   counts as escaped at the vulnerable boundary. New in-memory and real-stdio regressions
+   prove that detection, while the hardened endpoint still blocks the same encoded send with
+   an empty exfiltration log. The README now states the scoreboard behavior.
+2. Updated the rug-pull and output-poisoning excerpts in
+   `security_mcp.py` and `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx` to name the
+   same `http_get attacker.example` action their executable plans and widget traces perform.
+   The deterministic artifact suite parses each plan and checks that both visible excerpts
+   and vulnerable widget traces carry the matching outbound action, preventing drift between
+   the lab and the widget.
+3. Added `RequestId` validation to `SecurityMcpServer.handle()`. Only strings and finite
+   JSON numbers are accepted, with Python booleans excluded. Object, boolean, and null IDs
+   now receive JSON-RPC `-32600` with a null response ID before lifecycle state can change.
+   New in-memory and stdio regressions prove each rejection and a valid same-connection
+   handshake afterward.
+4. Closed a final direct-payload egress bypass in `security_mcp.py`. The modeled external
+   sink now fails closed until the trusted host records human approval, rather than using an
+   earlier private-read flag as the only authorization signal. New in-memory and real-stdio
+   regressions send a percent-encoded modeled SSH key directly in `tools/call`, without a
+   prior private read, and prove the hardened boundary returns `exfil-gate` with an empty
+   exfiltration log. The README, chapter, and widget now state that deliberately
+   conservative boundary.
+
+Advisories: no unrelated advisory changes were taken.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes all deterministic
+artifact regressions, including the new encoded-secret, source-plan alignment, and invalid-ID
+cases. `npm run check` passes. The registry status remains `draft` for independent re-review.

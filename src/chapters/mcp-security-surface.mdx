@@ -273,10 +273,11 @@ On the hardened programmed paths, it does not. Run the walkthrough to watch each
 block, run `--test` for protocol-level assertions, and run `--attack 3` to watch a valid
 MCP-ingress token meet authorization policy before any downstream call.
 
-The hardened egress policy also requires explicit human approval before any modeled private
-value crosses an external boundary, even when the path did not begin with an untrusted
-provider result. The lab tests that direct private-data send separately, so the policy does
-not treat a plain private-data-plus-egress path as benign.
+The lab models `http_get` as an external sink that fails closed until the trusted host records
+human approval. It separately sends a modeled secret straight in a `tools/call` payload, with
+no preceding modeled private read, and blocks that request too. A caller cannot turn missing
+source metadata into permission to exfiltrate. A production host can grant narrower,
+separately authorized egress paths, but the sensitive sink must remain a trusted boundary.
 
 The servers use a deterministic, already-validated token fixture to teach intended-recipient
 validation, exact scope, and no-transit rules. The fixture uses an `aud` field to make the
