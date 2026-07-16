@@ -14,7 +14,7 @@ why neither is a release note on its own and why the production shape is both.
                   commits. Judgment without access is an expensive search engine.
   --hybrid        the skill orchestrates the server: fetch the commits over the
                   wire, then run the procedure on them. The complete answer.
-  --decide        the decision framework in code: answer five questions about a
+  --decide        the decision framework in code: answer six questions about a
                   capability and get skill / server / both / neither, with reasons.
   --test          assertions; exits non-zero on failure.
 
@@ -150,7 +150,8 @@ def hybrid(tag: str) -> None:
 # the decision framework, in code
 # --------------------------------------------------------------------------- #
 def classify(access: bool, judgment: bool, shared: bool,
-             cli_or_existing: bool, live: bool) -> tuple[str, list[str]]:
+             cli_or_existing: bool, live: bool,
+             script_access: bool = False) -> tuple[str, list[str]]:
     """Route a capability to skill / server / both / neither.
 
     access          the hard part is reaching a live external system, holding state,
@@ -162,6 +163,8 @@ def classify(access: bool, judgment: bool, shared: bool,
     cli_or_existing a CLI the agent can shell out to, or an existing server, already
                     provides the access
     live            the data changes between invocations and must be fetched fresh
+    script_access   a workflow-local Skill script can use runtime-provided network
+                    access and credentials; it is not a shared server boundary
     """
     if not (access or judgment or shared or live):
         return "neither", [
@@ -169,13 +172,16 @@ def classify(access: bool, judgment: bool, shared: bool,
             "a line in context is enough.",
         ]
 
-    # Fresh data requires an access layer, not necessarily a newly built server. A
-    # usable CLI or existing server can make that fetch. Central governance is the
-    # exception: a local CLI does not create the shared, auditable server boundary.
+    # Fresh data requires a path to the system, not necessarily a server. An existing
+    # CLI or server can make the fetch. A Skill can also bundle a workflow-local
+    # script when its runtime supplies network access and credentials. Central
+    # governance is the exception: neither a local CLI nor a local script creates the
+    # shared, auditable server boundary.
     access_needed = access or live
     existing_access = access_needed and cli_or_existing
-    server_needed = shared or (access_needed and not cli_or_existing)
-    skill_needed = judgment or (existing_access and not shared)
+    workflow_script = access_needed and script_access and not cli_or_existing and not shared
+    server_needed = shared or (access_needed and not cli_or_existing and not script_access)
+    skill_needed = judgment or workflow_script
 
     if server_needed and skill_needed:
         if shared and cli_or_existing:
@@ -186,8 +192,9 @@ def classify(access: bool, judgment: bool, shared: bool,
             ]
         else:
             reasons = [
-                "Both access and judgment are hard. Layer them: a server for the live "
-                "connection, a skill that supplies the procedure and calls the server's tools.",
+                "Both a reusable access boundary and a procedure are hard. Layer them: "
+                "a server for the connection, a skill that supplies the procedure and "
+                "calls its tools.",
             ]
         if shared:
             reasons.append("Shared across clients under governance, which wants a server as the auditable chokepoint.")
@@ -204,8 +211,9 @@ def classify(access: bool, judgment: bool, shared: bool,
             ]
         else:
             reasons = [
-                "The hard part is access to a live or shared system and no existing tool "
-                "covers it. Build or adopt an MCP server.",
+                "The hard part is reusable or centrally governed access, and neither an "
+                "existing tool nor a workflow-local script covers it. Build or adopt an "
+                "MCP server.",
             ]
         if shared:
             reasons.append("It serves many clients with governance, which a server centralizes.")
@@ -213,20 +221,42 @@ def classify(access: bool, judgment: bool, shared: bool,
             reasons.append("The data changes between runs, so it must be fetched live.")
         return "server", reasons
 
+    if skill_needed:
+        if workflow_script:
+            reasons = [
+                "The runtime already supplies network access and credentials, and this "
+                "access belongs to one workflow. Bundle and run a local script in a "
+                "skill; no reusable server boundary is needed.",
+            ]
+            if judgment:
+                reasons.append("The same skill can carry the procedure the agent lacks.")
+            if live:
+                reasons.append("The script fetches fresh data when the workflow runs.")
+            return "skill", reasons
+        if existing_access:
+            reasons = [
+                "A CLI or existing server already provides the access. The missing piece "
+                "is procedure, so add a skill that directs the existing access.",
+            ]
+            if live:
+                reasons.append("The existing access can fetch fresh data; freshness does not require a second server.")
+            return "skill", reasons
+        return "skill", [
+            "The agent can already reach what it needs; the hard part is knowing what to "
+            "do with it. That is a skill.",
+        ]
+
     if existing_access:
         reasons = [
-            "A CLI or existing server already provides the access. Wrap that access "
-            "in a skill before building a server of your own.",
+            "A CLI or existing server already provides the access, and no procedure is "
+            "missing. Adopt it; build nothing.",
         ]
         if live:
-            reasons.append("The existing access can fetch the fresh data; freshness does not require a second server.")
-        if judgment:
-            reasons.append("Add the procedure the agent lacks on top of the wrapped access.")
-        return "skill", reasons
+            reasons.append("The existing access can fetch fresh data; freshness does not require a second server.")
+        return "neither", reasons
 
-    return "skill", [
-        "The agent can already reach what it needs; the hard part is knowing what to "
-        "do with it. That is a skill.",
+    return "neither", [
+        "No reusable access boundary or procedure is missing. Build nothing.",
     ]
 
 
@@ -234,10 +264,12 @@ def decide(args: argparse.Namespace) -> None:
     verdict, reasons = classify(
         access=args.access, judgment=args.judgment, shared=args.shared,
         cli_or_existing=args.cli_exists, live=args.live,
+        script_access=args.script_access,
     )
     inputs = {
         "access": args.access, "judgment": args.judgment, "shared": args.shared,
         "cli_or_existing": args.cli_exists, "live": args.live,
+        "script_access": args.script_access,
     }
     print("// DECIDE --- is the hard part access or judgment?\n")
     for k, v in inputs.items():
@@ -270,12 +302,16 @@ def run_tests() -> int:
           classify(True, True, False, False, True)[0] == "both")
     check("server when access is hard and no existing tool, no judgment",
           classify(True, False, False, False, True)[0] == "server")
-    check("skill wraps a CLI when access exists via a CLI",
-          classify(True, False, False, True, False)[0] == "skill")
-    check("skill wraps a CLI that can fetch live data",
-          classify(True, False, False, True, True)[0] == "skill")
+    check("neither when an existing CLI already covers access and no procedure is missing",
+          classify(True, False, False, True, False)[0] == "neither")
+    check("neither when an existing CLI can fetch live data and no procedure is missing",
+          classify(True, False, False, True, True)[0] == "neither")
     check("skill adds procedure over existing live access",
           classify(True, True, False, True, True)[0] == "skill")
+    check("skill can bundle a workflow-local script with runtime access",
+          classify(True, False, False, False, True, True)[0] == "skill")
+    check("workflow-local script does not replace a shared access boundary",
+          classify(True, False, True, False, True, True)[0] == "server")
     check("skill when only judgment is hard",
           classify(False, True, False, False, False)[0] == "skill")
     check("neither when nothing is hard",
@@ -349,6 +385,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--shared", action="store_true", help="[decide] shared across many clients with governance")
     ap.add_argument("--cli-exists", action="store_true", help="[decide] a CLI or existing server already provides access")
     ap.add_argument("--live", action="store_true", help="[decide] the data changes between invocations")
+    ap.add_argument("--script-access", action="store_true", help="[decide] a workflow-local script can use runtime network and credentials")
     args = ap.parse_args(argv[1:])
 
     # --from is a rider on --skill-only, not its own mode. Reject it against the other
@@ -382,8 +419,11 @@ def main(argv: list[str]) -> int:
         hybrid(args.tag)
         print("\n" + DIV + "\n")
         print("This problem needs both, so it lands on 'both':\n")
-        decide(argparse.Namespace(access=True, judgment=True, shared=False, cli_exists=False, live=True))
-        print("\nrun --test for assertions, or --decide with the five flags to classify your own capability.")
+        decide(argparse.Namespace(
+            access=True, judgment=True, shared=False, cli_exists=False, live=True,
+            script_access=False,
+        ))
+        print("\nrun --test for assertions, or --decide with the six flags to classify your own capability.")
         return 0
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)

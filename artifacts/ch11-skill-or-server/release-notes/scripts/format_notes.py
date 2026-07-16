@@ -3,7 +3,8 @@
 
 Reads a commit list as JSON on stdin and prints a categorized release-notes section
 to stdout. This is procedure, not access: it never reaches out for the commits, it
-only knows what to do with them once they arrive. The commits come from the server.
+only knows what to do with them once they arrive. In this lab they come from the
+server; another workflow-local Skill could provide them through a runtime-backed script.
 
 Accepts either a bare JSON array of commit objects, or an object with a "commits"
 key (the shape the commit server returns). Each commit needs a "message" field.

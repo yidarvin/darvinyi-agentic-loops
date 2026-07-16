@@ -3,8 +3,8 @@
 A zero-dependency lab paired with Chapter 11. It solves a single problem, "produce
 the release notes for a version," three ways: with a server alone, with a skill
 alone, and with the two layered. Seeing the same task fail as each half and succeed
-as the whole is the chapter's thesis made executable: a skill supplies judgment, a
-server supplies access, and the production shape is both.
+as the whole is the chapter's thesis made executable: a skill supplies procedure, a
+server supplies reusable access, and the production shape is both.
 
 - **Runtime:** Python 3.9+ (standard library only)
 - **Requires:** nothing. No API key, no network, no packages.
@@ -13,8 +13,10 @@ server supplies access, and the production shape is both.
 
 Release notes for a version have an **access** half (reach the commits merged since
 the last tag) and a **judgment** half (turn them into a clean, categorized section).
-The access half is a live external system; the judgment half is a procedure. That
-split is exactly the one this chapter is about.
+This lab deliberately models the access half as a reusable server boundary and the
+judgment half as a procedure. A workflow-local Skill can instead bundle a script that
+calls an API when its runtime supplies network access and credentials. That is valid
+for one workflow, but it is not the shared, centrally governed boundary this lab shows.
 
 ```
 ch11-skill-or-server/
@@ -53,12 +55,14 @@ python3 hybrid_lab.py --skill-only --from fixtures/commits.json
 # The production shape: the skill calls the server tool, then formats the result.
 python3 hybrid_lab.py --hybrid
 
-# The decision framework in code: five questions -> skill / server / both / neither.
+# The decision framework in code: six questions -> skill / server / both / neither.
 python3 hybrid_lab.py --decide --access --judgment --live     # => both
 python3 hybrid_lab.py --decide --judgment                     # => skill
 python3 hybrid_lab.py --decide --access --live                # => server
-python3 hybrid_lab.py --decide --access --cli-exists          # => skill (wrap the CLI)
-python3 hybrid_lab.py --decide --access --live --cli-exists   # => skill (the CLI fetches fresh data)
+python3 hybrid_lab.py --decide --access --cli-exists          # => neither (adopt the CLI)
+python3 hybrid_lab.py --decide --access --live --cli-exists   # => neither (the CLI fetches fresh data)
+python3 hybrid_lab.py --decide --access --judgment --live --cli-exists # => skill (procedure over the CLI)
+python3 hybrid_lab.py --decide --access --live --script-access # => skill (a workflow-local script fetches)
 python3 hybrid_lab.py --decide --access --shared --cli-exists # => server (governance still needs a shared boundary)
 
 # Assertions: the framework routes the canonical cases, and the three paths behave.
@@ -78,26 +82,30 @@ cp -r release-notes ~/.claude/skills/release-notes
 
 Then ask for the release notes of a version. On its own the skill can only format
 commits you provide; layered over a GitHub (or git) MCP server that exposes the
-commit history, it fetches them itself. That is this lab's chosen access layer. In a
-real workflow, first use an existing CLI or server that can make the fresh fetch; add
-a server when that access or a shared governance boundary is missing.
+commit history, it fetches them itself. That is this lab's chosen access layer. A
+different workflow-local skill could bundle a script that calls an API when its runtime
+supplies network access and credentials. In a real workflow, first adopt an existing
+CLI or server; add a skill only when procedure is missing, and add a server when
+reusable, shared, stateful, or centrally governed access is missing.
 
-## The five questions behind `--decide`
+## The six questions behind `--decide`
 
 `--decide` routes on the same logic as the chapter's widget:
 
 - `--access` the hard part is reaching a live external system, holding state, or authenticating to a third party.
 - `--judgment` the hard part is knowing what to do: a workflow, a procedure, domain expertise the agent lacks.
 - `--shared` the same capability must serve many agents or clients under central governance.
-- `--cli-exists` a CLI the agent can shell out to, or an existing server, already provides the access.
+- `--cli-exists` a CLI the agent can shell out to, or an existing server, already provides the access. This does not itself create a procedure gap.
+- `--script-access` a workflow-local Skill may bundle a script that uses runtime-provided network access and credentials. It is not a shared server boundary.
 - `--live` the data changes between invocations and must be fetched fresh.
 
-Access with no existing tool routes to a server; judgment routes to a skill; both
-route to both; a CLI or existing server that already provides the access routes to a
-skill wrapping it. `--live` requires a fresh fetch, but an existing CLI or server can
-make that fetch, so it does not require a duplicate server. `--shared` is separate: a
-local CLI does not provide the central, auditable boundary, so it still routes to a
-server. Nothing hard routes to "neither, the agent already does this."
+Access with no existing tool or workflow-local script routes to a server; judgment
+routes to a skill; both route to both. An existing CLI or server with no missing
+procedure routes to `neither`: adopt it and build nothing. Add a skill only when a
+procedure is missing. `--live` requires a fresh fetch, but an existing CLI/server or a
+workflow-local script can make that fetch, so freshness does not require a duplicate
+server. `--shared` is separate: a local CLI or script does not provide the central,
+auditable boundary, so it still routes to a server.
 
 ## The estimates, stated plainly
 
