@@ -4,10 +4,11 @@ import { useState } from "react";
 // real SKILL.md and watch its load profile appear. The reader should feel that the parts
 // of one small file live at different levels of progressive disclosure and cost the
 // context window very differently. The description is always resident and does the
-// discovering; the body loads only on a trigger; a referenced doc is read on demand; a
-// bundled script's source never loads at all, only its output. Selecting a part in the
-// source highlights every line that belongs to it and shows where and when it loads.
-// React state only, no persistence. Facts track the Agent Skills format as of 2026.
+// discovering; the body loads after selection; a referenced doc is read on demand; a
+// bundled script can return output without first loading its source. Selecting a part in
+// the source highlights every line that belongs to it and shows where and when it loads.
+// React state only, no persistence. Profiles distinguish portable design from Agent
+// Skills-specific limits where those limits are useful examples.
 
 type PartKey = "name" | "description" | "body" | "reference" | "script";
 
@@ -34,7 +35,7 @@ const PROFILES: Record<PartKey, Profile> = {
     when: "always, at startup",
     cost: "part of the ~100-token metadata budget",
     enters: "yes, always resident",
-    role: "The skill's identifier and its slash-command name. Lowercase, hyphens, at most 64 characters, and it may not contain \"claude\" or \"anthropic\". It is loaded for every installed skill, so it is paid once per skill on every session.",
+    role: "The portable identifier. A harness may also expose it as an explicit command. The Agent Skills reference implementation adds lowercase-hyphen naming, a 64-character limit, and a ban on certain vendor names. It is loaded for every installed skill, so it is paid once per skill on every session.",
   },
   description: {
     key: "description",
@@ -44,17 +45,17 @@ const PROFILES: Record<PartKey, Profile> = {
     when: "always, at startup",
     cost: "the bulk of the metadata budget (up to 1024 chars)",
     enters: "yes, always resident",
-    role: "The one part the model reads to decide whether to open the skill at all. It is the discovery mechanism, so it must be third person and state both what the skill does and when to use it, with the trigger words a matching task would contain. Get this wrong and the skill never fires.",
+    role: "In a model-invoked harness, this is the part the agent reads to decide whether to open the skill at all. It is the discovery mechanism, so Agent Skills guidance uses third person and states both what the skill does and when to use it, with the trigger words a matching task would contain. Get this wrong and the skill may not fire.",
   },
   body: {
     key: "body",
     label: "SKILL.md body",
     level: "level 2 · instructions",
     hot: false,
-    when: "only when the description matches the task",
+    when: "after the harness selects this skill for the task",
     cost: "< 5k tokens (target < 500 lines)",
-    enters: "yes, but only on a trigger, then stays for the session",
-    role: "The procedure the model follows once the skill fires. It is absent from the window until the description earns it a read, which is the whole point: a hundred skills can sit installed and only the one that triggers pays for its body.",
+    enters: "yes after selection; retention depends on the harness",
+    role: "The procedure the model follows once the skill is selected. It is absent from the window until the description earns it a read, which is the whole point: a hundred skills can sit installed and only the one that triggers pays for its body.",
   },
   reference: {
     key: "reference",
@@ -64,26 +65,27 @@ const PROFILES: Record<PartKey, Profile> = {
     when: "on demand, only if the body sends the model to read it",
     cost: "its own length, and only when actually read",
     enters: "only the part read, only when read",
-    role: "Detail kept one hop from the body so the body stays lean. \"See references/FORMAT.md\" means read it; the model pulls it in only when the task reaches that far, and it costs zero tokens until then.",
-    pointer: "The \"See references/FORMAT.md\" line is body prose: it loads with the body at level 2 and enters the window on a trigger. This profile describes the file it points to, whose contents stay off-window until read.",
+    role: "Detail kept one hop from the body so the body stays lean. \"See references/FORMAT.md\" means read it; the agent pulls it in only when the task reaches that far, and it costs zero tokens until then.",
+    pointer: "The \"See references/FORMAT.md\" line is level-2 body prose. Select the bundled file below to inspect the level-3 resource it points to, whose contents stay off-window until read.",
   },
   script: {
     key: "script",
     label: "scripts/validate_entry.py",
     level: "level 3+ · resources",
     hot: false,
-    when: "never as source; executed via bash when the body says \"Run\"",
-    cost: "≈ zero source tokens; only the output counts",
-    enters: "output only, never the source",
-    role: "Deterministic work the model should run, not regenerate token by token. \"Run scripts/validate_entry.py\" means execute it. The script's code never enters the window; only what it prints does, which is what makes bundled code effectively free.",
-    pointer: "The \"Run scripts/validate_entry.py\" line is body prose: it loads with the body at level 2 and enters the window on a trigger. This profile describes the bundled file it names, whose source stays off-window.",
+    when: "when the agent executes it; its source need not be opened first",
+    cost: "≈ zero source tokens; execution output counts",
+    enters: "normally output only; source remains available on disk",
+    role: "Deterministic work the model should run, not regenerate token by token. \"Run scripts/validate_entry.py\" means execute it. A harness can return only its output to the model, which keeps bundled code out of the context budget unless the agent chooses to inspect it.",
+    pointer: "The \"Run scripts/validate_entry.py\" line is level-2 body prose. Select the bundled file below to inspect the level-3 resource it names, whose source normally stays off-window.",
   },
 };
 
 const PART_ORDER: PartKey[] = ["name", "description", "body", "reference", "script"];
 
 // The SKILL.md, line by line, each line tagged with the part it belongs to (or null for
-// structural lines like the frontmatter fences and blanks).
+// structural lines like the frontmatter fences and blanks). Resource directives are body
+// prose. The resource paths themselves appear in the bundle strip below.
 interface Line {
   text: string;
   part: PartKey | null;
@@ -92,21 +94,39 @@ interface Line {
 const SOURCE: Line[] = [
   { text: "---", part: null },
   { text: "name: changelog-entry", part: "name" },
-  { text: "description: Formats and validates a Keep a Changelog entry. Use", part: "description" },
-  { text: "  when adding a changelog entry, recording a change, or editing", part: "description" },
-  { text: "  CHANGELOG.md.", part: "description" },
+  { text: "description: Formats and validates a Keep a Changelog entry. Use when adding a", part: "description" },
+  { text: "  changelog entry, recording a change, or editing CHANGELOG.md.", part: "description" },
   { text: "---", part: null },
   { text: "", part: null },
   { text: "# Changelog entry", part: "body" },
   { text: "", part: null },
-  { text: "Add a single line under the Unreleased section:", part: "body" },
+  { text: "Add one entry to the Unreleased section of `CHANGELOG.md`, in the Keep a", part: "body" },
+  { text: "Changelog format, and verify it before writing.", part: "body" },
   { text: "", part: null },
-  { text: "1. Pick a type: Added, Changed, Fixed, Removed, Security.", part: "body" },
-  { text: "2. Write one imperative line describing the change.", part: "body" },
-  { text: "3. Run scripts/validate_entry.py to check it before writing.", part: "script" },
-  { text: "4. Fix and re-run until it passes.", part: "body" },
+  { text: "## Steps", part: "body" },
   { text: "", part: null },
-  { text: "For the full format, see references/FORMAT.md.", part: "reference" },
+  { text: "1. Decide the change type. Use exactly one of: Added, Changed, Deprecated,", part: "body" },
+  { text: "   Removed, Fixed, Security.", part: "body" },
+  { text: "2. Write a single imperative line summarizing the change, with no trailing", part: "body" },
+  { text: "   period. Compose it as `Type: summary`, for example `Added: --export flag`.", part: "body" },
+  { text: "3. Run `scripts/validate_entry.py \"Type: summary\"` to check the format. It exits", part: "body" },
+  { text: "   0 when the entry is well formed and prints a specific reason when it is not.", part: "body" },
+  { text: "4. If it fails, fix the reported problem and run it again. Do not write the entry", part: "body" },
+  { text: "   until the validator passes.", part: "body" },
+  { text: "5. Place the summary as a `- ` bullet under the matching `### Type` heading in", part: "body" },
+  { text: "   the `## [Unreleased]` section, creating the heading if it is not there yet.", part: "body" },
+  { text: "", part: null },
+  { text: "## Notes", part: "body" },
+  { text: "", part: null },
+  { text: "- One change per entry. Split unrelated changes into separate entries.", part: "body" },
+  { text: "- Write for a person reading the release notes, not for the commit log.", part: "body" },
+  { text: "- For the full format, the order of the headings, and how Unreleased becomes a", part: "body" },
+  { text: "  released version, see `references/FORMAT.md`.", part: "body" },
+];
+
+const BUNDLED_RESOURCES: Array<{ key: "reference" | "script"; path: string }> = [
+  { key: "reference", path: "references/FORMAT.md" },
+  { key: "script", path: "scripts/validate_entry.py" },
 ];
 
 export function SkillsWidget() {
@@ -125,6 +145,8 @@ export function SkillsWidget() {
           <button
             key={key}
             onClick={() => setSelected(key)}
+            onMouseEnter={() => setSelected(key)}
+            onFocus={() => setSelected(key)}
             aria-pressed={selected === key}
             className={`rounded border px-2 py-1 transition-colors motion-reduce:transition-none ${
               selected === key
@@ -157,6 +179,8 @@ export function SkillsWidget() {
                 <button
                   key={i}
                   onClick={() => setSelected(line.part as PartKey)}
+                  onMouseEnter={() => setSelected(line.part as PartKey)}
+                  onFocus={() => setSelected(line.part as PartKey)}
                   aria-pressed={active}
                   aria-label={`${PROFILES[line.part].label}: ${line.text}`}
                   className={`block w-full cursor-pointer whitespace-pre rounded-sm px-1 text-left transition-colors motion-reduce:transition-none ${
@@ -170,6 +194,30 @@ export function SkillsWidget() {
               );
             })}
           </pre>
+          <div className="border-t border-border px-3 py-2 font-mono text-[0.68rem]">
+            <div className="text-comment">{"// bundled resources/"}</div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {BUNDLED_RESOURCES.map(({ key, path }) => {
+                const active = selected === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelected(key)}
+                    onMouseEnter={() => setSelected(key)}
+                    onFocus={() => setSelected(key)}
+                    aria-pressed={active}
+                    className={`rounded border px-1.5 py-0.5 transition-colors motion-reduce:transition-none ${
+                      active
+                        ? "border-accent/50 bg-accent/15 text-accent"
+                        : "border-border text-muted hover:text-fg"
+                    }`}
+                  >
+                    {path}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* the load profile for the selected part */}

@@ -3,11 +3,10 @@
 // A Skill is not one thing that loads; it is three tiers that load at different times
 // and cost the context window very different amounts. Level 1 (metadata: name +
 // description) is always resident, and it is paid once per installed skill, so it scales
-// with how many skills you have. Level 2 (the SKILL.md body) loads only when the model
-// judges the description a match for the task, and only for that one skill. Level 3+
-// (bundled scripts and reference docs) is read or executed from disk via bash: the
-// source never enters the context window, only a script's output does, so the bundle is
-// effectively unbounded. The right panel is the context window itself, showing what
+// with how many skills you have. Level 2 (the SKILL.md body) loads after a harness selects
+// a skill for the task. Level 3+ (bundled scripts and reference docs) is read or executed
+// from disk on demand. A harness can return a script's output without first loading its
+// source, so the bundle is effectively unbounded. The right panel is the context window itself, showing what
 // actually lands in it. The lesson band states why 100 skills cost kilotokens at startup
 // rather than hundreds of thousands. Inline SVG, themed with the CSS variables, mono labels.
 
@@ -17,7 +16,7 @@ export function SkillsFigure() {
       viewBox="0 0 900 500"
       className="w-full min-w-[860px]"
       role="img"
-      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding one context window. On the left, three stacked cards. Level 1, metadata, is the skill's name and description; it is loaded always, at startup, costs about 100 tokens, and is paid once for every skill installed. Level 2, instructions, is the SKILL.md body; it loads only when the description matches the task, costs under five thousand tokens, and only for that one skill. Level 3 and beyond, resources, are bundled scripts and reference documents; they load on demand via bash, are effectively unbounded, and their source never enters the context window. On the right, the context window panel shows what actually lands in it: all skills' metadata, always; one skill's body, only when triggered; and a script's output only, never its source. The lower band states the payoff: startup pays only for metadata, the body loads just in time, and a bundled script's source never enters the window, only its result, which is why a hundred skills cost a few kilotokens at startup rather than hundreds of thousands."
+      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding one context window in an Agent Skills-style harness. Metadata loads at startup for each installed skill. The SKILL.md body loads after a harness selects a skill. Bundled references and scripts stay on disk until the agent reads or executes them. A script run can return output without first loading source into the context window. The payoff is low startup context at the cost of filesystem round trips when work activates."
       fill="none"
     >
       <rect x="1" y="1" width="898" height="498" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
@@ -46,25 +45,25 @@ export function SkillsFigure() {
       {/* level 2: the body, on trigger, one skill */}
       <rect x="28" y="166" width="440" height="96" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.35" strokeDasharray="5 4" />
       <text x="44" y="190" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">level 2 · instructions</text>
-      <text x="44" y="210" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: when the description matches the task</text>
+      <text x="44" y="210" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: after the harness selects the skill</text>
       <text x="44" y="227" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">&lt; 5k tokens</text>
-      <text x="150" y="227" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">× one skill, once per session</text>
+      <text x="150" y="227" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">× one selected skill</text>
       <text x="44" y="248" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">the SKILL.md body</text>
 
       {/* level 3+: resources, read or run from disk, source stays off-window */}
       <rect x="28" y="286" width="440" height="112" rx="8" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.6" strokeDasharray="2 3" />
       <text x="44" y="310" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">level 3+ · resources</text>
-      <text x="44" y="330" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: on demand, via bash</text>
+      <text x="44" y="330" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: on demand, via agent tools</text>
       <text x="44" y="347" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">effectively unbounded</text>
-      <text x="200" y="347" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">source never enters context</text>
+      <text x="200" y="347" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">source need not enter context</text>
       <text x="44" y="368" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">bundled scripts + reference docs</text>
-      <text x="44" y="386" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">read a doc one hop away; run a script, keep only its output</text>
+      <text x="44" y="386" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">read a doc one hop away; run a script, return its output</text>
 
       {/* arrows into the context window */}
       <line x1="468" y1="94" x2="606" y2="118" stroke="var(--accent)" strokeWidth="1.6" markerEnd="url(#sk10-arrow)" />
       <line x1="468" y1="214" x2="606" y2="198" stroke="var(--accent)" strokeWidth="1.4" strokeDasharray="5 4" markerEnd="url(#sk10-arrow)" />
       <line x1="468" y1="342" x2="606" y2="278" stroke="var(--comment)" strokeWidth="1.4" strokeDasharray="2 3" markerEnd="url(#sk10-arrow-dim)" />
-      <text x="500" y="286" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">output only</text>
+      <text x="500" y="286" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">run output</text>
 
       {/* the context window: what actually lands in it */}
       <rect x="612" y="46" width="256" height="352" rx="9" fill="var(--accent)" fillOpacity="0.06" stroke="var(--accent)" strokeOpacity="0.7" />
@@ -80,8 +79,8 @@ export function SkillsFigure() {
       <text x="646" y="208" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">only when triggered</text>
 
       <rect x="632" y="240" width="216" height="52" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
-      <text x="646" y="260" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">a script&#39;s output only</text>
-      <text x="646" y="276" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">never its source</text>
+      <text x="646" y="260" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">script run output</text>
+      <text x="646" y="276" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">source can remain on disk</text>
 
       <text x="740" y="326" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">the rest stays on disk,</text>
       <text x="740" y="340" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">costing zero tokens until touched</text>
@@ -92,7 +91,7 @@ export function SkillsFigure() {
         {"// the payoff: pay for what you might need, load what you do need"}
       </text>
       <text x="44" y="462" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">
-        {"startup pays only for metadata; the body loads just in time; a bundled script's source never enters the window, only its result."}
+        {"startup pays only for metadata; the body loads just in time; a script can return a result without loading its source."}
       </text>
       <text x="44" y="478" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">
         {"that is why 100 installed skills cost a few kilotokens at startup, not hundreds of thousands."}

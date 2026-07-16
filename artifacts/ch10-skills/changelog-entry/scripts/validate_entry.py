@@ -2,8 +2,8 @@
 """Validate one changelog entry of the form "Type: summary".
 
 The deterministic gate the changelog-entry skill runs before writing an entry.
-Because it is a script, the check is identical every time, and its source never
-enters the model's context window: only this program's output does.
+Because it is a script, the check is identical every time, and a harness can return its
+output without first loading this source into the model's context window.
 
 Usage:
     validate_entry.py "Added: --export flag to the CLI"

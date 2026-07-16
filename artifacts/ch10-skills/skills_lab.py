@@ -3,10 +3,10 @@
 
 Three things the Skills chapter describes, made executable:
 
-  1. Validate a SKILL.md's frontmatter against the real rules (name and
-     description format, the "claude"/"anthropic" ban, no angle brackets, the
-     third-person and what-plus-when checks on the description, the body-length
-     budget, dangling reference links).
+  1. Validate a SKILL.md's canonical frontmatter subset against explicit
+     portability and authoring checks (name and description format, the
+     "claude"/"anthropic" ban, no angle brackets, third-person phrasing, an
+     advisory `when` cue, the body-length budget, and dangling reference links).
   2. Price progressive disclosure: what one skill costs at each of the three
      loading levels, and what installing N skills costs at startup.
   3. Simulate discovery: match a request against a description and print the
@@ -15,7 +15,9 @@ Three things the Skills chapter describes, made executable:
 No dependencies, no API key, no network. The token counts are estimates
 (~4 characters per token) and the discovery match is a crude keyword proxy, not
 the real model; both are here to make the shape of the mechanism visible, not to
-reproduce a production harness.
+reproduce a production harness. The tiny parser handles the simple mappings and
+folded or literal block scalars used by portable SKILL.md frontmatter; it is not a
+general YAML implementation.
 
 Usage:
     python3 skills_lab.py                     # overview of the bundled skill
@@ -43,10 +45,13 @@ MCP_SERVER_BASELINE = 25_000
 
 VALID_NAME = re.compile(r"[a-z0-9-]+")
 KEY_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$")
-# First/second person openings the description rule bans ("I can help...",
-# "You can use..."). Deliberately narrow so a legitimate "Use when your..." does
-# not trip it.
-PERSON = re.compile(r"\b(i can|i help|i'll|i will|i'm|let me|you can|you'll|you will|you should use)\b")
+# Descriptions enter the harness prompt as statements about available capabilities,
+# so the authoring guidance calls for third person. This remains a heuristic, not a
+# parser for English: it catches ordinary first- and second-person pronouns.
+PERSON = re.compile(
+    r"\b(?:i(?!/)(?:'m|'ve|'ll|'d)?|me|my|mine|you(?:'re|'ve|'ll|'d)?|your|yours|yourself)\b",
+    re.IGNORECASE,
+)
 WHEN_CUE = re.compile(r"\b(when|whenever|use this|use for)\b")
 REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
 
@@ -57,8 +62,9 @@ REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
 def parse_frontmatter(text: str):
     """Split a SKILL.md into (meta, body, has_frontmatter).
 
-    A minimal YAML reader: enough for `key: value` pairs with indented
-    continuation lines folded into the value. Not a general YAML parser.
+    A minimal YAML reader: enough for `key: value` pairs, indented continuation
+    lines, and folded (`>`) or literal (`|`) block scalars. Not a general YAML
+    parser: a production harness should use a real YAML implementation.
     """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -73,13 +79,32 @@ def parse_frontmatter(text: str):
 
     meta: dict[str, str] = {}
     key = None
-    for ln in lines[1:end]:
+    frontmatter = lines[1:end]
+    i = 0
+    while i < len(frontmatter):
+        ln = frontmatter[i]
         m = KEY_LINE.match(ln)
         if m and not ln[:1].isspace():
             key = m.group(1)
-            meta[key] = m.group(2).strip()
+            value = m.group(2).strip()
+            if re.fullmatch(r"[>|][1-9]?[+-]?|[>|][+-]?[1-9]?", value):
+                style = value[0]
+                block: list[str] = []
+                i += 1
+                while i < len(frontmatter) and (
+                    not frontmatter[i].strip() or frontmatter[i][:1].isspace()
+                ):
+                    block.append(frontmatter[i].strip())
+                    i += 1
+                if style == ">":
+                    meta[key] = " ".join(part for part in block if part).strip()
+                else:
+                    meta[key] = "\n".join(block).strip()
+                continue
+            meta[key] = value
         elif key is not None and ln[:1].isspace():
             meta[key] = (meta[key] + " " + ln.strip()).strip()
+        i += 1
     body = "\n".join(lines[end + 1:]).strip("\n")
     return meta, body, True
 
@@ -164,7 +189,7 @@ def print_validation(skill) -> tuple[list, list]:
     for code, msg in errors:
         print(f"  ERROR {code}  {msg}")
     if not errors and not warnings:
-        print("  clean: frontmatter passes every rule")
+        print("  clean: frontmatter passes every implemented rule")
     elif not errors:
         print(f"  ok with {len(warnings)} warning(s); no hard errors")
     else:
@@ -258,7 +283,7 @@ def simulate(skill, request: str) -> bool:
 
 def run_entry(skill, entry: str) -> int:
     """Run the skill's bundled validator on an entry, showing level-3 execution:
-    the script's source never enters context, only its output (here, stdout)."""
+    the harness can return output without first loading script source into context."""
     script = os.path.join(skill["dir"], "scripts", "validate_entry.py")
     if not os.path.isfile(script):
         print(f"no bundled validator at {script}")
@@ -317,6 +342,26 @@ def run_tests() -> int:
     check("E5 empty description", "E5" in {c for c, _ in validate_skill(synth(desc=""))[0]})
     check("E6 over-long description", "E6" in {c for c, _ in validate_skill(synth(desc="d" * 1025))[0]})
     check("E8 over-long body", "E8" in {c for c, _ in validate_skill(synth(body="\n".join(["x"] * 501)))[0]})
+    check(
+        "E9 ordinary first-person wording",
+        "E9" in {c for c, _ in validate_skill(synth(desc="I format changelog entries. Use when one is needed."))[0]},
+    )
+
+    folded_meta, folded_body, folded_frontmatter = parse_frontmatter(
+        "---\nname: folded-description\ndescription: >\n  Formats changelog entries.\n  Use when one is needed.\n---\n# Body"
+    )
+    folded_skill = {
+        "meta": folded_meta,
+        "body": folded_body,
+        "has_fm": folded_frontmatter,
+        "dir": HERE,
+    }
+    folded_errors, _ = validate_skill(folded_skill)
+    check(
+        "folded YAML description parses",
+        folded_meta.get("description") == "Formats changelog entries. Use when one is needed.",
+    )
+    check("folded YAML description avoids E7", "E7" not in {c for c, _ in folded_errors})
 
     # discovery threshold
     if good:
