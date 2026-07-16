@@ -105,7 +105,7 @@ to load a body and any referenced file. The portable pattern prescribes staged l
 that particular tool or protocol. MCPJam argued that this style of progressive retrieval can
 take roughly three to four times the tool calls of loading everything upfront in its
 illustrated comparison. Which trade wins depends on the harness, latency budget, and task.
-The next chapter, Skill or Server, takes up that comparison; hybrids are common.
+The next chapter, [Skill or Server](/skill-or-server), takes up that comparison; hybrids are common.
 
 ## The description does the discovering
 
@@ -237,7 +237,7 @@ can include local-machine access; on a constrained API container, it can be much
 Do not bake platform quotas, beta headers, or caching behavior into a portable skill. Pin
 those details to the target surface's current documentation and revisit them at upgrade
 time. The deeper comparison, when the gap you are filling is procedural knowledge versus
-live connectivity, is the next chapter, Skill or Server. Mahesh Murag framed the split
+live connectivity, is the next chapter, [Skill or Server](/skill-or-server). Mahesh Murag framed the split
 succinctly: MCP connects agents to external software and data; skills provide the
 procedural knowledge for using those tools effectively. The formulation comes from a
 [VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard).
@@ -285,7 +285,7 @@ lifecycle modes.
   path="artifacts/ch10-skills/"
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch10-skills"
   runtime="python3 (Python 3.9+) + Bash for install/check"
-  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100  # default full name-and-description listing", "python3 skills_lab.py --budget 100 --listing name-only", "python3 skills_lab.py --budget 100 --descriptions 20  # all names, twenty descriptions", "python3 skills_lab.py --budget 3 --session preloaded", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --simulate \"editing CHANGELOG\" --listing name-only", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\" --session preloaded", "python3 skills_lab.py --test"]}>
+  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100  # default full name-and-description listing", "python3 skills_lab.py --budget 100 --listing name-only", "python3 skills_lab.py --budget 100 --descriptions 20  # all names, twenty descriptions", "python3 skills_lab.py --budget 3 --session preloaded", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --simulate \"editing CHANGELOG\" --listing name-only", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\" --session preloaded", "python3 skills_lab.py --test", "bash check.sh  # self-contained artifact check"]}>
 One real skill you can install and trigger, plus a teaching lint that checks its supported
 portable subset and an optional Anthropic profile, a progressive-disclosure cost model that
 prices an actual full, name-only, or budget-trimmed regular listing and a preloaded-subagent
@@ -387,5 +387,5 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
 - The chapters on [Context-Window Economics](/context-window-economics), for why the loading
   model matters at all; [Resources, Tools, and Prompts](/resources-tools-and-prompts), for
   why a description is discovered the way a tool is; [The MCP Security Surface](/mcp-security-surface),
-  for the injection and trust-boundary problems a skill inherits; and Skill or Server (Chapter 11),
+  for the injection and trust-boundary problems a skill inherits; and [Skill or Server](/skill-or-server) (Chapter 11),
   for the head-to-head this chapter defers.

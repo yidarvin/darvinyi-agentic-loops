@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -919,3 +919,34 @@ documentation, and MCP authorization specification.
 
 - **`src/chapters/skills.mdx:283-296`** Add `bash check.sh` to the rendered artifact commands or name it beside them. The README documents it as the self-contained integration gate, including an extra root-aware validator invocation, while the chapter currently exposes only `--test`.
 - **`src/chapters/skills.mdx:108,240,390`** Link the plain-text Chapter 11 forward references to `/skill-or-server`; the route exists and the link would make the intended continuation easier to follow.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and its git patch history, then
+re-verified every REQUIRED correction from Rounds 1 through 22 against the current chapter,
+figure, widget, research backbone, and complete `artifacts/ch10-skills` package. The prior
+portable-versus-surface split, progressive-disclosure lifecycle, actual-listing model,
+installed-validator boundary, terminal-safe input path, fresh-install behavior, and full-bundle
+security model remain intact. The chapter remains `draft`; this resolution grants no approval.
+
+1. **Deferred level-three reference.** Refactored
+   `artifacts/ch10-skills/skills_lab.py` so regular and preloaded-subagent discovery paths
+   share one level-three renderer. `references/FORMAT.md` is now explicitly an on-demand,
+   possible read whose contents enter context only if a later task step needs it. The bundled
+   validator remains a planned execution step whose output, rather than source, can enter
+   context. New black-box regressions exercise both the documented default simulation and
+   preloaded-subagent simulation, requiring the conditional reference wording and rejecting
+   the former eager-read output.
+2. **Accurate `allowed-tools` guidance.** Corrected the source-of-record recommendation in
+   `docs/research/ch10-skills.md`: `allowed-tools` narrowly pre-approves necessary calls, but
+   host policy, permission deny rules, and/or `disallowed-tools` enforce least privilege.
+
+Advisories taken: clarified that Step 6 writes only the `summary` portion beneath the matching
+changelog type, added the artifact's self-contained `bash check.sh` command to the rendered
+chapter, linked the three Chapter 11 forward references, and corrected the bundled format
+reference's stale five-step wording.
+
+Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` and
+`bash artifacts/ch10-skills/check.sh` pass 111 assertions. `npm run check` passes all seven
+stages, including validation, prose lint, artifacts, render tests, TypeScript, production
+build, and advisory lint.

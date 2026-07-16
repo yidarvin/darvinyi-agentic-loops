@@ -1,6 +1,6 @@
 # The Keep a Changelog format
 
-Read this when an entry needs more than the five steps in `SKILL.md`: the heading
+Read this when an entry needs more than the core workflow in `SKILL.md`: the heading
 order, how the Unreleased section is cut into a release, or which type a change
 belongs to. Paraphrased from [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 

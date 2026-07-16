@@ -620,6 +620,21 @@ def keywords(text: str) -> list[str]:
     return [word for word in re.findall(r"[a-z0-9]+", text.lower()) if word not in STOP and len(word) > 1]
 
 
+def describe_level_three_paths(body: str) -> None:
+    """Show deferred resources without modeling a reference as eagerly loaded."""
+    for rel in sorted(set(REF_PATH.findall(body))):
+        if rel.startswith("scripts/"):
+            print(
+                f"     level 3  planned workflow step: executes {rel}; "
+                "output enters context while source can stay on disk"
+            )
+        else:
+            print(
+                f"     level 3  on demand: may read {rel} if a later task step needs it; "
+                "its contents enter context only then"
+            )
+
+
 def simulate(
     skill, request: str, session: str = "regular", listing: str = "full"
 ) -> bool:
@@ -644,11 +659,7 @@ def simulate(
     if session == "preloaded":
         print(f"  preloaded-subagent mode: {os.path.basename(skill['dir'])}/SKILL.md eligible named full content was injected at startup")
         print("  no trigger or read is needed for this named skill; level-3 resources remain on demand")
-        for rel in sorted(set(REF_PATH.findall(body))):
-            if rel.startswith("scripts/"):
-                print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
-            else:
-                print(f"     level 3  reads {rel}; its contents enter context at that point")
+        describe_level_three_paths(body)
         return True
     if not triggered:
         print("  => below this proxy's threshold; only the actual listing is modeled as loaded")
@@ -660,11 +671,7 @@ def simulate(
     else:
         print(f"     level 1  already listed: name + description (~{est_tokens(name) + est_tokens(description)} tokens)")
     print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); regular Claude Code session: first/distinct/changed render, identical re-invocation gets a short note")
-    for rel in sorted(set(REF_PATH.findall(body))):
-        if rel.startswith("scripts/"):
-            print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
-        else:
-            print(f"     level 3  reads {rel}; its contents enter context at that point")
+    describe_level_three_paths(body)
     return True
 
 
@@ -1233,10 +1240,26 @@ def run_tests() -> int:
     )
     check(
         "preloaded-subagent simulation skips the regular trigger path",
-        preloaded_simulation.returncode == 0 and "full content was injected at startup" in preloaded_simulation.stdout,
+        preloaded_simulation.returncode == 0
+        and "full content was injected at startup" in preloaded_simulation.stdout,
+    )
+    check(
+        "preloaded-subagent simulation keeps reference reads on demand",
+        preloaded_simulation.returncode == 0
+        and "on demand: may read references/FORMAT.md" in preloaded_simulation.stdout
+        and "level 3  reads references/FORMAT.md" not in preloaded_simulation.stdout,
     )
 
     if good:
+        default_simulation = run_lab_quiet(
+            "--simulate", "add a changelog entry for the export flag"
+        )
+        check(
+            "default discovery simulation keeps reference reads on demand",
+            default_simulation.returncode == 0
+            and "on demand: may read references/FORMAT.md" in default_simulation.stdout
+            and "level 3  reads references/FORMAT.md" not in default_simulation.stdout,
+        )
         check("relevant request triggers this proxy", simulate_quiet(good, "add a changelog entry for the export flag"))
         check("irrelevant request does not trigger this proxy", not simulate_quiet(good, "reboot the database server"))
         check(

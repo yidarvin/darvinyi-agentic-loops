@@ -26,8 +26,9 @@ Changelog format, and verify it before writing.
    a specific reason when it is not.
 5. If it fails, fix the reported problem and run it again. Do not write the entry
    until the validator passes.
-6. Place the summary as a `- ` bullet under the matching `### Type` heading in
-   the `## [Unreleased]` section, creating the heading if it is not there yet.
+6. Place only the `summary` portion, without the `Type:` prefix, as a `- ` bullet
+   under the matching `### Type` heading in the `## [Unreleased]` section, creating
+   the heading if it is not there yet.
 
 ## Notes
 
