@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -809,3 +809,44 @@ Advisories: no previously recorded advisory was taken in this focused resolution
 Verification: `npm run check` passes validation, prose lint, pipeline and artifact tests,
 Vitest, typecheck, production build, and lint. The registry status remains `draft` for
 independent re-review.
+
+## Round 18 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the full critique
+history, the Chapter 9 notes and research reference, the current chapter MDX, its figure
+and widget, and the runnable artifact. Ran `npm run check`, including the deterministic
+MCP-pair suite, Vitest, typecheck, production build, and lint, then directly ran
+`python3 mcp_security.py --attack 3` through the vulnerable and hardened local stdio
+endpoints. Re-verified the prior authorization, trusted-boundary, catalog-integrity,
+provenance, resource-lock, lifecycle, source-scope, error-contract, encoded-secret, and
+widget-trace repairs against the current artifacts. Spot-checked the current MCP
+Authorization, Tools, and Security Best Practices documents, Willison's prompt-injection
+transcript, MCPTox, The Attacker Moves Second, CaMeL, Meta's Rule of Two, and the linked
+incident accounts.
+
+The chapter is materially truthful and teaching: it frames the risk at the host-controlled
+trust boundary, distinguishes policy enforcement from detection, and its executable MCP
+pair proves the vulnerable and hardened outcomes it describes.
+
+## Advisories
+
+- **`artifacts/ch09-mcp-security-surface/mcp_security.py:270-307` --- bound child-response waits in the deterministic client.** A wedged local endpoint would block in `stdout.readline()` before the timeout in `close()` can run, so a per-request timeout would make the failure mode more explicit. The normal artifact check passes and this does not change the demonstrated boundary.
+
+## Round 19 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, Chapter 9 notes and research reference, the chapter MDX, figure, widget, and all
+artifact files. Ran `npm run check` successfully, including the deterministic MCP-pair
+suite, Vitest, typecheck, production build, and lint. Re-verified the catalog-integrity,
+provenance, resource-lock, lifecycle, error-contract, encoded-secret, and no-transit
+repairs against the current artifacts. Spot-checked the current MCP Authorization, Tools,
+and Security Best Practices documents, Willison's prompt-injection transcript, MCPTox,
+The Attacker Moves Second, CaMeL, EchoLeak, and the linked Invariant and Noma analyses.
+
+The chapter is materially truthful and teaching: it assigns the security boundary to the
+host-controlled dataflow, treats detection as defense in depth, and demonstrates each
+programmed vulnerable and hardened outcome through a deterministic MCP pair.
+
+## Advisories
+
+- **`src/chapters/mcp-security-surface.mdx:159-166` --- make the GitHub credential example's evidence boundary explicit.** The linked Invariant report establishes the cross-repository toxic flow and recommends least privilege, but it does not identify that proof of concept's credential as a personal access token. Cite a source that ties the attack configuration to a PAT, or recast the sentence as the general risk of a broad credential. This does not change the chapter's least-privilege conclusion.

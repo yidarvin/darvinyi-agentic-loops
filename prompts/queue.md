@@ -20,7 +20,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 06 | transports                   | Transports                                      | DONE    |
 | 07 | resources-tools-and-prompts  | Resources, Tools, and Prompts                   | DONE    |
 | 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | DONE    |
-| 09 | mcp-security-surface         | The MCP Security Surface                        | PENDING |
+| 09 | mcp-security-surface         | The MCP Security Surface                        | DONE    |
 | 10 | skills                       | Skills                                          | PENDING |
 | 11 | skill-or-server              | Skill or Server                                 | PENDING |
 | 12 | delegation                   | Delegation                                      | PENDING |
