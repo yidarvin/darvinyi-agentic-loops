@@ -1,0 +1,195 @@
+import { CoordinationPatternsFigure } from "./_figures/CoordinationPatternsFigure";
+import { CoordinationPatternsWidget } from "./_widgets/CoordinationPatternsWidget";
+
+Coordination is a graph design problem, not a framework choice. Before naming agents,
+name the task's dependency structure, the path control will take, the state that crosses
+an edge, and the rule that merges concurrent results. The least-powerful topology that
+fits those facts is usually the best system. A single loop wins until its context, tool
+surface, latency, or independent search branches give you evidence to split it. Once you
+split it, the graph determines whether you gained useful parallelism or merely created a
+more expensive way to lose track of work.
+
+[Delegation](/delegation) established the unit of work: a lead sends a bounded brief to a
+worker and receives a bounded result. This chapter chooses the wiring between many such
+units. The question is not "which agent framework?" It is: who can run independently,
+who owns the next decision, and where must separate work become one coherent result?
+
+## Match the graph to the dependency
+
+Every coordination design has three independent choices.
+
+1. **Topology** names who can connect to whom: a line, a hub, a tree, a peer network, a
+   shared workspace, or a fan-out with a join.
+2. **Mechanism** names what an edge does: call a bounded specialist, transfer control,
+   append a message, or update shared state.
+3. **Driver** names who chooses the next edge: application code, a model, or a deliberate
+   mixture of both.
+
+Treat those as separate dials. A supervisor can route with deterministic code or ask a
+model to classify. A network can use handoffs while a blackboard can still have a strict
+controller. Conflating the dials is how a team calls a system "hierarchical" without
+knowing whether control returns, whether state is shared, or who resolves conflicts.
+
+| Dependency shape | Smallest useful topology | The design obligation |
+| --- | --- | --- |
+| Each stage needs the previous output | Sequential pipeline | Make every stage contract explicit; latency is the sum. |
+| Independent reads or analyses | Fan-out and fan-in | Bound concurrency and define a reducer before dispatch. |
+| Classification with central synthesis | Supervisor | Keep routing and final ownership visible in one place. |
+| Deep, nested decomposition | Hierarchy | Limit depth; routing error, latency, and cost compound per tier. |
+| The next capable peer is unknown upfront | Peer handoff network | Trace every transfer and cap the hop budget. |
+| Contributors need a shared working record | Blackboard | Version state, specify reducers, and serialize contested writes. |
+| Competing perspectives improve the result | Debate or group chat | State a stopping rule and budget every round. |
+
+The single-agent baseline belongs in the table even when it feels too obvious to mention.
+It has one trace, one context, no merge rule, and no coordination tax. LangChain's
+architecture benchmark found that a single agent can perform slightly better at low
+distraction complexity, then falls as unrelated domains accumulate. That result is a
+useful warning, not a universal threshold: measure the actual workload before adding a
+team.
+
+<Figure id="13.1" caption="A coordination pattern follows the task's dependency graph. Each row couples a workload shape to its smallest useful topology and its non-negotiable operating cost. The bottom dial separates code-driven control, which is easier to reproduce and inspect, from model-driven routing, which is more flexible when the path cannot be known in advance.">
+  <CoordinationPatternsFigure />
+</Figure>
+
+## Control transfer and control return are different edges
+
+A supervisor is the reference topology because it makes authority legible. The supervisor
+chooses a specialist, gives it a bounded job, receives a result, and remains responsible
+for the response. This is the manager pattern, often implemented as agents exposed as
+tools. Its virtue is a single place to inspect routing and synthesis. Its cost is a
+translation tax: every exchange crosses the supervisor, adding a model turn, tokens, and
+an opportunity to compress away a detail that the next worker needed.
+
+A handoff has a different execution property. The current agent transfers control to a
+peer, and that peer becomes the active owner of the conversation. The caller does not
+automatically receive a result and resume. Handoffs fit triage, specialist support, and
+genuine peer networks, where the right path is unknown before work starts. They make poor
+substitutes for a bounded call when a single authority must reconcile results. A trace with
+more than a few unplanned transfers is usually evidence that the routing interface is
+underspecified.
+
+Product examples should stay examples. The OpenAI Agents SDK calls these two mechanisms
+handoffs and agents-as-tools. LangGraph can model the same distinction with explicit graph
+edges and state updates. Neither product changes the underlying contract: a call returns
+control; a handoff transfers it.
+
+Hierarchy repeats the supervisor pattern at several levels. It earns its extra machinery
+only when decomposition is genuinely nested. Otherwise it compounds the supervisor's
+translation tax at every tier. A peer network removes that central hop, but spreads global
+policy across participants and makes the trace harder to explain. Group chat trades even
+more budget for independent views and critique. It can help in adversarial review, but
+shared model priors can collapse the group toward a confident majority rather than a
+calibrated answer.
+
+## The join is the correctness boundary
+
+Parallel work does not become a result merely because every worker returned. Fan-out earns
+its latency advantage only when branches can make progress independently. Its elapsed time
+then approaches the slowest branch rather than the sum of every branch. The join must still
+answer four questions before the lead sees an aggregate:
+
+1. Did every required branch finish, fail, or time out?
+2. Which result wins when two branches make incompatible claims?
+3. Is the aggregate stable if completion order changes?
+4. What state can branches write concurrently, and what must one owner write alone?
+
+That last question separates a strong multi-agent system from a concurrent race. A
+blackboard or shared state object preserves far more detail than passing summaries through
+chat, but its keys need schemas and deterministic reducers. An append-only evidence list
+can merge safely. A shared product decision cannot. In a graph runtime, reducers should
+produce the same state regardless of how writes were batched, or replay and recovery will
+quietly change meaning.
+
+This is why the practical rule is so sharp: **parallelize reads, serialize writes.** Let
+workers search, inspect, and propose independently. Funnel a shared decision, a final
+artifact, or a mutation of one codebase through one explicitly accountable writer. For
+breadth-first research, Anthropic reported that this shape can pay for its large token
+multiple. For tightly coupled coding, the same split often creates conflicts faster than
+it creates useful work. Both observations describe dependency structure, not competing
+ideologies.
+
+## Reconfigure the control plane
+
+The widget changes one thing: the work profile. Watch the graph reroute itself, then read
+the resulting control contract. The highlighted pattern is not a ranking. It is the least
+complex graph that keeps the selected work honest about dependencies and writes.
+
+<Widget name="coordination_patterns" hint="Choose a work profile. The graph updates to its smallest useful topology, then exposes who owns control, how results return, and the constraint that prevents the topology from becoming a costly accident.">
+  <CoordinationPatternsWidget />
+</Widget>
+
+## Put predictable control flow in code
+
+The code-driven versus model-driven choice sits above every topology. Use code for an edge
+whose condition can be stated as a predicate, a quota, a timeout, or a state transition.
+That gives you repeatable traces, bounded cost, and a place to install retries and circuit
+breakers. Let a model drive only the decision points where the right path genuinely depends
+on discoveries made during the run: choosing unfamiliar research angles, selecting a
+specialist after reading a novel request, or deciding whether evidence is sufficient.
+
+The durable hybrid is common: code fans out a fixed set of independent research branches;
+a lead model may request another branch after seeing the first join; code still enforces the
+branch limit, the schema, the timeout, and the final write lock. A model can propose a
+transition. It should not be the only record that the transition happened.
+
+Instrumentation comes before scale. Record an execution tree with a run identifier, the
+router's decision, input and output schemas, branch cost, retry count, and join outcome.
+Logs tell you what a worker said. A trace tells you which control decision produced the
+worker, whether siblings ran concurrently, and where a result was discarded. When a graph
+misbehaves, those are different failures and need different fixes.
+
+## Run the fan-out and join
+
+The artifact is a deterministic orchestration lab, not an LLM runtime. It starts three
+independent workers behind one release gate, records a trace, waits for the join, and then
+reduces the structured results in input order rather than completion order. Its failure path
+blocks aggregation when a required branch reports an error. The design is intentionally
+small enough to inspect: swap `run_worker` for a real agent call only after preserving the
+same branch contract, concurrency bound, and reducer.
+
+<RunnableArtifact
+  name="fan_out_join_lab"
+  path="artifacts/ch13-coordination-patterns/"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch13-coordination-patterns", "python3 fanout.py", "python3 fanout.py --fail risks", "python3 fanout.py --test"]}>
+Three independent workers fan out through a bounded asynchronous scheduler. The reducer
+waits for a complete join, validates coverage and unique ids, then emits a stable aggregate.
+The failure mode demonstrates the inverse contract: a failed required branch produces no
+partial synthesis.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Draw the dependency graph first">
+Take a task your team currently calls multi-agent. Mark every read, shared decision, and
+write. Circle the work that can proceed without waiting on another circle. Choose the
+smallest topology from this chapter that fits that drawing, then name one agent or edge you
+can remove.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Write a reducer before the fan-out">
+Use the artifact's three worker results as a template. Define the schema, required ids,
+ordering rule, conflict rule, and failure rule for one parallel workflow you would actually
+deploy. Test it with the same results in three different completion orders.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Separate return from handoff">
+Find one routing edge in an existing system. Decide whether its caller must resume with a
+bounded result or whether the recipient must own the conversation. State the decision in a
+single sentence, then add the trace field that would prove the runtime honored it.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Set the control boundary">
+Choose a dynamic branch in a workflow and write two versions of it: a code predicate and a
+model instruction. Keep the model-driven version only if the code version cannot express
+the needed decision without throwing away meaningful discoveries. Add a branch cap and a
+single final writer either way.
+</ExerciseCard>
+
+## Sources
+
+- [Anthropic, "How we built our multi-agent research system" (June 2025)](https://www.anthropic.com/engineering/multi-agent-research-system), for the orchestrator-worker research architecture, independent context windows, the reported breadth-first research result, the cost multiplier, effort scaling, and the read-parallel/write-serialized boundary. The performance figures are Anthropic's internal results, not an independent benchmark.
+- [LangChain, "Benchmarking Multi-Agent Architectures" (June 2025)](https://www.langchain.com/blog/benchmarking-multi-agent-architectures), for the low-complexity single-agent baseline, supervisor translation cost, and architecture comparison. The benchmark is framework-authored and should be read as directional evidence.
+- [OpenAI Agents SDK, "Handoffs"](https://openai.github.io/openai-agents-python/handoffs/), for the control-transfer handoff model; and ["Agent orchestration"](https://openai.github.io/openai-agents-python/multi_agent/), for manager and decentralized examples.
+- [LangGraph, "Workflows and agents"](https://docs.langchain.com/oss/python/langgraph/workflows-agents), for explicit graph orchestration and parallel workflow examples.
+- [Cemri and colleagues, "Why Do Multi-Agent LLM Systems Fail?"](<https://arxiv.org/abs/2503.13657>), for the MAST failure taxonomy that motivates the next chapter, [When Multi-Agent Fails](/when-multi-agent-fails).
