@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -877,3 +877,45 @@ outside the skill folder; regression coverage proves both cases.
 Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` passes 109 assertions.
 `npm run check` passes all seven stages, including validation, prose lint, artifacts, render
 tests, TypeScript, production build, and advisory lint.
+
+## Round 21 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history and both builder resolutions;
+the current `src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file
+in `artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Re-verified the resolved
+requirements from Rounds 1 through 20 against the current artifacts. Ran `npm run check`
+successfully through all seven stages, including the 109-assertion Skills artifact gate,
+and directly exercised the documented discovery simulation. Spot-checked the current Agent
+Skills specification, Anthropic's Skills overview, Claude Code's Skills documentation, and
+the MCP authorization specification. The available browser runtime had no browser backend,
+so the figure and widget review used their source, static accessibility implementation, and
+the passing render tests rather than screenshots.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:647-651,663-667` --- the discovery simulator teaches automatic level-three loading.** Running the documented default command, `python3 skills_lab.py --simulate "add a changelog entry for the new export flag"`, prints `level 3 reads references/FORMAT.md` immediately after the skill triggers. But `changelog-entry/SKILL.md:41-42` makes that reference conditional on needing the full format, and the chapter's central claim is that a reference enters context only when the agent chooses to read it. The same unconditional loop also appears in preloaded-subagent mode. Keep the validator as a planned workflow step if appropriate, but model `references/FORMAT.md` as conditional or potential, not as an automatic read. Update both paths and add a regression assertion for the default simulation so a level-three resource cannot silently become eager again.
+
+## Advisories
+
+- **`artifacts/ch10-skills/changelog-entry/SKILL.md:16-30`** Clarify that Step 6 writes only the `summary` portion of `Type: summary` as the bullet under `### Type`; otherwise a reader can reasonably produce a duplicated label such as `### Added` followed by `- Added: ...`.
+
+## Round 22 review (2026-07-16)
+
+Independent review: read the current `src/chapters/skills.mdx`, `SkillsFigure.tsx`,
+`SkillsWidget.tsx`, the complete `artifacts/ch10-skills` package, its README and
+deterministic check, and `docs/research/ch10-skills.md`; also read the existing open Round
+21. Ran `npm run check` successfully through all seven stages, including the 109-assertion
+Skills artifact gate and 26 render tests, and ran `bash artifacts/ch10-skills/check.sh`
+successfully. I exercised both documented discovery simulations, independently confirming
+the still-open Round 21 eager-reference defect without duplicating it here. Spot-checked the
+current Agent Skills specification, Anthropic Agent Skills overview, Claude Code Skills
+documentation, and MCP authorization specification.
+
+## Required fixes
+
+1. **`docs/research/ch10-skills.md:257` --- the source-of-record security recommendation treats `allowed-tools` as least-privilege containment, but it is a pre-approval mechanism.** The current [Claude Code Skills documentation](https://code.claude.com/docs/en/skills) says `allowed-tools` grants listed tools access without per-use approval while the skill is active; it does not remove other tools. The same documentation identifies `disallowed-tools` and global permission deny rules as the mechanisms that restrict availability. Replace “apply least-privilege `allowed-tools`” with a distinction between narrowly pre-approving necessary calls and enforcing least privilege through host policy, permission deny rules, and/or `disallowed-tools`. This is security guidance in the chapter's factual backbone, so leaving the inversion there risks reintroducing unsafe advice even though the current chapter prose does not repeat it.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:283-296`** Add `bash check.sh` to the rendered artifact commands or name it beside them. The README documents it as the self-contained integration gate, including an extra root-aware validator invocation, while the chapter currently exposes only `--test`.
+- **`src/chapters/skills.mdx:108,240,390`** Link the plain-text Chapter 11 forward references to `/skill-or-server`; the route exists and the link would make the intended continuation easier to follow.
