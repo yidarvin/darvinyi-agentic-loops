@@ -1,15 +1,17 @@
 import { DelegationFigure } from "./_figures/DelegationFigure";
 import { DelegationWidget } from "./_widgets/DelegationWidget";
 
-A single agent has one context window, and every file it reads, every failed command, and
-every long tool result lands in that one window and stays there. Delegation is the
-structural answer. A lead agent hands a slice of the work to a subagent, which runs its
-own loop in its own fresh context window and returns only a result. The reflex is to reach
-for delegation when you want parallelism, and parallelism is real, but it is the smaller
-half of the story. The reason a single agent cannot just work through a breadth-first task
-sequentially in one window is that the window would fill with noise and its answers would
-degrade. Delegation is first a context-engineering move. It decides which work burns which
-window, and only then does it happen to run several windows at once.
+Without compaction or externalized memory, a single-agent loop has one working context
+window. Every file body, failed command, and long tool result it keeps in that history
+consumes the same window. Delegation is one context-management strategy, not the only
+structural answer. Compaction preserves a continuous exchange by distilling history;
+structured note-taking preserves selected state outside the window; delegation gives
+focused, independently explorable work its own loop. The reflex is to reach for delegation
+when you want parallelism, and parallelism is real, but it is the smaller half of the
+story. For a self-contained slice that can return a bounded result, delegation first
+decides which work burns which window, and only then does it happen to run several windows
+at once. Leave a breadth-first task in one uncompacted window and its history fills with
+noise until relevant facts are buried and its answers degrade.
 
 This chapter opens Part III by establishing the mechanic and nothing more. The topologies
 that connect many agents belong to [Coordination Patterns](/coordination-patterns), and the

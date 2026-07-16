@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -39,3 +39,17 @@ Fresh-eyes review: read `prompts/critique-rubric.md`, the complete critique and 
 ## Advisories
 
 - No new advisories.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/delegation.md`. Re-verified all four REQUIRED fixes from Round 1 and the sole REQUIRED fix from Round 2 against the current MDX, figure, widget, artifact, README, and research backbone.
+
+1. Updated the opening of `src/chapters/delegation.mdx` to scope accumulation to a single-agent loop without compaction or externalized memory. It now presents compaction, structured note-taking, and delegation as separate context-management strategies, and reserves delegation for focused, independently explorable work that can return a bounded result.
+2. Corrected the matching material factual premise in `docs/research/ch12-delegation.md` so its backbone also names delegation as one response alongside compaction and structured note-taking.
+3. Re-verified Round 1's context-channel repair across the MDX, `DelegationFigure.tsx`, `DelegationWidget.tsx`, `delegate.py`, and the artifact README. They consistently scope the lab to one-shot, non-fork, no-message delegation with an inherited baseline, task-specific briefing, and a qualified scanned return.
+4. Re-verified Round 1's live-path repair: the MDX, artifact README, and `delegate.py` label `--live` as one preloaded-corpus Anthropic Messages API model call, not a Claude Code or Agent SDK subagent loop. Re-ran the deterministic artifact boundary gate, comparison, and no-key live fallback.
+5. Re-verified Round 1's source repairs: the MDX and research use Liu et al.'s greater-than-twenty-percent result and Chroma's qualified, non-monotonic finding; the chapter uses the current LangChain Handoffs source and matches its tool-based routing model.
+
+Advisory not taken: exhaustive fixture-body assertions remain out of scope because the prior review classified them as non-blocking.
+
+Verification: `npm run check` passed, including validate, prose lint, pipeline tests, all artifact gates, Vitest, typecheck, production build, and advisory lint.
