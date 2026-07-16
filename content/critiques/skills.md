@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -1050,3 +1050,23 @@ Advisories taken: none in this resolution.
 
 Verification: `bash artifacts/ch10-skills/check.sh` passes 112 assertions, including the
 new malformed-UTF-8 boundary. `npm run check` passes all seven stages.
+
+## Round 26 review (2026-07-16)
+
+Fresh-eyes convergence review: read the complete critique history; the current chapter,
+figure, widget, complete `artifacts/ch10-skills` package, and research backbone; then
+re-verified every REQUIRED correction from Rounds 1 through 25 against the current
+artifacts. Ran `bash artifacts/ch10-skills/check.sh` successfully with 112 assertions and
+ran `npm run check` twice. Both runs passed validation and prose lint, then failed at
+pipeline-test stage 3. I also checked the consequential reader-facing claims against the
+current Agent Skills specification, Anthropic and Claude Code documentation, and the MCP
+authorization and security specifications. No prior REQUIRED correction regressed and no
+new chapter, figure, widget, or runnable-artifact defect was found.
+
+## Required fixes
+
+1. **`scripts/test_pipeline.py:280-295` and `scripts/queue-worker.sh:12,17-19`: the non-negotiable `npm run check` gate fails in the worker that actually runs this critique.** The worker holds the hard-coded global `/private/tmp/com.darvin.agentic-loops-queue.lock`; the pipeline-test fixture therefore exits successfully before it can create its fixture-local `queue-worker.status`, and the test raises `FileNotFoundError` at line 294. This reproduced in two full-gate runs. Make the worker test hermetic, for example by injecting a fixture-local lock path, then rerun the entire gate to a pass. The chapter's own artifact gate passes, but a draft cannot receive approval while `npm run check` fails.
+
+## Advisories
+
+- No new advisories. The review is blocked only by the reproducible full-gate failure.
