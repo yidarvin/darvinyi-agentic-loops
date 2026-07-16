@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -950,3 +950,75 @@ Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` and
 `bash artifacts/ch10-skills/check.sh` pass 111 assertions. `npm run check` passes all seven
 stages, including validation, prose lint, artifacts, render tests, TypeScript, production
 build, and advisory lint.
+
+## Round 23 review (2026-07-16)
+
+Fresh-eyes re-review: read the full critique history and current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in
+`artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Re-verified the previously
+corrected portable-versus-surface split, progressive-disclosure paths, listing and lifecycle
+model, security boundary, installed workflow, and failure behavior against the current
+artifacts. Ran `npm run check` successfully through all seven stages, including 26 render
+tests and the 111-assertion Skills artifact gate, then ran
+`bash artifacts/ch10-skills/check.sh` successfully. Checked consequential claims against the
+current Agent Skills specification, Claude Code Skills documentation, Anthropic Skills
+overview, and MCP authorization specification.
+
+## Required fixes
+
+1. **`docs/research/ch10-skills.md:32-37` --- the factual backbone misclassifies `allowed-tools` as a Claude Code-only extension.** The document lists `license`, `compatibility`, and `metadata` as portable optional frontmatter, then includes `allowed-tools` only in Claude Code's extension list. The current [Agent Skills specification](https://agentskills.io/specification) defines `allowed-tools` as an optional, experimental portable field whose support varies by implementation. Add it to the portable optional-field list, label its experimental and variable-support status, and then describe Claude Code's additional pre-approval semantics separately. The chapter deliberately teaches the boundary between portable format and surface-specific behavior, so its source of record must preserve that distinction even though the chapter does not currently repeat this error.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:65-74,112-118` --- Claude Code can also append `when_to_use` to its listing and fall back to the first Markdown paragraph when `description` is absent.** The portable-core framing remains accurate and this does not contradict the chapter's full-listing model, but a compact Claude Code qualification would make the product-specific account exact. Evidence: [Claude Code Skills frontmatter reference](https://code.claude.com/docs/en/skills).
+
+## Round 24 review (2026-07-16)
+
+Independent re-review: read the full critique history, the current chapter, figure, widget,
+complete `artifacts/ch10-skills` package, and research backbone. Re-verified the still-open
+Round 23 `allowed-tools` source mismatch against the current Agent Skills specification;
+it remains open and is not duplicated below. Ran
+`bash artifacts/ch10-skills/check.sh` successfully (111 assertions plus the literal
+installed-skill smoke test). Checked the portable specification, current Claude Code and
+Anthropic Skills documentation, and WCAG 2.2's contrast criterion. The driver supplied the
+repository validation gate for this critique, so I did not rerun `npm run check`.
+
+## Required fixes
+
+1. **`src/styles/tokens.css:16-23`, `src/chapters/_figures/SkillsFigure.tsx:33-35`, and `src/chapters/_widgets/SkillsWidget.tsx:184,200-202,232-233,273,314-323,330-344` --- essential teaching labels use insufficient contrast.** `--comment` (`#55707b`) renders at 3.44:1 on `--surface` (`#10171a`) and 3.25:1 on `--surface-2` (`#141d21`). These 10 to 11px labels describe the active listing, load-profile fields, pointers, and state transitions, so they are not decorative or large text. WCAG 2.2 SC 1.4.3 requires 4.5:1 for normal text: [W3C contrast minimum](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Keep the code-comment motif, but render these informational labels with `--fg-muted` or another token that reaches 4.5:1 on each actual background (the existing `--fg-muted` is 5.52:1 and 5.21:1 respectively).
+
+## Advisories
+
+- **`src/chapters/_widgets/SkillsWidget.tsx:186-198,211-225,248-268,299-344` --- announce the changed profile to screen-reader users.** The controls are keyboard-operable, but changing one updates a separate profile card without a concise live status. An `aria-live="polite"` summary or equivalent relationship would make the teaching state change perceptible without moving focus. This is nonblocking because the controls and content remain reachable.
+
+## Round 25 review (2026-07-16)
+
+Independent re-review: read the complete critique history, current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in
+`artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Re-verified the open Round 23
+portable-`allowed-tools` source mismatch and Round 24 contrast finding against the current
+files, so neither is duplicated below. Ran `bash artifacts/ch10-skills/check.sh`
+successfully (111 assertions plus the literal installed-skill smoke test), then directly
+ran the public `--validate` command on a temporary skill containing an invalid UTF-8 byte.
+Checked the consequential reader-facing claims against the current Agent Skills
+specification, Claude Code Skills documentation, Anthropic Agent Skills overview, and MCP
+authorization specification. The driver supplied the repository validation gate for this
+critique.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:353-358` --- malformed UTF-8 crashes the public
+   teaching lint instead of producing a meaningful validation failure.** A temporary skill
+   whose `SKILL.md` has an invalid UTF-8 byte makes
+   `python3 artifacts/ch10-skills/skills_lab.py --validate <dir>` exit through an uncaught
+   `UnicodeDecodeError` traceback before it prints a lint result. The artifact promises a
+   deterministic teaching lint that rejects unsupported malformed frontmatter and the
+   chapter rubric requires a meaningful failure mode. Catch `UnicodeDecodeError` and read
+   errors in `load_skill()`, return a concise nonzero diagnostic that identifies the file
+   and UTF-8 requirement, and add a black-box `--test` regression so a malformed skill
+   cannot regress to a traceback.
+
+## Advisories
+
+- No new advisories. The still-relevant screen-reader announcement improvement remains
+  recorded in Round 24.
