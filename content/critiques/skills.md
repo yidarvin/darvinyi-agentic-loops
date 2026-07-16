@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -775,3 +775,66 @@ approval.
 
 Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` passes 99 assertions.
 `npm run check` passes all seven stages after this record.
+
+## Round 20 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history and both builder resolutions,
+the current `src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file
+in `artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Re-verified the required
+corrections from Rounds 1 through 19 against the current artifacts. Ran `npm run check`
+(all seven stages pass, including 26 render tests) and
+`bash artifacts/ch10-skills/check.sh` (99 assertions pass), then exercised the public
+broken-skill, budget, and discovery commands. Checked the consequential lifecycle and
+installation claims against the current Agent Skills specification, Anthropic overview,
+and Claude Code Skills documentation. The rendered-browser surface was unavailable, so
+the visual pass used component-source inspection and the passing render tests.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:61-79,102-105,165-175,253-256,288-296`,
+   `src/chapters/_figures/SkillsFigure.tsx:36-40,70-72,88,95-102`,
+   `src/chapters/_widgets/SkillsWidget.tsx:38-51,272-277`,
+   `artifacts/ch10-skills/README.md:101-115`, and
+   `artifacts/ch10-skills/skills_lab.py:14-18,460-505,519-549` --- the central
+   level-one model treats every listed, model-invocable Claude Code Skill as carrying
+   its full name and description at startup.** Claude Code's
+   [`skillOverrides`](https://code.claude.com/docs/en/skills) supports `"name-only"`,
+   which lists a name without its description, and the same documentation says its
+   listing budget shortens and can drop descriptions while retaining every name. The
+   research backbone already records this at `docs/research/ch10-skills.md:248`, so the
+   chapter's unqualified model contradicts its factual source of record. This changes
+   both the startup arithmetic and the claim that the description performs discovery:
+   a name-only or budget-trimmed Skill has less or no description available to match.
+   Scope the current numbers and diagrams to a default, full name-and-description
+   listing before budget application, then teach the `name-only` and overflow paths as
+   a Claude Code exception. Update the figure, widget, lab model and README, exercises,
+   and research record together. A reader should be able to see that the actual listing,
+   not the installed library count, determines both startup cost and discovery surface.
+
+2. **`artifacts/ch10-skills/README.md:74-90` --- the advertised fresh Claude Code
+   installation can fail to make the skill discoverable in the current session.** The
+   commands deliberately create `~/.claude/skills/` when it does not exist, then tell
+   the reader to ask for a changelog entry. Current
+   [Claude Code documentation](https://code.claude.com/docs/en/skills) says a top-level
+   skills directory created after session start requires a Claude Code restart before it
+   can be watched. The artifact's clean-home test confirms only that files can be copied
+   and its validator can run, not that a running Claude Code session discovers the new
+   skill. Add the conditional restart instruction immediately after installation, and
+   distinguish it from live updates to an already watched skills directory. The chapter
+   presents this package as a skill a reader can install and trigger, so this is a
+   material local-instructions defect.
+
+## Advisories
+
+- **`artifacts/ch10-skills/skills_lab.py:77,412-414` --- the optional `W6` reference
+  warning is not a reliable package-boundary check.** It reports no warning for
+  `references/../../skills_lab.py`, which resolves outside the skill folder, and it
+  treats the terminal period in `references/FORMAT.md.` as part of the path. The declared
+  lint scope is deliberately narrow, so this does not block approval, but either resolve
+  and constrain paths beneath the skill root or remove the warning rather than giving it
+  a misleading result.
+- **Carried forward from Round 18: `src/chapters/skills.mdx:44-45,205-206` and
+  `artifacts/ch10-skills/skills_lab.py:394-395`.** Anthropic documents an XML-tag
+  restriction in `name` and `description`; calling it a blanket “XML-like angle
+  brackets” restriction and rejecting every `<` or `>` is broader than that wording.
+  The portable-versus-surface distinction remains correct, so this is still nonblocking.
