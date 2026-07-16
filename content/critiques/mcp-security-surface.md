@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -622,3 +622,55 @@ resource-lock, EchoLeak-topology, and Dual-LLM/CaMeL repairs remain in place.
 
 Verification: `npm run check` passes. The critique remains `verdict: resolved`, and the
 registry status remains `draft` for independent re-review.
+
+## Round 13 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, Chapter 9 notes and research reference, the full chapter, figure, widget, and
+every Chapter 9 artifact file. Re-verified the resolved source-scope, trusted-boundary,
+lifecycle, resource-lock, EchoLeak-topology, and Dual-LLM/CaMeL fixes in the current
+artifacts. Ran `bash artifacts/ch09-mcp-security-surface/check.sh` and `npm run check`;
+both pass. Exercised the real vulnerable stdio endpoint with a percent-encoded local fake
+SSH fixture and replayed attacks 2 and 4. Spot-checked the current
+[MCP Authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
+[MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
+[Cato's EchoLeak report](https://www.catonetworks.com/blog/breaking-down-echoleak/),
+[Noma's GitLost report](https://noma.security/blog/gitlost-how-we-tricked-githubs-ai-agent-into-leaking-private-repos/),
+and the [Attacker Moves Second](https://arxiv.org/abs/2510.09023) and
+[CaMeL](https://arxiv.org/abs/2503.18813) papers. The prose, figure, cited claims, and
+the prior material repairs remain sound. These two new artifact and widget defects block
+approval.
+
+## Required fixes
+
+1. **`artifacts/ch09-mcp-security-surface/security_mcp.py:153-166,699-709`, `artifacts/ch09-mcp-security-surface/mcp_security.py:823-967`, and `artifacts/ch09-mcp-security-surface/README.md:85-88` --- make the scoreboard correctly recognize a modeled secret after ordinary URL transport encoding.** `World.leaked_secret()` searches only for a literal raw fixture inside the recorded URL. In a real vulnerable stdio session, read the fake SSH key with `read_repo_file`, percent-encode it for the `http_get` URL, then call `lab_status`: it reports `exfiltration_count: 1` but `secret_escaped: false`. The secret crossed the modeled external boundary, yet the stated test oracle calls it safe. This is new rather than a re-opened Round 3 finding: that round added every raw fixture to the tracked set, while the current transport representation still creates a false negative. Track modeled-secret provenance at the boundary or normalize the modeled URL payload consistently, and add both in-memory and stdio regressions for the encoded form. The hardened endpoint currently blocks this request, but the artifact's advertised vulnerable-leak proof is false for a normal encoding path.
+2. **`src/chapters/_widgets/McpSecuritySurfaceWidget.tsx:58-76,110-128` and `artifacts/ch09-mcp-security-surface/security_mcp.py:97-127` --- align each displayed poisoned input with the exfiltration action its trace executes.** The rug-pull source says only to send the key so results can be personalized, while the trace jumps to `http_get attacker.example`. The output-poisoning source says to resend the key as an `auth` argument, while its trace also jumps to `http_get attacker.example`. The executable strings repeat the same visible text but hide the actual HTTP action in a separate `<<PLAN>>`; `python3 mcp_security.py --attack 2` and `--attack 4` execute that hidden action. The signature widget therefore asks the reader to infer the [C] leg rather than showing that the displayed malicious content causes it. Make the visible untrusted excerpt and executable plan name the same outbound action, or change the trace to perform the action the source actually specifies. Keep one shared scenario definition or add a regression so the widget and runnable path cannot drift again.
+
+## Advisories
+
+- The Round 7 advisory remains appropriately non-blocking: `human_approved` has no modeled
+  positive transition. The current boundary fails closed, but the README should label approval
+  as an out-of-band trusted-host handoff or add a constrained approved-flow regression.
+- `src/chapters/mcp-security-surface.mdx:20-23` could say that role markers do not create a
+  hard trusted code/data enforcement boundary, rather than implying a model has no role
+  hierarchy at all. The current wording supports the chapter's thesis but is unnecessarily
+  absolute for this audience.
+
+## Round 14 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, Chapter 9 notes and research reference, the full chapter MDX, figure, widget, and
+all Chapter 9 artifact files. Re-ran `npm run check`, which passes validation, prose lint,
+pipeline and artifact tests, Vitest, typecheck, production build, and lint. Reproduced the
+open Round 13 encoded-secret false negative without re-litigating it. I then sent the
+hardened server an otherwise valid `initialize` request with `id: {"malformed": true}`; it
+returned a successful response with that object as its ID and set `initialize_received`.
+Checked the official [MCP 2025-11-25 Schema Reference](https://modelcontextprotocol.io/specification/2025-11-25/schema), which defines `RequestId` as `string | number`. The local preview compiled, but a live browser binding was unavailable for a separate visual pass. Round 13's required fixes remain open and are not re-litigated here.
+
+## Required fixes
+
+1. **`artifacts/ch09-mcp-security-surface/security_mcp.py:786-800` and the deterministic artifact suite --- reject invalid JSON-RPC request IDs before lifecycle state changes.** `handle()` treats any present `id` as a request, so an object, boolean, or `null` ID is accepted, echoed in a successful `initialize` response, and advances the MCP lifecycle. The 2025-11-25 schema permits only string or number `RequestId` values. Validate IDs before the notification/request branch and before `initialize_received` can change, excluding Python `bool`; return `InvalidRequest` with a null response ID for malformed IDs. Add in-memory and stdio regressions that prove a malformed-ID `initialize` is rejected and a valid handshake can still complete on the same connection. The artifact describes itself as a protocol-level MCP pair, so accepting an invalid request as a successful lifecycle transition is material.
+
+## Advisories
+
+- No new advisories. The Round 13 advisories remain advisory.
