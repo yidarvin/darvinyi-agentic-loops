@@ -1,14 +1,14 @@
 import { useState } from "react";
 
-// SkillsWidget: the signature widget for "Skills". One focused move: select a part of a
-// real SKILL.md and watch its load profile appear. The reader should feel that the parts
-// of one small file live at different levels of progressive disclosure and cost the
-// context window very differently. The description is resident only when the skill is
-// listed for model invocation; a first, distinct, or changed rendered body loads in Claude
-// Code, while an identical re-invocation adds a short already-loaded note; a referenced doc
-// enters context when read; a bundled script can return output without first loading its
-// source. Selecting a part in the source highlights every line that belongs to it and shows
-// where and when it loads.
+// SkillsWidget: the signature widget for "Skills". One focused move: select an element of a
+// real skill package and watch its load profile appear. The reader should feel that SKILL.md
+// fields and the package's distinct bundled files live at different levels of progressive
+// disclosure and cost the context window very differently. The description is resident only
+// when the skill is listed for model invocation; a first, distinct, or changed rendered body
+// loads in Claude Code, while an identical re-invocation adds a short already-loaded note; a
+// referenced doc enters context when read; a bundled script can return output without first
+// loading its source. Selecting a bundled file also highlights the level-2 body directive
+// that points to it.
 // React state only, no persistence. Profiles distinguish portable design from Agent
 // Skills-specific limits where those limits are useful examples.
 
@@ -83,14 +83,15 @@ const PROFILES: Record<PartKey, Profile> = {
   },
 };
 
-const PART_ORDER: PartKey[] = ["name", "description", "body", "reference", "script"];
+const SKILL_MD_PART_ORDER: Array<"name" | "description" | "body"> = ["name", "description", "body"];
 
-// Relevant SKILL.md excerpts, each line tagged with the part it belongs to (or null for
-// structural lines like the frontmatter fences and blanks). Resource directives are body
-// prose. The resource paths themselves appear in the bundle strip below.
+// Relevant SKILL.md excerpts. Each line is tagged with its SKILL.md content (or null for
+// structural lines like the frontmatter fences and blanks). Resource directives are level-2
+// body prose; pointsTo maps each directive to its distinct level-3 bundled file.
 interface Line {
   text: string;
   part: PartKey | null;
+  pointsTo?: "reference" | "script";
 }
 
 const SOURCE: Line[] = [
@@ -111,9 +112,9 @@ const SOURCE: Line[] = [
   { text: "   Removed, Fixed, Security.", part: "body" },
   { text: "2. Write a single imperative line summarizing the change. Compose it as `Type:", part: "body" },
   { text: "   summary`, for example `Added: --export flag`.", part: "body" },
-  { text: '3. In Claude Code, run `python3 "${CLAUDE_SKILL_DIR}/scripts/validate_entry.py" "Type: summary"`', part: "body" },
-  { text: "   to check the format. In another harness, substitute its skill root. It exits 0 when", part: "body" },
-  { text: "   the entry is well formed and prints a specific reason when it is not.", part: "body" },
+  { text: '3. In Claude Code, run `python3 "${CLAUDE_SKILL_DIR}/scripts/validate_entry.py" "Type: summary"`', part: "body", pointsTo: "script" },
+  { text: "   to check the format. In another harness, substitute its skill root. It exits 0 when", part: "body", pointsTo: "script" },
+  { text: "   the entry is well formed and prints a specific reason when it is not.", part: "body", pointsTo: "script" },
   { text: "4. If it fails, fix the reported problem and run it again. Do not write the entry", part: "body" },
   { text: "   until the validator passes.", part: "body" },
   { text: "5. Place the summary as a `- ` bullet under the matching `### Type` heading in", part: "body" },
@@ -123,8 +124,8 @@ const SOURCE: Line[] = [
   { text: "", part: null },
   { text: "- One change per entry. Split unrelated changes into separate entries.", part: "body" },
   { text: "- Write for a person reading the release notes, not for the commit log.", part: "body" },
-  { text: "- For the full format, the order of the headings, and how Unreleased becomes a", part: "body" },
-  { text: "  released version, see `references/FORMAT.md`.", part: "body" },
+  { text: "- For the full format, the order of the headings, and how Unreleased becomes a", part: "body", pointsTo: "reference" },
+  { text: "  released version, see `references/FORMAT.md`.", part: "body", pointsTo: "reference" },
 ];
 
 const BUNDLED_RESOURCES: Array<{ key: "reference" | "script"; path: string }> = [
@@ -138,20 +139,20 @@ export function SkillsWidget() {
 
   return (
     <div className="font-sans">
-      {/* the parts, as an accessible control strip; the source lines below select too */}
+      {/* SKILL.md content, as an accessible control strip; source lines select it too */}
       <div
         role="group"
-        aria-label="SKILL.md part"
+        aria-label="SKILL.md contents"
         className="flex flex-wrap gap-1 font-mono text-[0.7rem]"
       >
-        {PART_ORDER.map((key) => (
+        {SKILL_MD_PART_ORDER.map((key) => (
           <button
             key={key}
             onClick={() => setSelected(key)}
             onMouseEnter={() => setSelected(key)}
             onFocus={() => setSelected(key)}
             aria-pressed={selected === key}
-            aria-label={`SKILL.md part: ${PROFILES[key].label}`}
+            aria-label={`SKILL.md content: ${PROFILES[key].label}`}
             className={`rounded border px-2 py-1 transition-colors motion-reduce:transition-none ${
               selected === key
                 ? "border-accent/50 bg-accent/15 text-accent"
@@ -164,14 +165,14 @@ export function SkillsWidget() {
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {/* the file: click any highlighted line to select its part */}
+        {/* SKILL.md itself: resource directives select the bundled file they name */}
         <div className="overflow-hidden rounded border border-border bg-surface-2">
           <div className="border-b border-border px-3 py-1.5 font-mono text-[0.7rem] text-comment">
             {"// SKILL.md excerpts · changelog-entry/"}
           </div>
           <pre className="overflow-x-auto p-2 font-mono text-[0.72rem] leading-relaxed">
             {SOURCE.map((line, i) => {
-              const active = line.part !== null && line.part === selected;
+              const active = line.part !== null && (line.part === selected || line.pointsTo === selected);
               if (line.part === null) {
                 return (
                   <span key={i} className="block whitespace-pre px-1 text-comment">
@@ -179,14 +180,17 @@ export function SkillsWidget() {
                   </span>
                 );
               }
+              const selection = (line.pointsTo ?? line.part) as PartKey;
               return (
                 <button
                   key={i}
-                  onClick={() => setSelected(line.part as PartKey)}
-                  onMouseEnter={() => setSelected(line.part as PartKey)}
-                  onFocus={() => setSelected(line.part as PartKey)}
+                  onClick={() => setSelected(selection)}
+                  onMouseEnter={() => setSelected(selection)}
+                  onFocus={() => setSelected(selection)}
                   aria-pressed={active}
-                  aria-label={`${PROFILES[line.part].label}: ${line.text}`}
+                  aria-label={line.pointsTo
+                    ? `SKILL.md directive for bundled ${PROFILES[line.pointsTo].label}: ${line.text}`
+                    : `${PROFILES[line.part].label}: ${line.text}`}
                   className={`block w-full cursor-pointer whitespace-pre rounded-sm px-1 text-left transition-colors motion-reduce:transition-none ${
                     active
                       ? "bg-accent/15 text-fg"
@@ -199,8 +203,8 @@ export function SkillsWidget() {
             })}
           </pre>
           <div className="border-t border-border px-3 py-2 font-mono text-[0.68rem]">
-            <div className="text-comment">{"// bundled resources/"}</div>
-            <div role="group" aria-label="Bundled resources" className="mt-1 flex flex-wrap gap-1">
+            <div className="text-comment">{"// bundled package files · select one to trace its SKILL.md directive"}</div>
+            <div role="group" aria-label="Bundled package files" className="mt-1 flex flex-wrap gap-1">
               {BUNDLED_RESOURCES.map(({ key, path }) => {
                 const active = selected === key;
                 return (
@@ -225,7 +229,7 @@ export function SkillsWidget() {
           </div>
         </div>
 
-        {/* the load profile for the selected part */}
+        {/* the load profile for the selected package element */}
         <div className="rounded border border-accent/30 bg-surface p-3">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-sm text-accent">{p.label}</span>
@@ -266,7 +270,7 @@ export function SkillsWidget() {
       <p className="mt-3 font-mono text-[0.7rem] text-comment">
         {p.hot
           ? "// startup context: listed model-invocable skills only; user-only skills enter after manual invocation."
-          : "// off-window until needed: this part costs nothing until the skill actually reaches it."}
+          : "// off-window until needed: this package element costs nothing until the skill actually reaches it."}
       </p>
     </div>
   );

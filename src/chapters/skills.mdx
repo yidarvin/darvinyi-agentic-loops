@@ -65,8 +65,8 @@ In Anthropic's model-invoked implementation, level one is metadata: the `name` a
 `description` of each listed, model-invocable skill enter the system prompt at startup.
 A Claude Code skill with `disable-model-invocation: true` is user-only, so its description
 does not enter at startup and its full body arrives only when the user invokes it. The
-documentation puts listed metadata near a hundred tokens per skill. Independent
-measurements land lower, around thirty to fifty tokens each by
+documentation puts listed metadata near a hundred tokens per skill. Firecrawl reports a
+lower estimate, around thirty to fifty tokens each, in
 [Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so a hundred listed,
 model-invocable skills cost roughly three to five thousand tokens at session start. In
 Claude Code, level two adds the full `SKILL.md` body for a first, distinct, or changed
@@ -157,16 +157,18 @@ on a narrow bridge. Make the intent unmistakable in the wording, too: "Run
 `analyze_form.py`" tells the model to execute, "See `analyze_form.py`" tells it to read,
 and confusing the two wastes a turn.
 
-The widget below is one small, correct `SKILL.md`, the changelog skill from the artifact.
-Select any part and watch where and when it loads. Its description sits at level one when
-the skill is listed for model invocation. In Claude Code, its full body waits at level two
-for a first, distinct, or changed rendering; an identical re-invocation gets a short
-already-loaded note. Distinct skill bodies can coexist. The reference and the script live
-at level three: reading the reference brings its text into context, while executing the
-script can return output without loading source first. It is the same file in five
-different relationships with the context window.
+The widget below traces one small, correct skill package, the changelog skill from the
+artifact. Select a `SKILL.md` field or body excerpt to see where and when that file content
+loads. Then select a bundled reference or script to see its level-three behavior and the
+level-two body directive that points to it. The description sits at level one when the skill
+is listed for model invocation. In Claude Code, its full body waits at level two for a
+first, distinct, or changed rendering; an identical re-invocation gets a short already-loaded
+note. Distinct skill bodies can coexist. The reference and the script live at level three:
+reading the reference brings its text into context, while executing the script can return
+output without loading source first. One package, five elements, five different relationships
+with the context window.
 
-<Widget name="skill_anatomy" hint="Hover or select a part of the SKILL.md, or a highlighted line, to see which level of progressive disclosure it lives at, when it loads, and what it costs the context window.">
+<Widget name="skill_anatomy" hint="Hover or select a SKILL.md element, a bundled package file, or a highlighted directive to trace its progressive-disclosure path, load time, and context cost.">
   <SkillsWidget />
 </Widget>
 
@@ -213,7 +215,8 @@ live connectivity, is the next chapter, Skill or Server. Mahesh Murag framed the
 succinctly: MCP provides secure connectivity to external software and data; skills provide
 the procedural knowledge for using those tools effectively. The formulation comes from a
 [VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard).
-The two compose. A skill that orchestrates MCP tools is a common production shape.
+The two compose. A skill can orchestrate MCP tools when it supplies the procedure those
+tools need.
 
 ## Run it
 
@@ -315,7 +318,7 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   fresh-session trigger evaluation.
 - [Firecrawl, "Agent Skills Explained"](https://www.firecrawl.dev/blog/agent-skills), for
   the 30-to-50-token metadata estimate and its 100-skill arithmetic. This is an external
-  measurement, not a platform guarantee.
+  estimate, not a platform guarantee.
 - [Claude Code's Skills documentation](https://code.claude.com/docs/en/skills) and its
   [feature-loading overview](https://code.claude.com/docs/en/features-overview), for
   user-only invocation, stacked skills, bundled-script paths, and deferred MCP schemas.

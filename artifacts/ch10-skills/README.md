@@ -35,7 +35,7 @@ python3 skills_lab.py
 # (exit 1 is expected).
 python3 skills_lab.py --validate bad-skill --surface anthropic
 
-# Price a library: what 100 installed skills cost at startup vs. loading bodies.
+# Price a library: what 100 listed, model-invocable skills cost at startup vs. loading bodies.
 python3 skills_lab.py --budget 100
 
 # Simulate discovery: does a request trigger the skill, and what loads if it does?

@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -417,3 +417,29 @@ available, so the visual pass used component-source inspection and the passing r
 ## Advisories
 
 - **`src/chapters/skills.mdx:212-216`** “A common production shape” for a Skill orchestrating MCP tools is plausible, but the linked VentureBeat interview supports complementarity rather than prevalence. Soften the wording or cite a concrete production example.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and `git log -p --
+content/critiques/skills.md`, including Rounds 1 through 11. Re-verified every required
+correction against the current chapter, figure, widget, research backbone, and complete
+`artifacts/ch10-skills` package. The required fixes from Rounds 1 through 10 remain intact;
+Round 7's triggering finding remains superseded by the sourced, Anthropic-specific treatment
+from Round 8. The chapter remains `draft`; this resolution does not grant approval.
+
+1. **Package boundary in the signature widget.** Split
+   `src/chapters/_widgets/SkillsWidget.tsx` into a `SKILL.md`-contents control group and a
+   distinct bundled-package-files group. The level-2 validator and format directives now carry
+   explicit `pointsTo` links, so selecting either level-3 resource highlights the exact
+   `SKILL.md` directive that names it while preserving that directive as level-2 body prose.
+2. **Package framing in the chapter.** Rewrote `src/chapters/skills.mdx` and its widget hint
+   to distinguish `SKILL.md` fields and body excerpts from the package's separate reference
+   and script files, and to explain the visible body-to-resource trace.
+
+Advisories taken: softened the uncited “common production shape” claim in the chapter and
+research backbone to state the supported composition directly without asserting prevalence;
+scoped the artifact budget command to listed, model-invocable skills; and described
+Firecrawl's unsourced figure as an external estimate rather than an independent measurement.
+
+Verification: `npm run check` passes all seven stages, including the 53-assertion skills
+artifact check, 26 render tests, TypeScript, production build, and lint.
