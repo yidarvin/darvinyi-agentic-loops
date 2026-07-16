@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: read the complete current chapter, its figure and widget, the full runnable artifact and its bundled skill, the build notes, research reference, registry state, and the empty prior critique history. Ran npm run check successfully, ran the artifact's check.sh successfully, exercised its documented modes plus unsupported tags and the CLI plus live-data decision path, and validated the bundled skill with the chapter 10 portable validator. Checked the linked primary specifications and product sources, including Agent Skills, MCP architecture, transport and authorization specifications, Anthropic Tool Search material, Claude Code MCP documentation and changelog, Simon Willison, Armin Ronacher, Sentry, and JFrog.
@@ -69,3 +69,13 @@ Regression gate: read the complete append-only history with `git log -p -- conte
 3. **Round 2 re-verification.** Existing non-live CLI access with no procedure still returns `NEITHER`; 100 Skills still cost roughly 10,000 metadata tokens and the 5,000-token body is still described as a recommendation; workflow-local scripts with runtime credentials still route to `SKILL` without bypassing a genuinely unmet shared access adapter.
 
 No advisories were taken. The Round 3 deployment anecdote remains unchanged because it is non-blocking. `npm run check` completed successfully after these changes.
+
+## Round 4 review (2026-07-16)
+Convergence review: read `prompts/critique-rubric.md`, the complete current chapter, figure, widget, runnable artifact and bundled Skill, research backbone, registry and queue state, plus the full append-only critique history and `git log -p -- content/critiques/skill-or-server.md`. Ran `npm run check` successfully through all seven stages, ran `artifacts/ch11-skill-or-server/check.sh` successfully (26 assertions and portable Skill validation), and exercised the hybrid path, unsupported-tag error, and the prior classifier boundaries for existing live access, central Skill distribution, and unmet shared access. Checked the Agent Skills specification and client guide, MCP architecture, transport and authorization specifications, current Claude Code Tool Search documentation and changelog, Anthropic Tool Search guidance, Ronacher, Galarza, Willison, Goose, Sumo Logic, Speakeasy, Sentry for AI, and JFrog.
+
+Re-verified every REQUIRED correction from Rounds 1 through 3 against the current files: existing CLI or server access covers fresh and non-live access without inventing procedure work; unsupported fixture tags fail visibly; the `release-notes` directory and Skill name validate; Tool Search claims remain scoped to their products and retain direct sources; Sentry names its current core skills; the Skill metadata arithmetic and body-size recommendation are accurate; workflow-local scripts retain their distinct route; and central Skill distribution remains separate from an unmet shared access adapter. The chapter, figure, widget, and runnable artifact now agree on the same decision model and execute it correctly.
+
+The chapter is materially truthful, its figure and widget teach the thesis, and its runnable artifact is deterministic and complete.
+
+## Advisories
+- `SkillOrServerFigure.tsx` uses small, muted secondary labels in the side panel and the widget mini-plane. The figure caption, SVG labels, and readable verdict text carry the same teaching content, so this is non-blocking; enlarging or brightening those secondary labels would improve scanability.

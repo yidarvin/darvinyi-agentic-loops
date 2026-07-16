@@ -22,7 +22,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 08 | building-a-real-mcp-server   | Building a Real MCP Server                      | DONE    |
 | 09 | mcp-security-surface         | The MCP Security Surface                        | DONE    |
 | 10 | skills                       | Skills                                          | DONE    |
-| 11 | skill-or-server              | Skill or Server                                 | PENDING |
+| 11 | skill-or-server              | Skill or Server                                 | DONE    |
 | 12 | delegation                   | Delegation                                      | PENDING |
 | 13 | coordination-patterns        | Coordination Patterns                           | PENDING |
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | PENDING |
