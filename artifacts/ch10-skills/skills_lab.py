@@ -11,14 +11,15 @@ Three ideas from the Skills chapter, made executable:
      a demonstration-only reference implementation for comparison. The optional
      ``--surface anthropic`` profile adds Anthropic-only compatibility
      restrictions; authoring advice stays a warning in either profile.
-  2. Price progressive disclosure: what one listed, model-invocable skill costs
-     in a regular Claude Code session, then contrast it with a subagent whose
+  2. Price progressive disclosure from the actual regular-session listing: a
+     full name-and-description listing by default, or a Claude Code name-only
+     / budget-trimmed listing. Contrast that with a subagent whose eligible,
      named skills are preloaded at startup.
   3. Simulate discovery with an intentionally crude keyword proxy. It illustrates
      the loading path but cannot establish how a production model will trigger.
 
 No third-party packages, API key, or network are required. Python 3.9+ is required;
-Bash is required for the fresh-install smoke test and ``check.sh``. Token counts are
+Bash is required for the filesystem-install smoke test and ``check.sh``. Token counts are
 estimates (~4 characters per token), and the discovery match is a two-keyword proxy rather
 than a production harness. The parser handles this artifact's strict plain or basic quoted
 mappings, two-space continuations, and folded or literal block scalars. It rejects
@@ -29,9 +30,12 @@ Usage:
     python3 skills_lab.py                              # overview of the bundled skill
     python3 skills_lab.py --validate DIR               # supported portable-subset lint
     python3 skills_lab.py --validate DIR --surface anthropic
-    python3 skills_lab.py --budget 100                 # regular-session listing cost
+    python3 skills_lab.py --budget 100                 # full regular-session listing cost
+    python3 skills_lab.py --budget 100 --listing name-only
+    python3 skills_lab.py --budget 100 --descriptions 20
     python3 skills_lab.py --budget 3 --session preloaded
-    python3 skills_lab.py --simulate "..."              # illustrative discovery path
+    python3 skills_lab.py --simulate "..."              # full-listing discovery proxy
+    python3 skills_lab.py --simulate "..." --listing name-only
     python3 skills_lab.py --simulate "..." --session preloaded
     python3 skills_lab.py --entry-file PATH              # run the bundled validator safely
     python3 skills_lab.py --test                        # assertions; non-zero on failure
@@ -75,6 +79,7 @@ PERSON = re.compile(
 )
 WHEN_CUE = re.compile(r"\b(when|whenever|use this|use for)\b")
 REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
+XML_TAG = re.compile(r"</?[A-Za-z_][A-Za-z0-9_.:-]*(?:\s[^>]*)?>")
 YAML_NUMBER = re.compile(
     r"[-+]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][-+]?[0-9_]+)?$"
     r"|[-+]?\.[0-9_]+(?:[eE][-+]?[0-9_]+)?$"
@@ -113,6 +118,26 @@ def has_unsupported_control(text: str) -> bool:
 def has_non_printing_scalar(text: str) -> bool:
     """Reject decoded scalar characters that cannot appear visibly in frontmatter."""
     return any(not char.isprintable() for char in text)
+
+
+def referenced_bundle_paths(body: str) -> list[tuple[str, str]]:
+    """Return (raw, normalized) body paths without sentence punctuation."""
+    paths = []
+    for raw in sorted(set(REF_PATH.findall(body))):
+        normalized = raw.rstrip(".,;:!?)]}")
+        if normalized:
+            paths.append((raw, normalized))
+    return paths
+
+
+def is_path_inside(path: str, directory: str) -> bool:
+    """Return whether a resolved path stays inside its skill directory."""
+    root = os.path.realpath(directory)
+    target = os.path.realpath(path)
+    try:
+        return os.path.commonpath((root, target)) == root
+    except ValueError:
+        return False
 
 
 def parse_scalar(value: str, key: str, errors: list[str]) -> str:
@@ -391,8 +416,8 @@ def validate_skill(skill, surface: str = "portable") -> tuple[list, list]:
         lowered = name.lower()
         if "claude" in lowered or "anthropic" in lowered:
             errors.append(("A1", "Anthropic profile: name may not contain 'claude' or 'anthropic'"))
-        if any(char in (name + description) for char in "<>"):
-            errors.append(("A2", "Anthropic profile: angle brackets are not allowed in frontmatter"))
+        if XML_TAG.search(name) or XML_TAG.search(description):
+            errors.append(("A2", "Anthropic profile: XML tags are not allowed in name or description"))
 
     # authoring guidance ---------------------------------------------------
     person = PERSON.search(description)
@@ -409,8 +434,11 @@ def validate_skill(skill, surface: str = "portable") -> tuple[list, list]:
     if "\\" in body:
         warnings.append(("W5", "body contains a backslash path; use forward slashes for portability"))
 
-    for rel in sorted(set(REF_PATH.findall(body))):
-        if not os.path.exists(os.path.join(skill["dir"], rel)):
+    for raw, rel in referenced_bundle_paths(body):
+        target = os.path.join(skill["dir"], rel)
+        if not is_path_inside(target, skill["dir"]):
+            warnings.append(("W6", f"body references {raw!r}, which resolves outside the skill folder"))
+        elif not os.path.exists(target):
             warnings.append(("W6", f"body references {rel!r}, which is not present in the skill folder"))
 
     return errors, warnings
@@ -444,7 +472,8 @@ def est_tokens(text: str) -> int:
 
 def cost_model(skill) -> dict:
     meta, body = skill["meta"], skill["body"]
-    level1 = est_tokens(meta.get("name", "")) + est_tokens(meta.get("description", ""))
+    name_tokens = est_tokens(meta.get("name", ""))
+    description_tokens = est_tokens(meta.get("description", ""))
     level2 = est_tokens(body)
     resources = []
     for subdirectory in ("references", "scripts", "assets"):
@@ -454,18 +483,83 @@ def cost_model(skill) -> dict:
                 path = os.path.join(directory, filename)
                 if os.path.isfile(path):
                     resources.append((f"{subdirectory}/{filename}", os.path.getsize(path)))
-    return {"level1": level1, "level2": level2, "resources": resources}
+    return {
+        "name": name_tokens,
+        "description": description_tokens,
+        "level1": name_tokens + description_tokens,
+        "level2": level2,
+        "resources": resources,
+    }
 
 
-def print_cost(skill, session: str = "regular") -> None:
+def listing_model(
+    skill, count: int, listing: str = "full", descriptions: Optional[int] = None
+) -> dict:
+    """Price the names and descriptions that actually reach a regular listing."""
+    if count < 0:
+        raise ValueError("listing count must be zero or greater")
+    if listing == "name-only":
+        if descriptions is not None:
+            raise ValueError("name-only listings cannot retain descriptions")
+        description_count = 0
+    else:
+        description_count = count if descriptions is None else descriptions
+    if description_count < 0 or description_count > count:
+        raise ValueError("description count must be between zero and the listed-skill count")
+
     cost = cost_model(skill)
+    if description_count == count:
+        shape = "default full name-and-description listing"
+    elif description_count == 0:
+        shape = "name-only listing"
+    else:
+        description_word = "description" if description_count == 1 else "descriptions"
+        shape = (
+            f"budget-trimmed listing: {description_count} {description_word} retained; "
+            f"{count - description_count} names only"
+        )
+    return {
+        "count": count,
+        "description_count": description_count,
+        "name_only_count": count - description_count,
+        "name_tokens": cost["name"] * count,
+        "description_tokens": cost["description"] * description_count,
+        "total": cost["name"] * count + cost["description"] * description_count,
+        "shape": shape,
+    }
+
+
+def print_listing_note(model: dict, listing: str) -> None:
+    """Explain what the modeled regular-session listing exposes to discovery."""
+    if model["description_count"] == model["count"]:
+        print("  discovery description routing is available for every listed skill")
+    elif model["description_count"] == 0:
+        if listing == "name-only":
+            print("  discovery Claude Code name-only example: names remain, descriptions do not")
+        else:
+            print("  discovery names remain, but description-keyword routing is unavailable")
+    else:
+        print(
+            "  discovery every name remains; only retained descriptions preserve "
+            "description-keyword routing"
+        )
+
+
+def print_cost(skill, session: str = "regular", listing: str = "full") -> None:
+    cost = cost_model(skill)
+    regular_listing = listing_model(skill, 1, listing)
     print("// progressive-disclosure cost (token estimates, ~4 chars/token)")
     if session == "preloaded":
-        print(f"  startup  SKILL.md body                  ~{cost['level2']:>5} tokens   configured preloaded subagent: full skill content")
-        print(f"  contrast regular-session metadata        ~{cost['level1']:>5} tokens   listed, model-invocable skill")
+        print(f"  startup  SKILL.md body                  ~{cost['level2']:>5} tokens   configured preloaded subagent: eligible named full skill content")
+        print(f"  contrast regular-session listing          ~{regular_listing['total']:>5} tokens   {regular_listing['shape']}")
         print("  regular  full body loads only after a first, distinct, or changed rendering")
     else:
-        print(f"  level 1  metadata (name + description)  ~{cost['level1']:>5} tokens   listed, model-invocable")
+        print(f"  level 1  listed name                     ~{cost['name']:>5} tokens   always present in this listing")
+        if regular_listing["description_count"]:
+            print(f"  level 1  listed description              ~{cost['description']:>5} tokens   {regular_listing['shape']}")
+        else:
+            print("  level 1  listed description                  0 tokens   name-only: absent from this listing")
+        print(f"  listing  actual startup metadata         ~{regular_listing['total']:>5} tokens   not the installed-library count")
         print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   regular Claude Code session: first/distinct/changed render; identical re-invocation gets a short note")
     if cost["resources"]:
         print("  level 3+ bundled resources                            accessed on demand:")
@@ -478,31 +572,41 @@ def print_cost(skill, session: str = "regular") -> None:
     else:
         print("  level 3+ (none bundled)")
     if session == "preloaded":
+        print("  note     listing overrides describe regular-session discovery; preloaded eligible bodies are configured separately")
         print("  note     level-3 resources remain on demand after preloading")
     else:
+        print_listing_note(regular_listing, listing)
         print("  note     user-only manual skills are absent from regular-session startup context")
 
 
-def print_budget(skill, count: int, session: str = "regular") -> None:
-    if count < 0:
-        raise ValueError("budget count must be zero or greater")
+def print_budget(
+    skill,
+    count: int,
+    session: str = "regular",
+    listing: str = "full",
+    descriptions: Optional[int] = None,
+) -> None:
     cost = cost_model(skill)
-    level1 = cost["level1"]
-    startup = level1 * count
+    regular_listing = listing_model(skill, count, listing, descriptions)
     eager_bodies = cost["level2"] * count
     if session == "preloaded":
-        print(f"// startup budget for {count} skills preloaded into a Claude Code subagent")
+        print(f"// startup budget for {count} eligible named skills preloaded into a Claude Code subagent")
         print(f"  full skill bodies at startup:         ~{eager_bodies:,} tokens  ({cost['level2']} body tokens each)")
-        print(f"  regular-session metadata contrast:    ~{startup:,} tokens  ({level1} metadata tokens each)")
+        print(f"  regular-session listing contrast:     ~{regular_listing['total']:,} tokens  ({regular_listing['shape']})")
         print("  preloading is a configured subagent exception, not the regular-session lifecycle")
+        print("  name-only and budget-trimmed listings affect regular-session discovery, not this configured body preload")
         return
-    print(f"// startup budget for {count} listed, model-invocable skills like this one")
-    print(f"  progressive disclosure: ~{startup:,} tokens  ({level1} metadata tokens each; bodies stay on disk)")
+    print(f"// startup budget for {count} skill names actually listed to Claude")
+    print(f"  listing shape: {regular_listing['shape']}")
+    print(f"  level 1 names:              ~{regular_listing['name_tokens']:,} tokens  ({cost['name']} tokens each)")
+    print(f"  level 1 descriptions:       ~{regular_listing['description_tokens']:,} tokens  ({regular_listing['description_count']} retained)")
+    print(f"  progressive disclosure:     ~{regular_listing['total']:,} tokens  actual listing; bodies stay on disk")
     print(f"  if every body loaded up front instead: ~{eager_bodies:,} tokens")
     print(f"  illustrative eager tool catalog:        ~{EAGER_TOOL_CATALOG_EXAMPLE:,} tokens before work")
     print("  user-only manual skills are omitted until a user invokes them")
-    if startup:
-        print(f"  => {count} listed skills cost about {startup / EAGER_TOOL_CATALOG_EXAMPLE:.2f}x that eager-catalog example at startup")
+    print_listing_note(regular_listing, listing)
+    if regular_listing["total"]:
+        print(f"  => this actual listing costs about {regular_listing['total'] / EAGER_TOOL_CATALOG_EXAMPLE:.2f}x that eager-catalog example at startup")
 
 
 # --------------------------------------------------------------------------- #
@@ -516,17 +620,29 @@ def keywords(text: str) -> list[str]:
     return [word for word in re.findall(r"[a-z0-9]+", text.lower()) if word not in STOP and len(word) > 1]
 
 
-def simulate(skill, request: str, session: str = "regular") -> bool:
+def simulate(
+    skill, request: str, session: str = "regular", listing: str = "full"
+) -> bool:
     meta, body = skill["meta"], skill["body"]
     description = meta.get("description", "")
-    description_terms = set(keywords(description))
-    overlap = sorted({word for word in keywords(request) if word in description_terms})
+    name = meta.get("name", "")
+    if listing == "name-only":
+        routing_text = name
+        routing_label = "listed name"
+        listing_note = "Claude Code name-only listing: the description is absent"
+    else:
+        routing_text = f"{name} {description}"
+        routing_label = "listed name + description"
+        listing_note = "default full name-and-description listing before budget trimming"
+    routing_terms = set(keywords(routing_text))
+    overlap = sorted({word for word in keywords(request) if word in routing_terms})
     triggered = len(overlap) >= 2
 
     print(f"// illustrative discovery proxy for: {request!r}")
-    print(f"  request keywords overlap description on: {overlap or '(none)'}")
+    print(f"  listing: {listing_note}")
+    print(f"  request keywords overlap {routing_label} on: {overlap or '(none)'}")
     if session == "preloaded":
-        print(f"  preloaded-subagent mode: {os.path.basename(skill['dir'])}/SKILL.md full content was injected at startup")
+        print(f"  preloaded-subagent mode: {os.path.basename(skill['dir'])}/SKILL.md eligible named full content was injected at startup")
         print("  no trigger or read is needed for this named skill; level-3 resources remain on demand")
         for rel in sorted(set(REF_PATH.findall(body))):
             if rel.startswith("scripts/"):
@@ -535,11 +651,14 @@ def simulate(skill, request: str, session: str = "regular") -> bool:
                 print(f"     level 3  reads {rel}; its contents enter context at that point")
         return True
     if not triggered:
-        print("  => below this proxy's threshold; only listed metadata is modeled as loaded")
+        print("  => below this proxy's threshold; only the actual listing is modeled as loaded")
         print("     (a real model also weighs task difficulty, wording, and its target harness)")
         return False
     print("  => this proxy triggers. possible loading sequence:")
-    print(f"     level 1  already listed: name + description (~{est_tokens(description)} description tokens)")
+    if listing == "name-only":
+        print(f"     level 1  already listed: name only (~{est_tokens(name)} name tokens; no description keywords)")
+    else:
+        print(f"     level 1  already listed: name + description (~{est_tokens(name) + est_tokens(description)} tokens)")
     print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); regular Claude Code session: first/distinct/changed render, identical re-invocation gets a short note")
     for rel in sorted(set(REF_PATH.findall(body))):
         if rel.startswith("scripts/"):
@@ -611,7 +730,7 @@ def run_tests() -> int:
         check("bad-skill trips P4 (portable hyphen syntax)", "P4" in codes(portable_errors))
         check("bad-skill trips P5 (directory mismatch)", "P5" in codes(portable_errors))
         check("bad-skill trips A1 (reserved vendor word) only in Anthropic profile", "A1" in codes(anthropic_errors))
-        check("bad-skill trips A2 (angle brackets) only in Anthropic profile", "A2" in codes(anthropic_errors))
+        check("bad-skill trips A2 (XML tag) only in Anthropic profile", "A2" in codes(anthropic_errors))
         check("bad-skill warns W1 (first person)", "W1" in codes(portable_warnings))
         check("bad-skill warns W2 (no trigger cue)", "W2" in codes(anthropic_warnings))
 
@@ -648,13 +767,45 @@ def run_tests() -> int:
         "A1" in codes(validate_skill(synth(name="claude-helper"), "anthropic")[0]),
     )
     check(
-        "A2 angle brackets are Anthropic-only",
+        "A2 XML tags are Anthropic-only",
         "A2" in codes(validate_skill(synth(description="Formats <things>. Use when needed."), "anthropic")[0]),
     )
     check(
-        "portable profile accepts angle brackets structurally",
+        "portable profile accepts XML tags structurally",
         "A2" not in codes(validate_skill(synth(description="Formats <things>. Use when needed."))[0]),
     )
+    check(
+        "Anthropic profile does not treat a comparison sign as an XML tag",
+        "A2" not in codes(validate_skill(synth(description="Formats 2 < 3 entries. Use when needed."), "anthropic")[0]),
+    )
+
+    with tempfile.TemporaryDirectory(prefix="skills-lab-references-") as temp_dir:
+        reference_skill_dir = os.path.join(temp_dir, "reference-skill")
+        reference_dir = os.path.join(reference_skill_dir, "references")
+        os.makedirs(reference_dir)
+        with open(os.path.join(reference_dir, "FORMAT.md"), "w", encoding="utf-8") as fh:
+            fh.write("format")
+        reference_skill = synth(
+            name="reference-skill",
+            body="See references/FORMAT.md.",
+            directory=reference_skill_dir,
+        )
+        _, reference_warnings = validate_skill(reference_skill)
+        check(
+            "reference warning strips terminal sentence punctuation",
+            "W6" not in codes(reference_warnings),
+        )
+        escape_skill = synth(
+            name="reference-skill",
+            body="See references/../../outside.txt",
+            directory=reference_skill_dir,
+        )
+        _, escape_warnings = validate_skill(escape_skill)
+        check(
+            "reference warning catches paths that escape the skill folder",
+            "W6" in codes(escape_warnings)
+            and any("outside the skill folder" in message for _, message in escape_warnings),
+        )
 
     folded_meta, folded_body, folded_frontmatter, folded_parse_errors = parse_frontmatter(
         "---\nname: folded-description\ndescription: >\n  Formats changelog entries.\n  Use when one is needed.\n---\n# Body"
@@ -1037,6 +1188,36 @@ def run_tests() -> int:
         "negative budget returns a clear nonzero error",
         negative_budget.returncode != 0 and "must be zero or greater" in negative_budget.stderr,
     )
+    full_listing_budget = run_lab_quiet("--budget", "3")
+    check(
+        "full listing prices all listed names and descriptions",
+        full_listing_budget.returncode == 0
+        and "3 skill names actually listed" in full_listing_budget.stdout
+        and "3 retained" in full_listing_budget.stdout
+        and "default full name-and-description listing" in full_listing_budget.stdout,
+    )
+    name_only_budget = run_lab_quiet("--budget", "3", "--listing", "name-only")
+    check(
+        "name-only listing prices names without descriptions",
+        name_only_budget.returncode == 0
+        and "name-only listing" in name_only_budget.stdout
+        and "0 retained" in name_only_budget.stdout
+        and "name-only example" in name_only_budget.stdout,
+    )
+    trimmed_listing_budget = run_lab_quiet("--budget", "4", "--descriptions", "1")
+    check(
+        "budget-trimmed listing preserves every name but only retained descriptions",
+        trimmed_listing_budget.returncode == 0
+        and "4 skill names actually listed" in trimmed_listing_budget.stdout
+        and "1 retained" in trimmed_listing_budget.stdout
+        and "3 names only" in trimmed_listing_budget.stdout,
+    )
+    invalid_description_count = run_lab_quiet("--budget", "2", "--descriptions", "3")
+    check(
+        "description count cannot exceed the listed-skill count",
+        invalid_description_count.returncode != 0
+        and "cannot exceed --budget" in invalid_description_count.stderr,
+    )
     preloaded_budget = run_lab_quiet("--budget", "2", "--session", "preloaded")
     check(
         "preloaded-subagent budget prices full bodies at startup",
@@ -1045,7 +1226,7 @@ def run_tests() -> int:
     preloaded_overview = run_lab_quiet("--session", "preloaded")
     check(
         "preloaded-subagent overview separates full-body startup from regular metadata",
-        preloaded_overview.returncode == 0 and "contrast regular-session metadata" in preloaded_overview.stdout,
+        preloaded_overview.returncode == 0 and "contrast regular-session listing" in preloaded_overview.stdout,
     )
     preloaded_simulation = run_lab_quiet(
         "--simulate", "add a changelog entry for the export flag", "--session", "preloaded"
@@ -1058,6 +1239,23 @@ def run_tests() -> int:
     if good:
         check("relevant request triggers this proxy", simulate_quiet(good, "add a changelog entry for the export flag"))
         check("irrelevant request does not trigger this proxy", not simulate_quiet(good, "reboot the database server"))
+        check(
+            "description-enabled listing can route a description-only request",
+            simulate_quiet(good, "editing CHANGELOG"),
+        )
+        check(
+            "name-only listing cannot route that request through hidden description text",
+            not simulate_quiet(good, "editing CHANGELOG", listing="name-only"),
+        )
+        name_only_simulation = run_lab_quiet(
+            "--simulate", "editing CHANGELOG", "--listing", "name-only"
+        )
+        check(
+            "public name-only simulation names the reduced discovery surface",
+            name_only_simulation.returncode == 0
+            and "name-only listing" in name_only_simulation.stdout
+            and "below this proxy's threshold" in name_only_simulation.stdout,
+        )
 
         # The bundled validator aligns with Keep a Changelog's unprescribed punctuation
         # and length while retaining deterministic structural checks.
@@ -1113,7 +1311,7 @@ def run_tests() -> int:
                 and "OK: Added: $(printf injected)" in literal_shell_syntax.stdout,
             )
             check(
-                "fresh Claude Code install creates its missing skill directory and runs outside it",
+                "fresh filesystem install creates its missing skill directory and runs the validator outside it",
                 run_fresh_install_quiet("Added: fresh install path") == 0,
             )
 
@@ -1121,10 +1319,13 @@ def run_tests() -> int:
     return 0 if failed == 0 else 1
 
 
-def simulate_quiet(skill, request: str) -> bool:
-    description = skill["meta"].get("description", "")
-    description_terms = set(keywords(description))
-    return len({word for word in keywords(request) if word in description_terms}) >= 2
+def simulate_quiet(skill, request: str, listing: str = "full") -> bool:
+    meta = skill["meta"]
+    routing_text = meta.get("name", "")
+    if listing == "full":
+        routing_text += " " + meta.get("description", "")
+    routing_terms = set(keywords(routing_text))
+    return len({word for word in keywords(request) if word in routing_terms}) >= 2
 
 
 def run_entry_quiet(skill, entry: str) -> int:
@@ -1164,7 +1365,7 @@ def run_installed_workflow_quiet(skill, entry: str) -> subprocess.CompletedProce
 
 
 def run_fresh_install_quiet(entry: str) -> int:
-    """Run the README's install commands with an empty HOME, then exercise the skill."""
+    """Exercise README filesystem install commands, not live-session discovery."""
     with tempfile.TemporaryDirectory(prefix="skills-lab-home-") as fake_home:
         env = os.environ.copy()
         env["HOME"] = fake_home
@@ -1219,7 +1420,24 @@ def main(argv: list[str]) -> int:
         help="compatibility profile for validation (default: portable)",
     )
     parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget, --simulate, or --entry-file")
-    parser.add_argument("--budget", metavar="N", type=nonnegative_int, help="print the startup cost of N listed skills")
+    parser.add_argument(
+        "--budget",
+        metavar="N",
+        type=nonnegative_int,
+        help="price a regular-session listing with N skill names",
+    )
+    parser.add_argument(
+        "--listing",
+        choices=("full", "name-only"),
+        default="full",
+        help="regular Claude Code listing shape: full name + description (default) or name-only",
+    )
+    parser.add_argument(
+        "--descriptions",
+        metavar="N",
+        type=nonnegative_int,
+        help="with --budget, retain descriptions for N listed names to illustrate listing-budget trimming",
+    )
     parser.add_argument(
         "--session",
         choices=("regular", "preloaded"),
@@ -1230,6 +1448,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--entry-file", metavar="PATH", help="run the bundled validator with literal entry data from a file")
     parser.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
     args = parser.parse_args(argv[1:])
+
+    if args.descriptions is not None:
+        if args.budget is None:
+            parser.error("--descriptions requires --budget")
+        if args.listing == "name-only":
+            parser.error("--descriptions cannot be combined with --listing name-only")
+        if args.descriptions > args.budget:
+            parser.error("--descriptions cannot exceed --budget")
 
     if args.test:
         return run_tests()
@@ -1248,10 +1474,16 @@ def main(argv: list[str]) -> int:
         return 1
 
     if args.budget is not None:
-        print_budget(skill, args.budget, args.session)
+        print_budget(
+            skill,
+            args.budget,
+            args.session,
+            listing=args.listing,
+            descriptions=args.descriptions,
+        )
         return 0
     if args.simulate is not None:
-        simulate(skill, args.simulate, args.session)
+        simulate(skill, args.simulate, args.session, args.listing)
         return 0
     if args.entry_file is not None:
         return 0 if run_entry_file(skill, args.entry_file) == 0 else 1
@@ -1259,12 +1491,13 @@ def main(argv: list[str]) -> int:
     print("=== a skills lab: linted, priced, and simulated ===\n")
     print_validation(skill, args.surface)
     print()
-    print_cost(skill, args.session)
+    print_cost(skill, args.session, args.listing)
     print()
-    simulate(skill, "add a changelog entry for the new export flag", args.session)
+    simulate(skill, "add a changelog entry for the new export flag", args.session, args.listing)
     print()
     print("run --test for assertions, --validate bad-skill for portable failures,")
-    print("--surface anthropic for that profile, --budget 100 to price a listing, or")
+    print("--surface anthropic for that profile, --budget 100 to price a full listing, or")
+    print("--listing name-only / --descriptions N to model Claude Code listing limits, or")
     print("--entry-file PATH to run the bundled validator without putting candidate text in shell source.")
     return 0
 

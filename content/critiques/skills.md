@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -838,3 +838,42 @@ the visual pass used component-source inspection and the passing render tests.
   restriction in `name` and `description`; calling it a blanket “XML-like angle
   brackets” restriction and rejecting every `<` or `>` is broader than that wording.
   The portable-versus-surface distinction remains correct, so this is still nonblocking.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and `git log -p --
+content/critiques/skills.md`, then re-verified every required correction from Rounds 1
+through 20 against the current chapter, figure, widget, research backbone, and complete
+`artifacts/ch10-skills` package. The portable-versus-surface split, progressive-disclosure
+paths, regular-session and preloaded-subagent lifecycle, source attributions, parser
+boundaries, installed validator, terminal-safe input boundary, and full-bundle security
+model remain intact. The chapter stays `draft`; this resolution does not grant approval.
+
+1. **Actual level-one listing.** Reworked `src/chapters/skills.mdx`,
+   `SkillsFigure.tsx`, `SkillsWidget.tsx`, `docs/research/ch10-skills.md`, the artifact
+   README, exercises, and `skills_lab.py` to scope the existing arithmetic to a default
+   full name-and-description listing before Claude Code applies its listing budget. They now
+   teach the eligible non-plugin `skillOverrides: "name-only"` path and the overflow path
+   where every name remains while descriptions can be shortened or dropped. The figure and
+   interactive widget make the resulting discovery surface explicit: only text that reaches
+   the actual listing can route work by description.
+2. **Runnable listing model.** Split the lab's name and description token accounting.
+   `--budget N` now prices N skill names actually listed to Claude; `--listing name-only`
+   prices names without descriptions, and `--descriptions N` models a budget-trimmed
+   listing. The simulator exercises full versus name-only discovery, and new black-box
+   regressions prove the cost and discovery distinctions.
+3. **Fresh-install session behavior.** Added the conditional Claude Code restart instruction
+   immediately after the artifact install commands. It now distinguishes a newly created
+   top-level `~/.claude/skills/` directory, which needs a session restart to be watched,
+   from additions and edits below an already watched directory, which take effect live. The
+   filesystem smoke test is named and scoped as a copy-and-validator test rather than a
+   claim about live-session discovery.
+
+Advisories taken: replaced the broader XML-like-angle-bracket shorthand with the documented
+XML-tag wording and narrowed the teaching lint to XML tags in `name` and `description`.
+The optional reference warning now strips sentence punctuation and rejects paths that resolve
+outside the skill folder; regression coverage proves both cases.
+
+Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` passes 109 assertions.
+`npm run check` passes all seven stages, including validation, prose lint, artifacts, render
+tests, TypeScript, production build, and advisory lint.

@@ -4,8 +4,10 @@ Research reference for *Agentic Loops*, Chapter 10 (pairs with the MCP arc as th
 
 ## TL;DR
 - An Agent Skill is a folder containing a `SKILL.md` (YAML frontmatter + Markdown instructions) plus optional bundled scripts, reference docs, and assets; it packages procedural knowledge that an agent loads on demand via **progressive disclosure**, complementing rather than competing with MCP.
-- The core innovation is context economy: only ~100 tokens of metadata per listed,
-  model-invocable Skill load at startup; in a regular Claude Code session, each first,
+- The core innovation is context economy: only the actual listing loads at startup. In a
+  default full Claude Code listing, that is ~100 tokens of name-and-description metadata per
+  listed, model-invocable Skill; `name-only` overrides and listing-budget trimming can retain
+  names without their descriptions. In a regular Claude Code session, each first,
   distinct, or changed rendered `SKILL.md` body (target <5k tokens / <500 lines) loads
   when needed, while an identical re-invocation adds a short already-loaded note. A
   subagent configured with named preloaded skills receives their full content at startup.
@@ -16,7 +18,7 @@ Research reference for *Agentic Loops*, Chapter 10 (pairs with the MCP arc as th
 ## What Agent Skills are
 Introduced October 16 2025 (product post "Introducing Agent Skills" + engineering deep-dive "Equipping agents for the real world with Agent Skills," by Barry Zhang, Keith Lazuka, Mahesh Murag). Motivating observation: "Claude is powerful, but real work requires procedural knowledge and organizational context." As models gained filesystems + code execution, the missing piece became "composable, scalable, and portable ways to equip them with domain-specific expertise."
 
-Definition (deliberately minimal): **a Skill is a directory containing a `SKILL.md` file** — YAML frontmatter + Markdown instructions — optionally with bundled scripts, reference docs, and assets. It "package[s] your expertise into composable resources for Claude, transforming general-purpose agents into specialized agents." Recurring analogy: a new-hire onboarding guide. Conceptual bet (Barry Zhang): "The agent underneath is actually more universal than we thought" — one universal agent + a library of capability packages, rather than separate architectures per domain. Skills embody progressive disclosure from the start: at startup the agent sees only each Skill's name/description and pulls in more only as needed — distinguishing a Skill from pasting a large prompt or stuffing `CLAUDE.md`.
+Definition (deliberately minimal): **a Skill is a directory containing a `SKILL.md` file** — YAML frontmatter + Markdown instructions — optionally with bundled scripts, reference docs, and assets. It "package[s] your expertise into composable resources for Claude, transforming general-purpose agents into specialized agents." Recurring analogy: a new-hire onboarding guide. Conceptual bet (Barry Zhang): "The agent underneath is actually more universal than we thought" — one universal agent + a library of capability packages, rather than separate architectures per domain. Skills embody progressive disclosure from the start: the agent sees only its actual listing at startup, normally each available Skill's name/description, then pulls in more only as needed. Claude Code can retain names while omitting descriptions through `skillOverrides` or its listing budget. That distinguishes a Skill from pasting a large prompt or stuffing `CLAUDE.md`.
 
 ## Architecture of a Skill
 **`SKILL.md`.** Begins with YAML frontmatter (`---` delimited). The portable Agent
@@ -24,7 +26,7 @@ Skills contract requires `name` (one to 64 Unicode lowercase alphanumeric charac
 single hyphen-separated words; it must match the directory) and `description`
 (non-empty, at most 1,024 characters). The specification says the description
 should state both *what* it does and *when* to use it. Anthropic's platform adds
-surface-specific reserved-vendor-word restrictions on `name` and XML-like-angle-bracket
+surface-specific reserved-vendor-word restrictions on `name` and XML-tag
 restrictions on `name` and `description`, plus third-person authoring guidance. Below is a
 Markdown body of
 instructions/workflows/examples. Optional top-level fields (`license`, `compatibility`,
@@ -56,12 +58,14 @@ Roles (skill-creator): `scripts/` = "executable code for deterministic/repetitiv
 
 | Level | When loaded | Token cost | Content |
 |---|---|---|---|
-| 1: Metadata | Startup for listed, model-invocable Skills | ~100 tokens/Skill | name + description |
+| 1: Metadata | Startup for the actual listed, model-invocable Skills | ~100 tokens/Skill for a default full listing | name always; description if retained in the listing |
 | 2: Instructions | Regular Claude Code session: first, distinct, or changed rendering. Preloaded subagent: startup. | <5k tokens recommended | Regular: full SKILL.md body, then a short note for an identical re-invocation; preloaded: named full skill content at startup; distinct skills can stack |
 | 3+: Resources | As needed | Effectively unlimited | Reference text enters when read; script output enters after execution while source can remain on disk |
 
-Regular-session sequence when a Skill triggers: (1) context = system prompt + the metadata
-of listed, model-invocable Skills + user message; (2) in Anthropic's filesystem-and-shell
+Regular-session sequence when a Skill triggers: (1) context = system prompt + the actual
+post-budget listing of model-invocable Skills + user message. In a default full listing that
+means name + description; a name-only or budget-trimmed entry contributes less routing text;
+(2) in Anthropic's filesystem-and-shell
 implementation, Claude uses Bash to read `pdf/SKILL.md`; (3) optionally reads
 `forms.md`, bringing that document's text into context, or executes a script and receives
 its output; (4) proceeds. The portable format requires staged loading, not Bash or a
@@ -79,7 +83,10 @@ large tool catalog is still expensive, but it is a configuration to measure rath
 a default architecture to assume. Firecrawl: "each skill costs roughly 30-50 tokens at
 startup... An agent with 100 skills installed uses approximately 3,000-5,000 tokens at
 session start for skill metadata." Scope that arithmetic to listed, model-invocable
-Skills. One measurement of Anthropic's official Skills: median discovery cost ~80
+Skills with full descriptions. In Claude Code, `skillOverrides: "name-only"` lists only a
+name for eligible non-plugin Skills; an overflowing listing keeps every name while it
+shortens or drops low-priority descriptions. The actual post-budget listing therefore sets
+both metadata cost and description-driven discovery surface. One measurement of Anthropic's official Skills: median discovery cost ~80
 tokens/Skill (~55 webapp-testing to ~235 xlsx). Mahesh Murag (VentureBeat): each skill
 "takes only a few dozen tokens when summarized... with full details loading only when
 the task requires them." Principle: "the context window is a public good."
@@ -93,9 +100,10 @@ delivery with progressive-disclosure-style discovery on top).
 
 ## Discovery and invocation
 Skills are **model-invoked** — Claude decides autonomously, like a tool. At startup the
-harness injects each listed, model-invocable Skill's name + description into the system
-prompt (Claude Code's Skill tool constructs its description at runtime by aggregating
-available names and descriptions). When the task matches a description, Claude reads the
+harness injects its actual listing into the system prompt. Claude Code's default listing
+aggregates available names and descriptions, but `skillOverrides: "name-only"` can expose a
+name without its description, and overflow retains every name while shortening or dropping
+some descriptions. When the task matches text that reached the listing, Claude reads the
 full `SKILL.md`. User-only skills are an explicit exception on surfaces that support them.
 
 The `description` is the primary discovery mechanism and the highest-leverage authoring decision. The portable specification says it should explain both what it does and when to use it, including specific trigger terms. Anthropic authoring guidance additionally prefers the **third person** ("Processes Excel files and generates reports," never "I can help..." or "You can use..."), because its description is injected into the system prompt. The PDF Skill's description is deliberately "pushy": "Use this skill whenever the user wants to do anything with PDF files... If the user mentions a .pdf file or asks to produce one, use this skill."
@@ -218,7 +226,7 @@ if their external dependencies change"); **tool misuse** and **data exposure**; 
 installing software."**
 
 Independent research: Anthropic's frontmatter reaches its system prompt. That surface
-separately disallows XML-like angle brackets. Oasis Security demonstrated a
+separately disallows XML tags. Oasis Security demonstrated a
 Claude.ai chain with invisible URL prompt injection and exfiltration through intentionally
 permitted Anthropic Files API egress. It used no skill, integration, external or
 user-installed tool, or MCP server. That does not establish a sandbox escape. It shows that
@@ -245,7 +253,7 @@ Skills matter as a **design pattern**: (1) **progressive disclosure generalizes*
 ## Recommendations
 1. **Start with one Skill for a repeated workflow, eval-first:** run the task without a Skill and note gaps → capture that context into a lean SKILL.md (ideally have Claude author it) → invest disproportionately in the `description` (third person, what + when, trigger keywords). Claude Code: `mkdir -p ~/.claude/skills/<name>` + a SKILL.md; API: upload via `/v1/skills` with code execution and `skills-2025-10-02`, adding the Files API header only for file upload or download.
 2. **Scripts vs prose by task fragility:** prose (high freedom) where many approaches valid; deterministic error-handling script (low freedom) where consistency critical or code keeps being regenerated; make execute-vs-read intent explicit. Threshold: if SKILL.md nears 500 lines / ~5k tokens, split into `references/` one level deep.
-3. **Manage the context budget:** metadata is cheap but an *activated* Skill is a recurring per-turn cost in the same window. With many Skills, watch description-listing budgets (Claude Code caps and can drop low-priority descriptions; `skillOverrides: name-only` reclaims budget); prefer forked-subagent execution (`context: fork`) for heavy Skills.
+3. **Manage the context budget:** metadata is cheap but an *activated* Skill is a recurring per-turn cost in the same window. Measure the actual post-budget listing, not the installed-folder count. With many Skills, watch description-listing budgets: Claude Code keeps every name but can shorten or drop low-priority descriptions, while `skillOverrides: "name-only"` deliberately retains a name without description routing. Prefer forked-subagent execution (`context: fork`) for heavy Skills.
 4. **Treat Skills as software supply chain:** install only from trusted sources; audit every bundled file; be wary of external-URL fetches; in production gate code execution + network egress, apply least-privilege `allowed-tools`, use hooks for deterministic guardrails prose can't enforce; centrally provision on Team/Enterprise.
 5. **Skill vs MCP by what's missing (Ch 11 preview):** Skill when the gap is *procedural knowledge* (has the tools, lacks the workflow/conventions/reliable script); MCP when the gap is *connectivity* (live, authenticated, remote access). Expect both: a Skill can orchestrate MCP tools when it supplies the procedure those tools need. Consolidate parallel `.cursorrules`/`CLAUDE.md`/skills on the portable SKILL.md standard where possible.
 

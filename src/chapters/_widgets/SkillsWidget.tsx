@@ -3,8 +3,9 @@ import { useState } from "react";
 // SkillsWidget: the signature widget for "Skills". One focused move: select an element of a
 // real skill package and watch its load profile appear. The reader should feel that SKILL.md
 // fields and the package's distinct bundled files live at different levels of progressive
-// disclosure and cost the context window very differently. The description is resident only
-// when the skill is listed for model invocation. In a regular Claude Code session, a first,
+// disclosure and cost the context window very differently. Level 1 is the actual listing:
+// a default listing includes the name + description, while a name-only override or listing
+// budget trim can retain a name without its description. In a regular Claude Code session, a first,
 // distinct, or changed rendered body loads while an identical re-invocation adds a short
 // already-loaded note. A configured preloaded subagent receives named full skill content at
 // startup instead. A referenced doc enters context when read; a bundled script can return
@@ -14,6 +15,7 @@ import { useState } from "react";
 // Skills-specific limits where those limits are useful examples.
 
 type PartKey = "name" | "description" | "body" | "reference" | "script";
+type ListingMode = "full" | "name-only" | "trimmed";
 
 interface Profile {
   key: PartKey;
@@ -35,20 +37,20 @@ const PROFILES: Record<PartKey, Profile> = {
     label: "name",
     level: "level 1 · metadata",
     hot: true,
-    when: "at startup, when listed for model invocation",
-    cost: "part of the ~100-token budget for a listed skill",
-    enters: "yes when listed; no for a Claude Code user-only skill",
-    role: "The portable identifier. It must be one to 64 Unicode lowercase alphanumeric characters in single hyphen-separated words, and it must match the skill directory. A harness may also expose it as an explicit command. Anthropic adds reserved-vendor-name restrictions as a surface rule. In a model-invoked listing, this is paid once per session; a Claude Code user-only skill is absent until manual invocation.",
+    when: "at startup, when the actual listing includes this model-invocable skill",
+    cost: "the name portion of the listing budget",
+    enters: "yes in full, name-only, and budget-trimmed listings; no for a Claude Code user-only skill",
+    role: "The portable identifier. It must be one to 64 Unicode lowercase alphanumeric characters in single hyphen-separated words, and it must match the skill directory. A harness may also expose it as an explicit command. Anthropic adds reserved-vendor-name restrictions as a surface rule. In Claude Code, an eligible non-plugin skill can stay listed by name even when a name-only override or listing budget omits its description.",
   },
   description: {
     key: "description",
     label: "description",
     level: "level 1 · metadata",
     hot: true,
-    when: "at startup, when listed for model invocation",
-    cost: "the bulk of a listed skill's metadata budget (up to 1024 chars)",
-    enters: "yes when listed; user-only skills omit it until manual invocation",
-    role: "In a model-invoked harness, this is the part the agent reads to decide whether to open the skill at all. The portable specification says it should state what the skill does and when to use it, with useful trigger words. Anthropic also recommends third person because this text enters its system prompt. Those are discovery and surface rules, not the portable parser's whole contract.",
+    when: "at startup only when this skill retains a description in the actual listing",
+    cost: "the description portion of the listing budget (up to 1024 chars)",
+    enters: "yes in a full listing; no for user-only, name-only, or a budget-dropped description",
+    role: "In a full model-invoked listing, this is the part the agent reads to decide whether to open the skill at all. The portable specification says it should state what the skill does and when to use it, with useful trigger words. Anthropic also recommends third person because this text enters its system prompt. Those are discovery and surface rules, not the portable parser's whole contract.",
   },
   body: {
     key: "body",
@@ -58,7 +60,7 @@ const PROFILES: Record<PartKey, Profile> = {
     when: "regular session: after this skill's first, distinct, or changed rendering; preloaded subagent: at startup",
     cost: "regular: < 5k tokens recommended for a full rendered body; preloaded: that full named body is paid at startup",
     enters: "regular: full body for first, distinct, or changed rendering; preloaded subagent: full named skill content at startup",
-    role: "The procedure the model follows once the skill is activated. In a regular Claude Code session it stays absent until then, which is the whole point: a hundred listed skills can sit available without paying for every body. An identical re-invocation adds a short already-loaded note rather than another body; a changed render, such as new arguments or dynamic context, adds the full body. A subagent configured with named preloaded skills starts with their full content instead. Distinct activated skill bodies may coexist. The 500-line target is authoring guidance, not portable syntax.",
+    role: "The procedure the model follows once the skill is activated. In a regular Claude Code session it stays absent until then, which is the whole point: a hundred names can sit in an actual listing without paying for every body. An identical re-invocation adds a short already-loaded note rather than another body; a changed render, such as new arguments or dynamic context, adds the full body. A subagent configured with eligible named preloaded skills starts with their full content instead. Distinct activated skill bodies may coexist. The 500-line target is authoring guidance, not portable syntax.",
   },
   reference: {
     key: "reference",
@@ -85,6 +87,24 @@ const PROFILES: Record<PartKey, Profile> = {
 };
 
 const SKILL_MD_PART_ORDER: Array<"name" | "description" | "body"> = ["name", "description", "body"];
+
+const LISTING_MODES: Array<{ key: ListingMode; label: string; summary: string }> = [
+  {
+    key: "full",
+    label: "full",
+    summary: "default listing: name + description",
+  },
+  {
+    key: "name-only",
+    label: "name-only",
+    summary: "Claude Code override: name stays, description omitted",
+  },
+  {
+    key: "trimmed",
+    label: "budget trimmed",
+    summary: "this skill keeps its name while the listing dropped its description",
+  },
+];
 
 // Relevant SKILL.md excerpts. Each line is tagged with its SKILL.md content (or null for
 // structural lines like the frontmatter fences and blanks). Resource directives are level-2
@@ -137,15 +157,55 @@ const BUNDLED_RESOURCES: Array<{ key: "reference" | "script"; path: string }> = 
 
 export function SkillsWidget() {
   const [selected, setSelected] = useState<PartKey>("description");
+  const [listingMode, setListingMode] = useState<ListingMode>("full");
   const p = PROFILES[selected];
+  const descriptionListed = listingMode === "full";
+  const descriptionOmitted = selected === "description" && !descriptionListed;
+  const profile = descriptionOmitted
+    ? {
+        ...p,
+        level: "level 1 · omitted from this listing",
+        when: "not at startup in this listing; the SKILL.md file still contains it on disk",
+        cost: "zero listing tokens for this skill's description",
+        enters: "no; name-only or budget-trimmed listing leaves its description off-window",
+        role: "This skill still has a description in its package, but the current Claude Code listing did not deliver it. The model can see the name, not this routing text, so description-keyword discovery is unavailable for this skill until its listing returns to a description-bearing state.",
+      }
+    : p;
+  const listing = LISTING_MODES.find(({ key }) => key === listingMode)!;
+  const resident = profile.hot && !descriptionOmitted;
 
   return (
     <div className="font-sans">
+      <div
+        role="group"
+        aria-label="Actual Claude Code skill listing"
+        className="flex flex-wrap items-center gap-1 font-mono text-[0.7rem]"
+      >
+        <span className="mr-1 text-comment">{"// actual listing"}</span>
+        {LISTING_MODES.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setListingMode(key)}
+            aria-pressed={listingMode === key}
+            className={`rounded border px-2 py-1 transition-colors motion-reduce:transition-none ${
+              listingMode === key
+                ? "border-accent/50 bg-accent/15 text-accent"
+                : "border-border text-muted hover:text-fg"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 font-mono text-[0.66rem] text-comment">
+        {`// ${listing.summary}`}
+      </p>
+
       {/* SKILL.md content, as an accessible control strip; source lines select it too */}
       <div
         role="group"
         aria-label="SKILL.md contents"
-        className="flex flex-wrap gap-1 font-mono text-[0.7rem]"
+        className="mt-3 flex flex-wrap gap-1 font-mono text-[0.7rem]"
       >
         {SKILL_MD_PART_ORDER.map((key) => (
           <button
@@ -175,6 +235,7 @@ export function SkillsWidget() {
           <pre className="overflow-x-auto p-2 font-mono text-[0.72rem] leading-relaxed">
             {SOURCE.map((line, i) => {
               const active = line.part !== null && (line.part === selected || line.pointsTo === selected);
+              const omittedDescription = line.part === "description" && !descriptionListed;
               if (line.part === null) {
                 return (
                   <span key={i} className="block whitespace-pre px-1 text-comment">
@@ -192,9 +253,13 @@ export function SkillsWidget() {
                   aria-pressed={active}
                   aria-label={line.pointsTo
                     ? `SKILL.md directive for bundled ${PROFILES[line.pointsTo].label}: ${line.text}`
+                    : omittedDescription
+                    ? `${PROFILES[line.part].label}, omitted from the current listing: ${line.text}`
                     : `${PROFILES[line.part].label}: ${line.text}`}
                   className={`block w-full cursor-pointer whitespace-pre rounded-sm px-1 text-left transition-colors motion-reduce:transition-none ${
-                    active
+                    omittedDescription
+                      ? "bg-surface text-comment line-through"
+                      : active
                       ? "bg-accent/15 text-fg"
                       : "text-fg/80 hover:bg-surface md:hover:bg-surface"
                   }`}
@@ -234,46 +299,48 @@ export function SkillsWidget() {
         {/* the load profile for the selected package element */}
         <div className="rounded border border-accent/30 bg-surface p-3">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-mono text-sm text-accent">{p.label}</span>
+            <span className="font-mono text-sm text-accent">{profile.label}</span>
             <span
               className={`rounded px-1.5 py-0.5 font-mono text-[0.62rem] ${
-                p.hot ? "bg-accent/15 text-accent" : "border border-border text-muted"
+                resident ? "bg-accent/15 text-accent" : "border border-border text-muted"
               }`}
             >
-              {p.level}
+              {profile.level}
             </span>
           </div>
 
           <dl className="mt-3 space-y-2 font-mono text-[0.7rem]">
             <div>
               <dt className="text-comment">{"// loaded when"}</dt>
-              <dd className="mt-0.5 text-fg/90">{p.when}</dd>
+              <dd className="mt-0.5 text-fg/90">{profile.when}</dd>
             </div>
             <div>
               <dt className="text-comment">{"// token cost"}</dt>
-              <dd className="mt-0.5 text-fg/90">{p.cost}</dd>
+              <dd className="mt-0.5 text-fg/90">{profile.cost}</dd>
             </div>
             <div>
               <dt className="text-comment">{"// enters the window"}</dt>
-              <dd className="mt-0.5 text-fg/90">{p.enters}</dd>
+              <dd className="mt-0.5 text-fg/90">{profile.enters}</dd>
             </div>
           </dl>
 
-          <p className="mt-3 font-sans text-sm leading-relaxed text-fg/80">{p.role}</p>
+          <p className="mt-3 font-sans text-sm leading-relaxed text-fg/80">{profile.role}</p>
 
-          {p.pointer && (
+          {profile.pointer && (
             <p className="mt-2 rounded border border-border bg-surface-2 px-2 py-1.5 font-mono text-[0.66rem] leading-relaxed text-comment">
-              {p.pointer}
+              {profile.pointer}
             </p>
           )}
         </div>
       </div>
 
       <p className="mt-3 font-mono text-[0.7rem] text-comment">
-        {selected === "body"
-          ? "// Claude Code exception: a subagent configured with this named skill preloaded starts with its full content."
-          : p.hot
-          ? "// startup context: listed model-invocable skills only; user-only skills enter after manual invocation."
+        {descriptionOmitted
+          ? `// ${listingMode}: this skill's name remains listed, but its description is off-window and cannot supply routing keywords.`
+          : selected === "body"
+          ? "// Claude Code exception: a subagent configured with this eligible named skill preloaded starts with its full content."
+          : resident
+          ? "// startup context: the actual listing only. Full listings carry descriptions; user-only skills enter after manual invocation."
           : "// off-window until needed: this package element costs nothing until the skill actually reaches it."}
       </p>
     </div>

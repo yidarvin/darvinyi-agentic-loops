@@ -41,7 +41,7 @@ directory. A
 name cannot begin or end with a hyphen or contain two consecutive hyphens. It requires a
 nonempty description of at most 1,024 characters, and recommends that the description say
 both what the skill does and when to reach for it. Anthropic adds surface-specific rules:
-it rejects reserved vendor words in `name` and XML-like angle brackets in `name` and
+it rejects reserved vendor words in `name` and XML tags in `name` and
 `description`, and its authoring guidance prefers third-person descriptions. Keep those
 layers distinct. A
 harness may also expose the name as an explicit command.
@@ -58,23 +58,33 @@ The loading model is the design, and it has a name: progressive disclosure. Cont
 reveals itself in three levels, each loaded at a different moment and costing the context
 window a different amount.
 
-<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. In a regular Claude Code session, level 2 loads a full body for a first, distinct, or changed rendering, while an identical re-invocation adds a short already-loaded note. A subagent configured with preloaded skills instead receives its named full skill content at startup. Distinct activated skills can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding host-dependent retrieval round trips at runtime.">
+<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1 is the actual listing, not the installed library. In a default full Claude Code listing, each listed, model-invocable skill contributes its name and description. A user-only skill is absent until manual invocation; a name-only or budget-trimmed listing can retain a name while omitting or shortening its description. In a regular Claude Code session, level 2 loads a full body for a first, distinct, or changed rendering, while an identical re-invocation adds a short already-loaded note. A subagent configured with eligible preloaded skills instead receives its named full skill content at startup. Distinct activated skills can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding host-dependent retrieval round trips at runtime.">
   <SkillsFigure />
 </Figure>
 
-In Anthropic's model-invoked implementation, level one is metadata: the `name` and
-`description` of each listed, model-invocable skill enter the system prompt at startup.
-A Claude Code skill with `disable-model-invocation: true` is user-only, so its description
-does not enter at startup and its full body arrives only when the user invokes it. The
-documentation puts listed metadata near a hundred tokens per skill. Firecrawl reports a
-lower estimate, around thirty to fifty tokens each, in
-[Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so a hundred listed,
-model-invocable skills cost roughly three to five thousand tokens at session start. In
-a regular Claude Code session, level two adds the full `SKILL.md` body for a first,
+In Anthropic's model-invoked implementation, level one is the listing that the harness
+actually gives the model, not a count of folders on disk. In the default full Claude Code
+listing, the `name` and `description` of each listed, model-invocable skill enter the system
+prompt at startup. A Claude Code skill with `disable-model-invocation: true` is user-only,
+so it is absent from that regular-session listing until the user invokes it. Claude Code also
+has a `skillOverrides: "name-only"` setting for eligible non-plugin skills: the name stays
+listed, but the description does not. When the listing exceeds its budget, every name remains
+while low-priority descriptions can be shortened or dropped. The actual post-budget listing
+therefore determines both startup cost and which description keywords are available for
+discovery.
+
+The next arithmetic scopes itself to a default full name-and-description listing before that
+budget reduction. Anthropic's documentation puts that listed metadata near a hundred tokens
+per skill. Firecrawl reports a lower external estimate, around thirty to fifty tokens each,
+in [Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so one hundred listed,
+model-invocable skills with full descriptions cost roughly three to five thousand tokens at
+session start. A name-only or budget-trimmed listing costs less, but has less description
+surface through which the model can route work. In a regular Claude Code session, level two
+adds the full `SKILL.md` body for a first,
 distinct, or changed rendering. An identical re-invocation adds a short already-loaded
 note instead. Distinct activated skills can stack, while exact re-invocation behavior
 remains host-specific. A Claude Code subagent
-configured with named preloaded skills takes the other path: it receives those full skill
+configured with eligible named preloaded skills takes the other path: it receives those full skill
 contents at startup, before a matching task needs to invoke them. The
 under-five-thousand-token and 500-line targets are authoring recommendations, not grammar.
 At level three, a reference document enters context only when the agent reads it; a script
@@ -99,12 +109,13 @@ The next chapter, Skill or Server, takes up that comparison; hybrids are common.
 
 ## The description does the discovering
 
-Skills are often model-invoked. A harness exposes the installed metadata, then the agent
-decides whether a task warrants opening a body, much as it decides which tool to call. In
-that design the `description` does the discovering: when a task matches it closely enough,
-the harness loads the full `SKILL.md`; when it does not, the body stays on disk. Everything
-hangs on this small routing contract, which makes it the highest-leverage line in the
-file.
+Skills are often model-invoked. A harness exposes the actual listing, then the agent decides
+whether a task warrants opening a body, much as it decides which tool to call. In a full
+listing the `description` does the discovering: when a task matches it closely enough, the
+harness loads the full `SKILL.md`; when it does not, the body stays on disk. A name-only
+override can still expose a skill's name, but it removes its description from that routing
+surface. A listing budget can leave the same partial result at scale. Everything hangs on
+this small routing contract, which makes it the highest-leverage line in the file.
 
 The portable specification says the description should state both what the skill does and
 when to use it, with words a matching task would contain. Anthropic's authoring guidance
@@ -165,11 +176,13 @@ and confusing the two wastes a turn.
 The widget below traces one small, correct skill package, the changelog skill from the
 artifact. Select a `SKILL.md` field or body excerpt to see where and when that file content
 loads. Then select a bundled reference or script to see its level-three behavior and the
-level-two body directive that points to it. The description sits at level one when the skill
-is listed for model invocation. In a regular Claude Code session, its full body waits at
-level two for a first, distinct, or changed rendering; an identical re-invocation gets a
-short already-loaded note. A subagent configured with this skill preloaded starts with its
-full content instead. Distinct skill bodies can coexist. The reference and the script live
+level-two body directive that points to it. The description sits at level one only when the
+actual regular-session listing includes it. In a default full Claude Code listing it does;
+a `name-only` override or listing overflow can leave only the name. In a regular Claude Code
+session, its full body waits at level two for a first, distinct, or changed rendering; an
+identical re-invocation gets a short already-loaded note. A subagent configured with this
+eligible skill preloaded starts with its full content instead. Distinct skill bodies can
+coexist. The reference and the script live
 at level three: reading the reference brings its text into context, while executing the
 script can return output without loading source first. One package, five elements, five
 different relationships with the context window.
@@ -203,7 +216,7 @@ filesystem host, bundled code runs with the access that host grants. API Skills 
 in a sandboxed container with no network access. The environment changes the available
 attack paths, not the need for explicit egress, filesystem, and permission controls.
 On Anthropic's surface, frontmatter metadata enters the system prompt. The platform
-separately disallows XML-like angle brackets in `name` and `description`. That is not a
+separately disallows XML tags in `name` and `description`. That is not a
 portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain with
 an injection hidden in a URL parameter, then used intentionally permitted Files API egress
 to exfiltrate data. It involved no skill, integration, external or user-installed tool, or
@@ -240,21 +253,28 @@ when it supplies the procedure those tools need.
 The artifact has no third-party packages, API key, or network requirement. It needs a
 `python3` command backed by Python 3.9+, plus Bash for its documented install and check
 paths. It ships a real, correct skill, `changelog-entry/`, that a compatible local skill
-directory can discover and trigger, complete with a `references/FORMAT.md` read one hop away and a
-`scripts/` validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does
+directory can discover and trigger, complete with a `references/FORMAT.md` read one hop away
+and a `scripts/` validator the skill runs in a feedback loop. If you create
+`~/.claude/skills/` after a Claude Code session begins, restart the session so it watches the
+new top-level directory. Additions below an existing watched directory take effect live.
+Alongside it, `skills_lab.py` does
 three things the chapter describes. Its default teaching lint checks the bundle's supported
 portable subset: ASCII name syntax, directory matching, and description bounds. It rejects
 malformed or unsupported YAML forms instead of reporting malformed frontmatter as clean. It
 is not a general YAML or full-schema validator. For production, use the target
 harness's maintained validator and a deployment gate. `skills-ref` is a demonstration-only
 reference implementation, useful for comparison but not production certification. An explicit
-Anthropic profile adds that surface's reserved-word and angle-bracket checks. Third-person
+Anthropic profile adds that surface's reserved-word and XML-tag checks. Third-person
 phrasing, a concrete `when` cue, and the 500-line budget remain labelled authoring warnings,
-not portable failures. The lab models startup cost for listed, model-invocable skills in a
-regular session, makes the user-only exception visible, and offers a preloaded-subagent mode
-where named full skill bodies arrive at startup instead. Its discovery simulator is
-deliberately illustrative: it uses a two-keyword proxy and prints a possible loading
-sequence, not evidence that a production model would trigger. A deliberately broken
+not portable failures. The lab models the actual regular-session listing: `--budget 100`
+starts with the default full name-and-description listing; `--listing name-only` removes
+descriptions; and `--descriptions 20` models a budget-trimmed listing where all names remain
+but only twenty descriptions reach the model. The last two cases reduce both startup tokens
+and description-driven discovery. The lab makes the user-only exception visible and offers a
+preloaded-subagent mode where eligible named full skill bodies arrive at startup instead.
+Its discovery simulator is deliberately illustrative: it uses a two-keyword proxy and
+prints a possible loading sequence, not evidence that a production model would trigger. A
+deliberately broken
 `bad-skill/` is included so you can watch the layers fail, and `--test` exercises the
 portable boundary cases, the surface profile, raw stdin validation, terminal-control
 rejection, the installed-validator path, literal shell-syntax preservation, and both
@@ -265,12 +285,13 @@ lifecycle modes.
   path="artifacts/ch10-skills/"
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch10-skills"
   runtime="python3 (Python 3.9+) + Bash for install/check"
-  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --budget 3 --session preloaded", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\" --session preloaded", "python3 skills_lab.py --test"]}>
+  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100  # default full name-and-description listing", "python3 skills_lab.py --budget 100 --listing name-only", "python3 skills_lab.py --budget 100 --descriptions 20  # all names, twenty descriptions", "python3 skills_lab.py --budget 3 --session preloaded", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --simulate \"editing CHANGELOG\" --listing name-only", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\" --session preloaded", "python3 skills_lab.py --test"]}>
 One real skill you can install and trigger, plus a teaching lint that checks its supported
 portable subset and an optional Anthropic profile, a progressive-disclosure cost model that
-prices both a regular listing and a preloaded-subagent path, and an illustrative discovery
-simulator for each lifecycle. A broken skill demonstrates the boundary between portable
-rules and surface-specific checks, while test mode covers the remaining boundaries. No
+prices an actual full, name-only, or budget-trimmed regular listing and a preloaded-subagent
+path, and an illustrative discovery simulator for each lifecycle. A broken skill
+demonstrates the boundary between portable rules and surface-specific checks, while test mode
+covers the remaining boundaries. No
 third-party packages, API key, or network; Bash powers the documented install and check path.
 </RunnableArtifact>
 
@@ -286,20 +307,21 @@ near-miss negatives. Tune the words, then measure the actual trigger behavior.
 </ExerciseCard>
 
 <ExerciseCard n="02" title="Price the context">
-Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred listed,
-model-invocable skills against the cost of a full body on a first, distinct, or changed
-rendering in a regular session. Then run `python3 skills_lab.py --budget 3 --session
-preloaded`. State why a large listed skill library can stay cheap while either triggering
-the wrong heavy skill or preloading it into a configured subagent consumes its full body
-budget. Name the other exception: a Claude Code user-only skill with
-`disable-model-invocation: true` is absent from regular-session startup context until manual
-invocation.
+Run `python3 skills_lab.py --budget 100`. That is the default full listing: a hundred
+listed, model-invocable names plus their descriptions. Then compare `--listing name-only`
+and `--descriptions 20`. State why the actual post-budget listing, not the installed library
+count, determines both startup cost and which description keywords can trigger discovery.
+Then run `python3 skills_lab.py --budget 3 --session preloaded`. Explain why a large listed
+skill library can stay cheap while either triggering the wrong heavy skill or preloading it
+into a configured subagent consumes its full body budget. Name the other exception: a Claude
+Code user-only skill with `disable-model-invocation: true` is absent from regular-session
+startup context until manual invocation.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Break a rule and watch it fail">
 Open `bad-skill/SKILL.md` and read why it is broken. Its name violates the portable syntax
-and does not match its directory. Its description also carries an Anthropic-only
-angle-bracket restriction and weak authoring guidance. Run `python3 skills_lab.py --validate bad-skill`, then add `--surface anthropic` to see the surface profile. Fix the
+and does not match its directory. Its description also carries an Anthropic-only XML-tag
+restriction and weak authoring guidance. Run `python3 skills_lab.py --validate bad-skill`, then add `--surface anthropic` to see the surface profile. Fix the
 portable name and directory together first; then decide which harness-specific guidance you
 need. The test mode covers the boundary cases a validator buys you before a skill reaches a
 model.
@@ -348,7 +370,8 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   estimate, not a platform guarantee.
 - [Claude Code's Skills documentation](https://code.claude.com/docs/en/skills) and its
   [feature-loading overview](https://code.claude.com/docs/en/features-overview), for
-  user-only invocation, regular-session and preloaded-subagent lifecycles, stacked skills,
+  user-only invocation, `skillOverrides`, listing-budget behavior, live skill-directory
+  detection, regular-session and preloaded-subagent lifecycles, stacked skills,
   bundled-script paths, and deferred MCP schemas.
 - [GitHub's MCP server documentation](https://github.com/github/github-mcp-server), for
   the `--toolsets` and `--tools` controls that narrow the available tool surface.
