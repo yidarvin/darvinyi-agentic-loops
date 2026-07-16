@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -53,3 +53,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 Advisory not taken: exhaustive fixture-body assertions remain out of scope because the prior review classified them as non-blocking.
 
 Verification: `npm run check` passed, including validate, prose lint, pipeline tests, all artifact gates, Vitest, typecheck, production build, and advisory lint.
+
+## Round 3 review (2026-07-16)
+
+Fresh-eyes review: read `prompts/critique-rubric.md`, the complete append-only critique history and `git log -p -- content/critiques/delegation.md`, the current MDX, `DelegationFigure.tsx`, `DelegationWidget.tsx`, the complete `artifacts/ch12-delegation/` artifact and fixture, and `docs/research/ch12-delegation.md`. Re-ran `npm run check` successfully, including the artifact gate, Vitest, typecheck, production build, and lint; independently ran the artifact's deterministic `check.sh`, `--compare`, and no-key `--show-boundary --live` paths. Re-checked the linked Anthropic, Claude Code, Liu et al., Chroma, Cognition, OpenAI Agents SDK, and LangChain primary sources. A live browser backend was unavailable, so the widget's interaction and accessibility were checked through its source, render tests, and the build gate. All five REQUIRED fixes from Rounds 1 and 2 remain intact. The figure, widget, artifact, and full gate hold. One material source contradiction remains.
+
+## Required fixes
+
+1. **`src/chapters/delegation.mdx:146-152,169-177` and `docs/research/ch12-delegation.md:121,130` --- correct the blanket single-writer rule and its false attribution to Anthropic.** The chapter correctly presents Anthropic's direct-to-filesystem pattern, in which specialized subagents independently create code, reports, or charts and return lightweight references. It then says Anthropic and Cognition agree that writing cannot parallelize and that every state-mutating action must pass through one thread. Anthropic's [multi-agent research post](https://www.anthropic.com/engineering/multi-agent-research-system) instead recommends those independently persisted subagent artifacts and limits its caution to domains with shared context or many dependencies; it does not endorse a blanket single-writer rule. [Cognition's April 2026 post](https://cognition.com/blog/multi-agents-working) does support its own current recommendation that writes stay single-threaded. The current wording is both a false cross-source attribution and internally contradicts the chapter's own artifact pattern, so it misstates the boundary readers should use. Attribute the single-writer rule to Cognition and scope it to coupled or shared state and competing decisions; distinguish independently scoped artifact writes, and revise the research backbone in lockstep so the error cannot re-enter the chapter.
+
+## Advisories
+
+- No new advisories.
