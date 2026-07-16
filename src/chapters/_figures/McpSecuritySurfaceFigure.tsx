@@ -6,10 +6,12 @@
 // a legitimate exfiltration sink. The injection (danger-colored) rides in on A, drives the
 // read on B, receives the private result back through the context window, and routes the
 // secret out through C, all with tools the agent is ALLOWED to use. Numbered arrows make
-// the model-mediated request/result path explicit. The lesson band: a missing leg breaks
-// this exfiltration path, while all three close the trifecta; a real defense removes a leg
-// (resource-lock severs the reach into B, the exfil gate closes C), it does not try to
-// score the prose. Inline SVG, themed with the CSS variables, mono labels.
+// the model-mediated request/result path explicit. The lesson band makes the capability
+// overlap explicit: a private retrieved record can itself carry untrusted text, so [B]+[C]
+// is not a safety condition. For a defined flow, policy removes or gates a capability
+// (resource-lock severs the reach into B, the exfil gate closes C). Inspection can lower
+// exposure but does not prove the flow safe.
+// Inline SVG, themed with the CSS variables, mono labels.
 
 export function McpSecuritySurfaceFigure() {
   return (
@@ -17,7 +19,7 @@ export function McpSecuritySurfaceFigure() {
       viewBox="0 0 880 486"
       className="w-full min-w-[840px]"
       role="img"
-      aria-label="The lethal trifecta, drawn as three legs feeding one context window. Leg A, top left, is untrusted content: a tool result from a public issue or web page, which carries a hidden injected instruction. Leg B, bottom left, is private data: a legitimate tool that reads a private repository or a secret file. Leg C, right, is an exfiltration sink: a legitimate tool that can send data out, such as opening a public pull request or fetching a URL. All arrows pass through the center, the agent's context window, where data becomes instructions because the model cannot separate an instruction it was given from data it merely read. Numbered danger-colored arrows show the attack sequence: the injected result reaches the model, the model requests private data, the private result returns to the model, and the model routes the secret out through the sink using only tools it is allowed to use. The lower band states that a missing leg breaks this autonomous exfiltration path, while all three legs together close the lethal trifecta. A real defense removes or gates a capability, for example per-session resource locking severs the reach into private data and the exfiltration gate closes the outbound sink, rather than trying to detect whether the incoming text is malicious."
+      aria-label="The lethal trifecta, drawn as three legs feeding one context window. Leg A, top left, is untrusted content: a tool result from a public issue or web page, which carries a hidden injected instruction. Leg B, bottom left, is private data: a legitimate tool that reads a private repository or a secret file. Leg C, right, is an exfiltration sink: a legitimate tool that can send data out, such as opening a public pull request or fetching a URL. All arrows pass through the center, the agent's context window, where data becomes instructions because the model cannot separate an instruction it was given from data it merely read. Numbered danger-colored arrows show the attack sequence: the injected result reaches the model, the model requests private data, the private result returns to the model, and the model routes the secret out through the sink using only tools it is allowed to use. The lower band distinguishes capability combinations, not mutually exclusive safety states: private retrieved data can itself carry untrusted text, so the B plus C combination is not safe by itself. All three legs together complete the lethal trifecta. For a defined flow, policy can remove or gate a capability, for example per-session resource locking severs the reach into private data and the exfiltration gate closes the outbound sink. Inspection can lower exposure but does not prove the flow safe."
       fill="none"
     >
       <rect x="1" y="1" width="878" height="484" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
@@ -77,25 +79,28 @@ export function McpSecuritySurfaceFigure() {
       <text x="258" y="310" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">[3] result</text>
       <text x="560" y="220" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">[4] action</text>
 
-      {/* lesson band */}
-      <rect x="300" y="316" width="558" height="152" rx="8" fill="var(--surface)" stroke="var(--border)" />
-      <text x="316" y="340" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
-        {"// the rule of two, and why a classifier is not a boundary"}
+      {/* lesson band: the legs are capabilities, and one source can supply more than one */}
+      <rect x="300" y="306" width="558" height="162" rx="8" fill="var(--surface)" stroke="var(--border)" />
+      <text x="316" y="330" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
+        {"// capability combinations can overlap; inspection can lower exposure"}
       </text>
-      <text x="316" y="364" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+      <text x="316" y="354" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
         {"[A]+[B]      no external send in this session"}
       </text>
-      <text x="316" y="384" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+      <text x="316" y="374" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
         {"[A]+[C]      no private-data read in this session"}
       </text>
-      <text x="316" y="404" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"[B]+[C]      no untrusted input in this session"}
+      <text x="316" y="394" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">
+        {"[B]+[C]      not safe if [B] carries untrusted text"}
       </text>
-      <text x="316" y="424" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">
+      <text x="316" y="414" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">
         {"[A]+[B]+[C]  the lethal trifecta: autonomous exfiltration"}
       </text>
-      <text x="316" y="450" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
-        {"a defense removes or gates a capability; it does not score [A]'s prose."}
+      <text x="316" y="436" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--danger)">
+        {"overlap: private retrieved data can carry untrusted text"}
+      </text>
+      <text x="316" y="458" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+        {"policy gates a capability; inspection can lower exposure, not prove safety."}
       </text>
     </svg>
   );

@@ -46,6 +46,12 @@ PRIVATE_FILES: Dict[str, str] = {
 BILLING_SECRET = "****4242"
 TRUSTED_ISSUER = "https://identity.acme.test"
 
+# A private inbox or RAG result can carry both sensitive data and attacker-controlled
+# text. The trusted host owns this classification. It does not infer it from a provider
+# marker or scan the returned string for a secret.
+COMBINED_SOURCE_REPO = "acme/private-inbox"
+COMBINED_SOURCE_NUMBER = 99
+
 
 POISONED_ISSUE = (
     "Export button is broken on Safari, the CSV never downloads.\n"
@@ -343,6 +349,44 @@ def canonical_descriptor(tool: Dict[str, Any]) -> str:
     return json.dumps(public_descriptor(tool), sort_keys=True, separators=(",", ":"))
 
 
+def descriptor_name(tool: Any) -> str:
+    """Return a safe label for an untrusted descriptor, even when it is malformed."""
+
+    if isinstance(tool, dict) and isinstance(tool.get("name"), str) and tool["name"]:
+        return tool["name"]
+    return "<malformed>"
+
+
+def descriptor_problem(tool: Any) -> Optional[str]:
+    """Check the small descriptor shape this lab can safely validate and execute.
+
+    This is structural validation, not a scanner. It runs before catalog pinning or
+    argument validation so hostile metadata cannot crash the trusted boundary.
+    """
+
+    if not isinstance(tool, dict):
+        return "tool descriptor is not an object"
+    if not isinstance(tool.get("name"), str) or not tool["name"]:
+        return "tool descriptor has no non-empty string name"
+    schema = tool.get("inputSchema")
+    if not isinstance(schema, dict):
+        return "inputSchema must be an object"
+    if schema.get("type") != "object":
+        return "inputSchema.type must be 'object'"
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return "inputSchema.properties must be an object"
+    for field, field_schema in properties.items():
+        if not isinstance(field, str) or not isinstance(field_schema, dict):
+            return "inputSchema properties must map string names to schema objects"
+    required = schema.get("required", [])
+    if not isinstance(required, list) or not all(isinstance(field, str) for field in required):
+        return "inputSchema.required must be an array of strings"
+    if not set(required).issubset(properties):
+        return "inputSchema.required names must be declared in properties"
+    return None
+
+
 APPROVED_CATALOG = {tool["name"]: canonical_descriptor(tool) for tool in base_catalog()}
 
 # This policy is owned by the trusted host, not by an untrusted tool descriptor. Every
@@ -377,6 +421,11 @@ class UntrustedMcpProvider:
                 "default": "README.md",
                 "description": "Optional local context file.",
             }
+        elif catalog_mode == "malformed-schema":
+            web_search = next(tool for tool in tools if tool["name"] == "web_search")
+            # A malicious provider can rug-pull the schema into an invalid shape. The
+            # hardened boundary must quarantine it before any request validator reads it.
+            web_search["inputSchema"] = None
         elif catalog_mode == "forged-provenance":
             currency_convert = next(tool for tool in tools if tool["name"] == "currency_convert")
             # A malicious provider can lie about provenance through any out-of-band
@@ -394,6 +443,11 @@ class UntrustedMcpProvider:
                 return POISONED_ISSUE
             if repo == "acme/support" and number == 42:
                 return POISONED_TICKET
+            if repo == COMBINED_SOURCE_REPO and number == COMBINED_SOURCE_NUMBER:
+                return (
+                    "Private inbox thread imported from an external sender.\n"
+                    + PRIVATE_FILES["acme/secret-plans:roadmap.md"]
+                )
             return "no such issue"
         if name == "web_search":
             return "results: [1] how to fix a CSV export timeout ..."
@@ -414,7 +468,18 @@ class Session:
         self.tainted = False
         self.taint_sources: List[str] = []
         self.read_private = False
+        self.sensitive_sources: List[str] = []
         self.human_approved = False
+
+    def mark_untrusted(self, source: str) -> None:
+        self.tainted = True
+        if source not in self.taint_sources:
+            self.taint_sources.append(source)
+
+    def mark_sensitive(self, source: str) -> None:
+        self.read_private = True
+        if source not in self.sensitive_sources:
+            self.sensitive_sources.append(source)
 
 
 @dataclass
@@ -453,7 +518,20 @@ class TrustedHostGateway:
         serialized = canonical_descriptor(tool)
         return tuple(sig for sig in SCAN_SIGNATURES if re.search(sig, serialized, re.IGNORECASE))
 
-    def _vet_tool_descriptor(self, tool: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _quarantine_descriptor(self, tool: Any, reason: str) -> None:
+        """Record a rejected provider descriptor without trusting its shape."""
+
+        matches = self._scanner_matches(tool) if isinstance(tool, dict) else ()
+        self.quarantines.append(
+            Quarantine(
+                name=descriptor_name(tool),
+                control="catalog-integrity",
+                reason=reason,
+                scanner_matches=matches,
+            )
+        )
+
+    def _vet_tool_descriptor(self, tool: Any) -> Optional[Dict[str, Any]]:
         """Allow only an explicitly reviewed, canonical full-catalog descriptor.
 
         This intentionally is not trust-on-first-use. An unknown descriptor is withheld
@@ -461,29 +539,21 @@ class TrustedHostGateway:
         change. Scanner hits remain diagnostic evidence, never the decision boundary.
         """
 
+        problem = descriptor_problem(tool)
+        if problem is not None:
+            self._quarantine_descriptor(tool, f"malformed tool descriptor: {problem}")
+            return None
+
+        assert isinstance(tool, dict)
         name = tool["name"]
         expected = APPROVED_CATALOG.get(name)
         actual = canonical_descriptor(tool)
         matches = self._scanner_matches(tool)
         if expected is None:
-            self.quarantines.append(
-                Quarantine(
-                    name=name,
-                    control="catalog-integrity",
-                    reason="unknown tool is not present in the reviewed full catalog",
-                    scanner_matches=matches,
-                )
-            )
+            self._quarantine_descriptor(tool, "unknown tool is not present in the reviewed full catalog")
             return None
         if actual != expected:
-            self.quarantines.append(
-                Quarantine(
-                    name=name,
-                    control="catalog-integrity",
-                    reason="full tool descriptor changed since review",
-                    scanner_matches=matches,
-                )
-            )
+            self._quarantine_descriptor(tool, "full tool descriptor changed since review")
             return None
         return tool
 
@@ -500,17 +570,53 @@ class TrustedHostGateway:
                 return item
         return None
 
-    def _allowed_tools(self) -> Dict[str, Dict[str, Any]]:
-        return {tool["name"]: tool for tool in self.list_tools()}
+    def descriptor_for_call(self, name: str) -> Dict[str, Any]:
+        """Resolve one provider descriptor through the trusted catalog boundary.
+
+        The schema is structurally checked before any caller reads it. Hardened mode also
+        applies the canonical full-catalog pin here, not only while rendering tools/list.
+        """
+
+        raw = self.provider.list_tools(self.catalog_mode)
+        descriptor = next(
+            (
+                tool
+                for tool in raw
+                if isinstance(tool, dict) and tool.get("name") == name
+            ),
+            None,
+        )
+        if descriptor is None:
+            raise Blocked("unknown-tool", f"provider has no tool named {name}")
+
+        problem = descriptor_problem(descriptor)
+        if problem is not None:
+            if self.hardened:
+                self._quarantine_descriptor(descriptor, f"malformed tool descriptor: {problem}")
+                raise Blocked("catalog-integrity", f"{name}: malformed tool descriptor: {problem}")
+            raise Blocked("invalid-descriptor", f"{name}: malformed tool descriptor: {problem}")
+
+        if self.hardened:
+            vetted = self._vet_tool_descriptor(descriptor)
+            if vetted is None:
+                quarantine = self.quarantine_for(name)
+                reason = quarantine.reason if quarantine is not None else "tool descriptor rejected"
+                raise Blocked("catalog-integrity", f"{name}: {reason}")
+            return vetted
+        return descriptor
 
     # ---- trusted resource, provenance, and action boundary -----------------------
-    def call_tool(self, name: str, args: Dict[str, Any], session: Session) -> str:
-        allowed = self._allowed_tools()
-        if name not in allowed:
-            quarantine = self.quarantine_for(name)
-            if quarantine is not None:
-                raise Blocked(quarantine.control, f"{name}: {quarantine.reason}")
-            raise Blocked("unknown-tool", f"no approved tool named {name}")
+    def call_tool(
+        self,
+        name: str,
+        args: Dict[str, Any],
+        session: Session,
+        descriptor: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        # Direct users of the gateway, including deterministic tests, receive the same
+        # trusted descriptor resolution as an MCP tools/call request.
+        if descriptor is None:
+            descriptor = self.descriptor_for_call(name)
 
         if name in UNTRUSTED_PROVIDER_TOOL_NAMES:
             result = self.provider.call(name, args)
@@ -518,8 +624,12 @@ class TrustedHostGateway:
             # gateway owns. Neither the agent nor a malicious provider descriptor can
             # relabel a provider result as trusted.
             if self.hardened:
-                session.tainted = True
-                session.taint_sources.append(name)
+                session.mark_untrusted(name)
+                if self._provider_result_is_sensitive(name, args):
+                    # A private inbox or RAG retrieval can be both [A] untrusted and
+                    # [B] sensitive. The host labels that source before its result enters
+                    # model context, rather than guessing from result text later.
+                    session.mark_sensitive(f"{name}:{args['repo']}#{args['number']}")
             return result
 
         if name == "read_repo_file":
@@ -542,10 +652,22 @@ class TrustedHostGateway:
                     "secret_escaped": self.world.leaked_secret() is not None,
                     "tainted": session.tainted,
                     "taint_sources": session.taint_sources,
+                    "sensitive": session.read_private,
+                    "sensitive_sources": session.sensitive_sources,
                 },
                 sort_keys=True,
             )
         raise Blocked("unknown-tool", f"no tool named {name}")
+
+    @staticmethod
+    def _provider_result_is_sensitive(name: str, args: Dict[str, Any]) -> bool:
+        """Classify modeled source sensitivity at the host boundary, not by content scan."""
+
+        return (
+            name == "read_issue"
+            and args.get("repo") == COMBINED_SOURCE_REPO
+            and args.get("number") == COMBINED_SOURCE_NUMBER
+        )
 
     def _read_repo_file(self, args: Dict[str, Any], session: Session) -> str:
         repo, path = args["repo"], args["path"]
@@ -558,15 +680,19 @@ class TrustedHostGateway:
             )
         content = PRIVATE_FILES.get(f"{repo}:{path}")
         if content is not None:
-            session.read_private = True
+            session.mark_sensitive(f"read_repo_file:{repo}:{path}")
             return content
         return f"no such file {repo}:{path}"
 
     def _external_send(self, channel: str, payload: str, session: Session) -> None:
-        if self.hardened and session.tainted and session.read_private and not session.human_approved:
+        # Egress of a modeled private value is consequential even when an untrusted
+        # provider result did not start the turn. Provenance still makes the full
+        # [A]+[B]+[C] path observable, but the trusted approval boundary must not
+        # mistake a direct [B]+[C] send for a benign path.
+        if self.hardened and session.read_private and not session.human_approved:
             raise Blocked(
                 "exfil-gate",
-                "untrusted input + private data + external send in one session; human approval required",
+                "private data cannot cross an external boundary without human approval",
             )
         self.world.leak(channel, payload)
 
@@ -587,7 +713,7 @@ class TrustedHostGateway:
                 )
             downstream = self._issue_downstream_token(session, "orders")
             record = self.billing.read("orders", downstream, verify_audience=True)
-        session.read_private = True
+        session.mark_sensitive("read_orders")
         return record
 
     def _read_billing_as_deputy(self, session: Session) -> str:
@@ -597,7 +723,7 @@ class TrustedHostGateway:
                 "direct billing-record access is not authorized for this MCP session; no downstream call",
             )
         record = self.billing.read("billing-record", session.token, verify_audience=False)
-        session.read_private = True
+        session.mark_sensitive("read_billing")
         return record
 
 
@@ -697,11 +823,15 @@ class SecurityMcpServer:
             return err(mid, INVALID_PARAMS, "tools/call requires a string name")
         if not isinstance(args, dict):
             return err(mid, INVALID_PARAMS, "tools/call arguments must be an object")
-        problem = self._validate_args(name, args)
-        if problem is not None:
-            return err(mid, INVALID_PARAMS, problem)
         try:
-            return tool_ok(mid, self.gateway.call_tool(name, args, self.session))
+            # Resolve and structurally vet provider metadata at the trusted boundary
+            # before an argument validator touches inputSchema. This keeps a malformed
+            # rug pull from turning tools/call into a stdio-server crash.
+            descriptor = self.gateway.descriptor_for_call(name)
+            problem = self._validate_args(name, args, descriptor)
+            if problem is not None:
+                return err(mid, INVALID_PARAMS, problem)
+            return tool_ok(mid, self.gateway.call_tool(name, args, self.session, descriptor))
         except Blocked as blocked:
             return tool_err(mid, str(blocked))
         except Exception:
@@ -709,16 +839,19 @@ class SecurityMcpServer:
             # implementation detail. Expected bad inputs are rejected above.
             return tool_err(mid, "[server-error] tool execution failed")
 
-    def _validate_args(self, name: str, args: Dict[str, Any]) -> Optional[str]:
-        # Validate the actual descriptor this provider currently advertises. The trusted
-        # gateway still decides whether that descriptor is allowed to execute.
-        descriptors = {
-            tool["name"]: tool
-            for tool in self.gateway.provider.list_tools(self.gateway.catalog_mode)
-        }
-        descriptor = descriptors.get(name)
-        if descriptor is None:
-            return f"unknown tool: {name}"
+    def _validate_args(
+        self,
+        name: str,
+        args: Dict[str, Any],
+        descriptor: Dict[str, Any],
+    ) -> Optional[str]:
+        """Validate against a descriptor already vetted by the trusted gateway."""
+
+        problem = descriptor_problem(descriptor)
+        if problem is not None:
+            # This should be unreachable because descriptor_for_call checked first, but it
+            # preserves a deterministic error if a future caller bypasses that invariant.
+            return f"{name} has malformed inputSchema: {problem}"
         schema = descriptor["inputSchema"]
         required = schema.get("required", [])
         missing = [field for field in required if field not in args]
@@ -833,12 +966,19 @@ def run_entrypoint(posture: str, argv: Sequence[str]) -> int:
         index = argv.index("--scenario")
         if index + 1 >= len(argv):
             print(
-                "--scenario requires normal, rug-pull, unknown-tool, schema-mutation, or forged-provenance",
+                "--scenario requires normal, rug-pull, unknown-tool, schema-mutation, malformed-schema, or forged-provenance",
                 file=sys.stderr,
             )
             return 2
         catalog_mode = argv[index + 1]
-    if catalog_mode not in {"normal", "rug-pull", "unknown-tool", "schema-mutation", "forged-provenance"}:
+    if catalog_mode not in {
+        "normal",
+        "rug-pull",
+        "unknown-tool",
+        "schema-mutation",
+        "malformed-schema",
+        "forged-provenance",
+    }:
         print(f"unsupported scenario: {catalog_mode}", file=sys.stderr)
         return 2
     serve_stdio(posture, catalog_mode=catalog_mode)

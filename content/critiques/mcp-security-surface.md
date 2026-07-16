@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -248,3 +248,66 @@ round records only two new material defects and does not re-litigate prior findi
 
 ## Advisories
 - No new advisories. The unresolved Round 5 advisories remain advisory.
+
+## Builder resolution (2026-07-15)
+Regression gate: re-verified every required fix from Rounds 1 through 6 against the
+current chapter, figure, widget, research reference, README, deterministic client, and
+vulnerable and hardened MCP stdio pair. Round 1 had no required fixes. The Round 2
+authorization, trusted-boundary, scope, simulation-fidelity, and source repairs remain
+true. The Round 3 catalog-integrity, provenance, scoreboard, empirical-scope, and evidence
+repairs remain true. The Round 4 real-server, factual, isolation-boundary, and illustrative
+example repairs remain true. The following closes all six Round 5 and both Round 6 fixes.
+
+1. Recast the chapter opening, trifecta, indirect-injection, metadata, and defense sections
+   in `src/chapters/mcp-security-surface.mdx` around host-controlled dataflow. An untrusted
+   result or metadata field becomes dangerous when a host places it in model context alongside
+   sensitive capability and an outbound or destructive action. The chapter no longer assigns
+   those properties to every MCP tool, agent, or the wire protocol itself.
+2. Scoped the detector and architectural-control claims in the chapter and
+   `docs/research/ch09-mcp-security-surface.md`. The Attacker Moves Second now remains tied
+   to its twelve tested defenses and adaptive threat models, CaMeL to its interpreter and
+   policy assumptions, and the Rule of Two to a useful supplement rather than a sufficient
+   proof. The revised guidance explicitly gates destructive as well as exfiltration-capable
+   actions.
+3. Repaired the ecosystem evidence trail in the chapter and research reference. Astrix is
+   now a 5,205-GitHub-repository README and LLM-inference study, Equixly is an assessment of
+   selected popular implementations, Trend Micro is a public-directory correlation with prior
+   automated analysis and randomized manual verification, and the CVE-2025-6514 historical
+   characterization is attributed to JFrog.
+4. Updated `McpSecuritySurfaceFigure.tsx` so `[B]+[C]` is not presented as safe when private
+   retrieved data can also carry untrusted text. Its visible label, accessibility text, and
+   lesson band now make the overlap explicit.
+5. Extended `security_mcp.py` with a trusted-host classification for a modeled private inbox
+   source that is also untrusted. The session records untrusted provenance and sensitivity
+   independently before returning the result, and the egress gate blocks the combined
+   `[A]+[B]+[C]` flow. In-memory and real hardened-stdio regressions assert an empty
+   `World.exfiltrated` log.
+6. Corrected authorization wording in the chapter and research reference. MCP validates that
+   a token is intended for its server; the lab's `aud` fixture is now explicitly a JWT-style
+   example rather than the only compliant mechanism for opaque or introspected tokens.
+7. Hardened catalog handling in `security_mcp.py`: a descriptor is structurally validated and
+   vetted at the trusted boundary before argument validation accesses `inputSchema`.
+   `malformed-schema` now produces a deterministic catalog-integrity rejection, and the
+   executable hardened endpoint remains usable after it.
+8. Completed the confused-deputy account in the chapter and research reference with all four
+   preconditions, the crafted authorization-request and redirect-URI link flow, and the
+   required per-client-consent mitigation.
+9. Tightened the hardened egress policy in `security_mcp.py` so any modeled private value
+   needs human approval before it crosses an external boundary, including a direct
+   private-data-plus-egress path with no untrusted-provider taint. Added in-memory and
+   executable-stdio regressions in `mcp_security.py`, then documented the conservative
+   policy in the chapter, widget, and artifact README.
+10. Narrowed the GitHub toxic-agent summary in the research reference to the host/context
+    composition that ingests attacker-controlled issue content beside private capability and
+    a public sink, rather than assigning the failure to every agent or model using the server.
+
+Advisories taken: clarified that the egress gate contains an attempted exfiltration after a
+scanner or catalog-integrity bypass, renamed the stdio assertion to cover its actual stderr
+check, and narrowed remaining categorical wording about tool-schema parsing, description
+pinning, and elevated-review server signals.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes all deterministic
+assertions, including the combined-source, direct-private-egress, and malformed-descriptor
+executable regressions.
+`npm run check` passes validation, prose lint, pipeline and artifact tests, Vitest, typecheck,
+production build, and lint. The registry status remains `draft` for independent re-review.

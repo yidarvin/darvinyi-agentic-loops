@@ -63,19 +63,32 @@ client. Neither a provider-supplied hint nor a credulous client decides that pro
 direct protocol sequence that omits any agent-level metadata still hits the egress gate
 after an untrusted result, private read, and external send.
 
+Sensitivity is tracked independently. A private inbox or RAG retrieval can contain
+attacker-controlled text while also returning private data, so one source can set both
+labels before the result reaches the client. The deterministic suite drives that combined
+source through the hardened stdio endpoint and proves the egress gate blocks the send.
+It also proves that a direct private-data send without a preceding untrusted result needs
+explicit human approval. The policy therefore cannot label a plain [B]+[C] path as benign.
+It does not try to discover sensitivity by scanning returned strings.
+
 The World scoreboard records only simulated external sends. It reports success only when
 one of the modeled private values reaches that boundary. Its tracked secret set is derived
 from every value in PRIVATE_FILES plus the modeled billing record, so the fake .env value
 cannot silently evade the result.
 
+The test suite also feeds a malformed provider `inputSchema` to the hardened endpoint. The
+trusted catalog boundary quarantines it before argument validation, returns a deterministic
+rejection, and keeps the same stdio session usable.
+
 ## Authentication boundary modeled here
 
 The pair uses a deterministic, already-validated Token fixture to make the trusted issuer,
-audience, exact-scope, and no-transit rules observable. The vulnerable Billing path checks
-only the fixture's trusted issuer, which models the issuer-only failure. The hardened endpoint
-also accepts a client token for audience acme-mcp at its local ingress, rejects injected direct
-billing access before Billing is called, and gives a legitimate order read a separate audience
-billing token with only read:orders. The client token never reaches Billing.
+intended-recipient check, exact scope, and no-transit rules observable. Its `aud` field makes
+the JWT-style case easy to see. The vulnerable Billing path checks only the fixture's trusted
+issuer, which models the issuer-only failure. The hardened endpoint also accepts a client
+token for audience acme-mcp at its local ingress, rejects injected direct billing access before
+Billing is called, and gives a legitimate order read a separate audience billing token with
+only read:orders. The client token never reaches Billing.
 
 This is real MCP over stdio, not a live OAuth deployment. It does not verify JWT signatures,
 discover protected-resource metadata, contact an authorization server, or perform token

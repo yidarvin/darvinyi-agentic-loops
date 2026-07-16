@@ -73,7 +73,7 @@ const SCENARIOS: Scenario[] = [
     leaked: "an SSH private key, smuggled out in a URL query string",
     control: "catalog-integrity",
     controlWhy:
-      "A trusted host or gateway compares the full reviewed tool definition before an untrusted provider can place a changed schema in model context. The scanner is only a diagnostic backstop: Full-Schema Poisoning can hide the instruction outside a description, so an egress gate must still contain a bypass.",
+      "A trusted host or gateway compares the full reviewed tool definition before an untrusted provider can place a changed schema in model context. The scanner is only a diagnostic backstop: Full-Schema Poisoning can hide the instruction outside a description, so the egress gate must still contain an attempted exfiltration after a scanner or catalog-integrity bypass.",
     takeaway:
       "This is a rug pull, not initial Tool Poisoning. Onboarding review and an allowlist reject unknown tools; full-catalog integrity catches a post-approval change. The entire schema remains an injection surface.",
   },
@@ -122,7 +122,7 @@ const SCENARIOS: Scenario[] = [
     leaked: "an SSH private key, on an instruction hidden in a runtime result",
     control: "exfil-gate",
     controlWhy:
-      "At the trusted egress gateway, untrusted input, private data, and an external send in one session is the full lethal trifecta. The outbound send is refused without human approval. No static catalog scan can catch this runtime instruction.",
+      "At the trusted egress gateway, untrusted input, private data, and an external send in one session is the full lethal trifecta. The outbound send is refused without human approval. The same policy does not treat a direct private-data send as benign. No static catalog scan can catch this runtime instruction.",
     takeaway:
       "Advanced Tool Poisoning puts the instruction where static analysis cannot reach it. Only a control on the exfiltration leg itself, gated on the trifecta, contains it.",
   },
