@@ -186,7 +186,8 @@ forward within a 25,000-token budget.
 
 ## Skills vs MCP (high level; deep comparison is Ch 11)
 Distinction: **MCP connects the agent to external systems/tools via a client-server protocol;
-Skills package instructions and code that run in the agent's own execution environment.** In
+Skills package instructions, optional code, and resources that run in the agent's execution
+environment.** In
 a [VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard),
 Mahesh Murag framed MCP as the connection to external software and data, while Skills
 provide the procedural knowledge for using those tools effectively. Shorthand: "MCP gives
@@ -200,7 +201,21 @@ implementations.
 Complementary: a Skill can invoke MCP tools (Claude Code best practice: fully-qualified names like `GitHub:create_issue`); the sentry-code-review Skill wraps Sentry's MCP-provided error data in a workflow. Willison's framing: "MCP is a whole protocol specification... Skills are Markdown with a tiny bit of YAML metadata and some optional scripts... They feel a lot closer to the spirit of LLMs — throw in some text and let the model figure it out. They outsource the hard parts to the LLM harness and the associated computer environment." Counterpoint: MCP provides remote/authenticated tool access (maturing OAuth, remote servers) and cross-vendor developer incentives, whereas Skills are local folders/zips with no built-in remote-access or auth model.
 
 ## Security considerations
-Because Skills execute arbitrary code, a malicious/compromised Skill is a real threat. Anthropic: "Use Skills only from trusted sources: those you created yourself or obtained from Anthropic... a malicious Skill can direct Claude to invoke tools or execute code in ways that don't match the Skill's stated purpose." Risk categories: **audit thoroughly** (review every bundled file for unexpected network/file access); **external sources are risky** (Skills fetching external URLs may pull in malicious instructions — indirect injection; "even trustworthy Skills can be compromised if their external dependencies change"); **tool misuse** and **data exposure**; **"treat like installing software."**
+A Skill is an installed capability package, not only executable code. Its `SKILL.md`
+instructions, scripts, references, images, other resources, and remote dependencies can
+direct host tools. Its effective trust boundary is the complete bundle, any content or
+dependencies it fetches, and the filesystem, egress, tool, and permission capabilities the
+host grants. On a local filesystem host, bundled code can run with local-machine access. API
+Skills instead run in a sandboxed container with no network access.
+
+Anthropic: "Use Skills only from trusted sources: those you created yourself or obtained from
+Anthropic... a malicious Skill can direct Claude to invoke tools or execute code in ways that
+don't match the Skill's stated purpose." Risk categories: **audit thoroughly** (review every
+bundled file, including `SKILL.md`, scripts, images, and other resources, for unexpected
+network/file access); **external sources are risky** (Skills fetching external URLs may pull
+in malicious instructions — indirect injection; "even trustworthy Skills can be compromised
+if their external dependencies change"); **tool misuse** and **data exposure**; **"treat like
+installing software."**
 
 Independent research: Anthropic's frontmatter reaches its system prompt. That surface
 separately disallows XML-like angle brackets. Oasis Security demonstrated a
@@ -213,7 +228,12 @@ Bubblewrap sandbox isolating Bash. Lesson: sandboxing, least-privilege permissio
 egress and filesystem controls, deny rules, and human review are complements, not
 substitutes.
 
-Relative to MCP: both share the "untrusted content in the loop" problem, but MCP's trust boundary is the server and its deployment. Authentication, transport, authorization, and auditability are implementation choices, whereas a Skill's trust boundary is the code you place on the agent's own machine — hence "install only from trusted sources." Enterprise governance: Team/Enterprise admins can centrally provision approved Skills; code execution / network egress are admin-gated.
+Relative to MCP: both share the "untrusted content in the loop" problem, but MCP's trust
+boundary is the server and its deployment. Authentication, transport, authorization, and
+auditability are implementation choices, whereas a Skill's boundary is its complete bundle,
+remote dependencies, and host-granted capabilities. Enterprise governance: Team/Enterprise
+admins can centrally provision approved Skills; code execution / network egress are
+admin-gated.
 
 ## Significance
 Skills matter as a **design pattern**: (1) **progressive disclosure generalizes** — load minimal metadata, disclose detail just-in-time, keep bulk on disk — a broad context-engineering principle (support bots, research agents over large corpora); (2) **simplicity/portability** — "just folders and markdown" lowers the authoring bar (a PM can write one) and makes Skills trivially shareable via VCS/zip; (3) **composability** — with each other, MCP servers, and the Claude Code stack.

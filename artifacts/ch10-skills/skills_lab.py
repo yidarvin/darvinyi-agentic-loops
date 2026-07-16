@@ -103,11 +103,16 @@ def has_tab_indentation(line: str) -> bool:
 
 
 def has_unsupported_control(text: str) -> bool:
-    """Keep non-printing bytes out of the teaching subset's accepted grammar."""
+    """Reject non-printing raw frontmatter characters except structural line endings."""
     return any(
-        (ord(char) < 32 and char not in "\n\r") or ord(char) == 127
+        not char.isprintable() and char not in "\n\r"
         for char in text
     )
+
+
+def has_non_printing_scalar(text: str) -> bool:
+    """Reject decoded scalar characters that cannot appear visibly in frontmatter."""
+    return any(not char.isprintable() for char in text)
 
 
 def parse_scalar(value: str, key: str, errors: list[str]) -> str:
@@ -176,6 +181,11 @@ def parse_scalar(value: str, key: str, errors: list[str]) -> str:
     if any(0xD800 <= ord(char) <= 0xDFFF for char in parsed):
         errors.append(f"{key} has an invalid Unicode surrogate escape")
         return value
+    if has_non_printing_scalar(parsed):
+        errors.append(
+            f"{key} has a non-printing character; this teaching lint accepts printable scalar values only"
+        )
+        return parsed
     return parsed
 
 
@@ -890,6 +900,24 @@ def run_tests() -> int:
         "lone Unicode surrogate escape fails through the public validator",
         lone_surrogate_cli.returncode != 0 and "ERROR P0" in lone_surrogate_cli.stdout,
     )
+    escaped_bell_cli = public_validate(
+        'description: "Formats\\u0007 entries. Use when adding one."\n'
+    )
+    check(
+        "escaped BEL scalar fails through the public validator",
+        escaped_bell_cli.returncode != 0
+        and "ERROR P0" in escaped_bell_cli.stdout
+        and "clean:" not in escaped_bell_cli.stdout,
+    )
+    escaped_c1_cli = public_validate(
+        'description: "Formats\\u0085 entries. Use when adding one."\n'
+    )
+    check(
+        "escaped C1 scalar fails through the public validator",
+        escaped_c1_cli.returncode != 0
+        and "ERROR P0" in escaped_c1_cli.stdout
+        and "clean:" not in escaped_c1_cli.stdout,
+    )
     indented_open_fence_cli = public_validate_document(
         "  ---\n"
         "name: supported-skill\n"
@@ -1041,6 +1069,38 @@ def run_tests() -> int:
         check("validator rejects trailing stdin whitespace", run_entry_stdin_quiet(good, "Added: trimmed? \n") == 1)
         check("validator rejects a carriage-return line break", run_entry_quiet(good, "Added: good\rInjected") == 1)
         check("validator rejects a Unicode line-separator break", run_entry_quiet(good, "Added: good\u2028Injected") == 1)
+        terminal_control = "Added: \x1b[2Jterminal-control"
+        terminal_control_validator = subprocess.run(
+            ["python3", validator_path(good)],
+            input=terminal_control,
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "validator rejects terminal-control input without echoing it",
+            terminal_control_validator.returncode == 1
+            and "\x1b" not in (
+                terminal_control_validator.stdout + terminal_control_validator.stderr
+            )
+            and "OK:" not in terminal_control_validator.stdout,
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            prefix="skills-lab-terminal-control-",
+        ) as candidate:
+            candidate.write(terminal_control)
+            candidate.flush()
+            terminal_control_relay = run_lab_quiet("--entry-file", candidate.name)
+        check(
+            "entry-file keeps terminal-control input out of relay output and the write gate",
+            terminal_control_relay.returncode != 0
+            and "\x1b" not in (
+                terminal_control_relay.stdout + terminal_control_relay.stderr
+            )
+            and "OK:" not in terminal_control_relay.stdout,
+        )
         bash_available = shutil.which("bash") is not None
         check("Bash is available for the documented install and check workflows", bash_available)
         if bash_available:

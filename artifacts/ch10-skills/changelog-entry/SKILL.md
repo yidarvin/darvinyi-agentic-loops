@@ -33,9 +33,9 @@ Changelog format, and verify it before writing.
 
 - One change per entry. Split unrelated changes into separate entries.
 - Write for a person reading the release notes, not for the commit log.
-- The validator enforces a known type, one nonempty line, and clean outer
-  whitespace. Keep a Changelog does not prescribe a length cap or terminal
-  punctuation, so this skill does not add either rule.
+- The validator enforces a known type, one nonempty line, clean outer whitespace,
+  and no C0/C1 terminal-control characters. Keep a Changelog does not prescribe a
+  length cap or terminal punctuation, so this skill does not add either rule.
 - The validator does not write files. Step 6 intentionally writes the project's
   `CHANGELOG.md`, so obtain project-write permission before taking that step.
 - For the full format, the order of the headings, and how Unreleased becomes a

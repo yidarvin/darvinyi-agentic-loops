@@ -19,8 +19,18 @@ from typing import Optional
 TYPES = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
 
 
+def has_terminal_control(text: str) -> bool:
+    """Return whether text contains C0 or C1 control characters."""
+    return any(
+        ord(char) <= 0x1F or 0x7F <= ord(char) <= 0x9F
+        for char in text
+    )
+
+
 def validate(entry: str) -> Optional[str]:
     """Return None if the entry is well formed, else a one-line reason."""
+    if has_terminal_control(entry):
+        return "entry contains a terminal control character"
     if entry != entry.strip():
         return "entry has leading or trailing whitespace"
     if not entry:

@@ -188,31 +188,37 @@ else.
 
 ## Install only what you trust
 
-A skill can direct an agent to execute arbitrary code after it triggers, which makes an
-installed skill a piece of software you have chosen to run, not a document you have chosen
-to read.
+A skill is an installed capability package, not merely a script. Its `SKILL.md`
+instructions, scripts, references, assets, and remote dependencies can direct an agent to
+use host tools. Its effective trust boundary is the complete bundle, any content or
+dependencies it fetches, and the filesystem, egress, tool, and permission capabilities the
+host grants.
 Anthropic's guidance is exactly that: use skills only from trusted sources, ones you wrote
-or obtained from a party you trust, and audit every bundled file for network calls or file
-access that does not match the stated purpose. A skill that fetches an external URL can pull
-fresh instructions into the loop on every run, which is the [indirect injection](/mcp-security-surface)
-problem wearing a new coat, and a trusted skill can be compromised when its dependencies
-change under it. On Anthropic's surface, frontmatter metadata enters the system prompt.
-The platform separately disallows XML-like angle brackets in `name` and `description`. That
-is not a portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain
-with an injection hidden in a URL parameter, then used intentionally permitted Files API
-egress to exfiltrate data. It involved no skill, integration, external or user-installed
-tool, or MCP server. The lesson is narrower and stronger:
-a sandbox alone cannot stop prompt injection or egress it deliberately permits. Control
-egress, filesystem access, and permissions explicitly.
+or obtained from a party you trust, and audit every bundled file, including `SKILL.md`,
+scripts, images, and other resources, for behavior that does not match the stated purpose.
+A skill that fetches an external URL can pull fresh instructions into the loop on every run,
+which is the [indirect injection](/mcp-security-surface) problem wearing a new coat, and a
+trusted skill can be compromised when its dependencies change under it. On a local
+filesystem host, bundled code runs with the access that host grants. API Skills instead run
+in a sandboxed container with no network access. The environment changes the available
+attack paths, not the need for explicit egress, filesystem, and permission controls.
+On Anthropic's surface, frontmatter metadata enters the system prompt. The platform
+separately disallows XML-like angle brackets in `name` and `description`. That is not a
+portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain with
+an injection hidden in a URL parameter, then used intentionally permitted Files API egress
+to exfiltrate data. It involved no skill, integration, external or user-installed tool, or
+MCP server. The lesson is narrower and stronger: a sandbox alone cannot stop prompt
+injection or egress it deliberately permits.
 
 <Callout kind="danger">
 Treat installing a skill like installing a dependency, because it is one. Read every file
-in the folder before you enable it, especially any script that touches the network or the
-filesystem, and be doubly wary of a skill that fetches remote content at runtime. In
+in the package before you enable it, including `SKILL.md`, scripts, references, images, and
+other assets, and be doubly wary of a skill that fetches remote content at runtime. In
 production, gate code execution and network egress, scope the skill's tools to the minimum
 it needs, and back the whole thing with the architectural defenses from [The MCP Security
-Surface](/mcp-security-surface). A skill's trust boundary is the code you place on the
-agent's own machine, so the only safe default is a source you can vouch for.
+Surface](/mcp-security-surface). A skill's effective trust boundary is the full package, its
+remote dependencies, and the capabilities its host grants. On a local filesystem host, that
+can include local-machine access; on a constrained API container, it can be much narrower.
 </Callout>
 
 Do not bake platform quotas, beta headers, or caching behavior into a portable skill. Pin
@@ -250,8 +256,9 @@ where named full skill bodies arrive at startup instead. Its discovery simulator
 deliberately illustrative: it uses a two-keyword proxy and prints a possible loading
 sequence, not evidence that a production model would trigger. A deliberately broken
 `bad-skill/` is included so you can watch the layers fail, and `--test` exercises the
-portable boundary cases, the surface profile, raw stdin validation, the installed-validator
-path, literal shell-syntax preservation, and both lifecycle modes.
+portable boundary cases, the surface profile, raw stdin validation, terminal-control
+rejection, the installed-validator path, literal shell-syntax preservation, and both
+lifecycle modes.
 
 <RunnableArtifact
   name="skills_lab"
@@ -328,8 +335,8 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   which identifies the reference library as demonstration-only rather than a production
   validator.
 - [Anthropic's Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview),
-  for current execution-environment constraints, cross-surface behavior, API limits, and
-  the sharp boundary between prompt instructions and filesystem-based Skills.
+  for current execution-environment constraints, full-bundle security guidance,
+  cross-surface behavior, and API limits.
 - [Anthropic's skill-authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices),
   for the under-500-line body budget, degrees-of-freedom heuristic, execute-versus-read
   wording, feedback loops, and evaluation-first development.

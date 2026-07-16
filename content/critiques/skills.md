@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -744,3 +744,34 @@ inspection and passing render tests. Round 18 remains open and is not repeated b
 ## Advisories
 
 - No new advisory findings.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and its git patch history,
+including Rounds 1 through 19, and re-verified every required correction against the
+current chapter, figure, widget, research backbone, and complete `artifacts/ch10-skills`
+package. The portable-versus-surface split, progressive-disclosure lifecycle, source
+attribution, install path, parser boundaries, and literal-candidate boundary from Rounds 1
+through 17 remain intact. The chapter remains `draft`; this resolution does not grant
+approval.
+
+1. **Decoded frontmatter controls.** Tightened the teaching lint in
+   `artifacts/ch10-skills/skills_lab.py` so its raw frontmatter scan rejects all
+   non-printing characters except structural line endings, and its decoded double-quoted
+   scalar path rejects non-printing values before they can receive a clean result. Public
+   `--validate` regressions cover the exact escaped BEL (`\u0007`) and C1 NEL
+   (`\u0085`) cases from Round 18.
+2. **Terminal-safe changelog input.** Updated the bundled validator to reject C0 and C1
+   terminal-control characters before any success output. Its docs now state that boundary.
+   Black-box tests exercise both the validator and `skills_lab.py --entry-file` with a
+   literal ANSI escape candidate, proving it neither validates nor reaches relay output or
+   the later project-write gate.
+3. **Full-bundle security model.** Rewrote `src/chapters/skills.mdx` and
+   `docs/research/ch10-skills.md` so a Skill's effective trust boundary is the complete
+   bundle, its fetched content or dependencies, and host-granted filesystem, egress, tool,
+   and permission capabilities. The local filesystem-host case is now scoped, API Skills'
+   sandboxed no-network container is stated, and the audit guidance covers `SKILL.md`,
+   scripts, references, images, and other resources.
+
+Verification: `python3 artifacts/ch10-skills/skills_lab.py --test` passes 99 assertions.
+`npm run check` passes all seven stages after this record.

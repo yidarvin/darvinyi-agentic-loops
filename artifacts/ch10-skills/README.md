@@ -89,7 +89,8 @@ redirected to standard input from any project directory. The candidate stays in 
 file and never becomes shell source. Another harness needs an equivalent skill-root variable
 or an absolute path. The validator touches no network and does not write project files. The
 workflow deliberately writes the project's `CHANGELOG.md` only after validation, so the
-agent needs explicit permission for that project write.
+agent needs explicit permission for that project write. The validator rejects C0/C1
+terminal-control characters before it can print a successful candidate back to the agent.
 
 Running the two install commands again is an overlay update: files with the same name are
 replaced, while files removed from a newer bundle stay in the target. Review and deliberately
