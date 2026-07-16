@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -701,3 +701,46 @@ not grant approval.
 
 Verification: `bash artifacts/ch10-skills/check.sh` passes 95 assertions. `npm run check`
 is rerun after this record is written.
+
+## Round 18 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history and builder resolutions; the
+current `src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, complete
+`artifacts/ch10-skills` package, research backbone, and listed sources. Re-verified the
+previous portable-versus-surface, progressive-disclosure, lifecycle, source, install-path,
+and trust-boundary corrections against the current artifacts. Ran `npm run check`
+successfully through all seven stages, including the 95-assertion Skills artifact gate.
+Exercised the public teaching-lint boundary below and spot-checked the current Agent Skills
+specification, Anthropic overview, and Claude Code Skills documentation. The visual pass
+used component-source inspection and passing render tests because no browser surface was
+available.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:168-179` --- an escaped non-printing frontmatter value can receive a clean result.** The README promises that non-printing frontmatter values are rejected (`artifacts/ch10-skills/README.md:122-124`). `parse_frontmatter()` checks raw bytes at lines 197-203, but `parse_scalar()` decodes a double-quoted JSON escape at line 169 and only rejects surrogate escapes. A public `--validate` run on a skill whose description is `"Formats\\u0007 entries. Use when adding one."` exits 0 and prints `clean: passes this lab's checked subset`. The same decoded-value gap accepts `\\u0085` (NEL), so reusing only the current raw-byte predicate would leave a non-printing scalar clean. The existing regression at lines 872-878 exercises only a literal control byte, so it misses the encoded form. Apply a truly printable policy to decoded string scalars before returning them, then add black-box `--validate` regressions for at least the exact escaped BEL case and a C1-control case. A clean result must uphold the artifact's stated supported-subset contract.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:43-45` --- use Anthropic's term “XML tags” rather than “XML-like angle brackets” if polishing.** The portable-versus-surface distinction and the stated fields are correct, so this is terminology precision only.
+
+## Round 19 review (2026-07-16)
+
+Independent re-review: read the complete critique history and builder resolutions, the
+current chapter, figure, widget, full `artifacts/ch10-skills` package, research backbone,
+and listed sources. Ran `npm run check` to exit 0 through all seven stages and
+`bash artifacts/ch10-skills/check.sh` with 95 passing assertions. Reproduced Round 18's
+public escaped-control lint failure, then separately exercised the bundled validator's
+terminal-control boundary. Checked the portable Agent Skills specification, current Claude
+Code Skills documentation, and Anthropic's current Skills overview, including its API
+runtime and security guidance. The figure and widget remain materially truthful by source
+inspection and passing render tests. Round 18 remains open and is not repeated below.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:191-215` and `docs/research/ch10-skills.md:202-216` --- the security model incorrectly narrows a Skill's trust boundary to executable code on the agent's own machine.** A valid Skill can be instructions and resources without a bundled script, yet those instructions can direct host tools; the effective boundary is the complete bundle, any external dependencies it fetches, and the filesystem, egress, and tool capabilities granted by the host. It is also not necessarily a local machine: the official overview says API Skills run in a sandboxed container with no network access. The same overview says to audit every bundled file, including `SKILL.md`, scripts, images, and resources, and specifically calls out malicious instructions, tool misuse, data exposure, and remote dependencies. Scope the local-code formulation to a local filesystem host and replace the universal rule with the full-bundle-and-capability boundary in both the chapter and its research backbone. Evidence: [Anthropic's Skills security guidance](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview).
+
+2. **`artifacts/ch10-skills/changelog-entry/scripts/validate_entry.py:22-61` and `artifacts/ch10-skills/skills_lab.py:546-561` --- the documented safe-input boundary accepts and echoes terminal-control data.** The public validator accepts a literal candidate whose Python representation is `Added: \x1b[2Jterminal-control`, exits 0, and emits the control sequence in its `OK:` line. `skills_lab.py --entry-file` relays that output unchanged. A user-derived changelog summary can therefore inject ANSI or OSC terminal behavior after the artifact deliberately avoids shell interpolation. Reject C0/C1 terminal controls before success output or avoid echoing untrusted candidates verbatim, and add a black-box regression that proves a literal escape sequence cannot reach output or a later `CHANGELOG.md` write.
+
+## Advisories
+
+- No new advisory findings.
