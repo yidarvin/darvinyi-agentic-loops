@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -562,3 +562,81 @@ chain used no external or user-installed tool.
 
 Verification: python3 skills_lab.py --test passes 57 assertions. npm run check passes all
 seven stages, including artifacts, 26 render tests, TypeScript, production build, and lint.
+
+## Round 15 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history and builder resolutions, the
+current chapter, figure, widget, complete `artifacts/ch10-skills` package, research
+backbone, and listed sources. Re-verified the resolved portable-versus-surface,
+progressive-disclosure, lifecycle, install-path, and security-boundary corrections against
+the current artifacts. Ran `npm run check` successfully through all seven stages, including
+the 57-assertion skills artifact gate; then independently exercised the public teaching-lint
+failure boundary. Spot-checked the Agent Skills specification, current Claude Code Skills
+documentation, Anthropic's Skills overview, and the MCP authorization specification. The
+local rendered-browser backend was unavailable, so the figure and widget pass used their
+current source plus the passing render tests.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:89-105` and `:279-294` --- the teaching lint reports malformed YAML as a clean portable pass.** A `SKILL.md` whose otherwise valid frontmatter contains `description: Formats entries: Use when adding one.` makes `python3 skills_lab.py --validate <skill-dir>` print `clean: passes this lab's checked subset` and exit 0. A standard YAML parser rejects the second `: ` with `mapping values are not allowed`; the [Agent Skills specification](https://agentskills.io/specification) requires YAML frontmatter. This is a distinct malformed-scalar path from Round 14's resolved unindented-top-level-line case, which the current test covers at `:612-623`. It contradicts the chapter's promise at `src/chapters/skills.mdx:239-243` and the artifact README's contract at `artifacts/ch10-skills/README.md:113-122` that malformed or unsupported frontmatter cannot produce a clean result. Make every syntax form the teaching parser does not understand fail as `P0`, either by using an appropriate YAML parser or by conservatively rejecting unsupported plain-scalar syntax, and add a black-box `--validate` regression test for this exact input.
+
+## Advisories
+
+- **Carried forward from Round 13, `src/chapters/skills.mdx:199-201` --- narrow "XML-like angle brackets in frontmatter" to `name` and `description`.** The chapter states the precise Anthropic restriction at `:43-45`; its later shorthand sounds as though every frontmatter field is covered. The [current overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) limits the restriction to those two fields. This remains non-blocking because the portable/surface distinction is otherwise clear.
+
+## Round 16 review (2026-07-16)
+
+Independent re-review: read the full critique history and builder resolutions; the
+current chapter, figure, widget, complete `artifacts/ch10-skills` package, research
+backbone, and listed sources. Ran `npm run check` successfully through all seven stages
+and `bash artifacts/ch10-skills/check.sh` with 57 passing assertions. I exercised the
+lab's documented bad-skill failure and a separate description-coverage boundary, then
+checked the portable description guidance against the current
+[Agent Skills specification](https://agentskills.io/specification). Round 15 remains
+open and is not repeated here; this round records one distinct artifact-contract defect.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:245-247` and `artifacts/ch10-skills/skills_lab.py:257-265` --- the runnable-artifact description says the lab warns about both what-and-when coverage, but the lab only detects a `when` cue.** The chapter says third-person phrasing, what-and-when coverage, and the 500-line budget remain authoring warnings. The implementation has `PERSON`, `WHEN_CUE`, and a line-count check, but no check for whether a description says what the skill does. A structurally valid synthetic description, `Use when a task needs help.`, returns `([], [])` from `validate_skill`, despite providing no capability statement. The [portable specification](https://agentskills.io/specification) says descriptions should state both what a Skill does and when to use it. Either narrow the chapter's contract to the actual concrete-when-cue warning, consistent with `artifacts/ch10-skills/README.md:123-125`, or add a clearly scoped what-coverage warning and black-box regression coverage. The current chapter falsely describes the behavior of its signature runnable artifact.
+
+## Advisories
+
+- No new advisories.
+
+## Round 17 review (2026-07-16)
+
+Independent re-review: read the complete critique history and builder resolutions; the
+current chapter, figure, widget, full `artifacts/ch10-skills` package, research backbone,
+and listed primary sources. Re-verified that the portable-versus-surface,
+progressive-disclosure, lifecycle, source, and artifact-path corrections still hold. Ran
+`npm run check` successfully through all seven stages, including the 57-assertion Skills
+artifact gate. I then ran the installed skill's documented Bash-shaped validator invocation
+with a harmless command-substitution payload and compared it with the lab's argv-based
+invocation. Round 15 and Round 16 remain open and are not repeated here; this round records
+a separate trust-boundary defect.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/changelog-entry/SKILL.md:18-22` and
+   `artifacts/ch10-skills/README.md:81-85` --- the documented installed-skill command
+   interpolates changelog text as executable Bash before validation.** The recipe puts the
+   candidate entry in double quotes: `"Type: summary"`. In Bash, `$` and backticks retain
+   their special meaning inside double quotes ([Bash Reference Manual](https://www.gnu.org/software/bash/manual/html_node/Double-Quotes.html)). From the artifact directory,
+   `python3 changelog-entry/scripts/validate_entry.py "Added: $(printf injected)"` prints
+   `OK: Added: injected`, while the lab's argv-based
+   `python3 skills_lab.py --entry 'Added: $(printf injected)'` correctly preserves the
+   literal text. Thus an untrusted change, issue title, or user-provided summary can run a
+   shell substitution with the agent's permissions before the deterministic validator or the
+   skill's project-write permission boundary takes effect. Replace the recipe with a
+   non-shell-interpolating input boundary, such as a candidate file created through a
+   structured file-writing tool and passed to the validator via stdin or a file option, or a
+   harness argument API that preserves a literal argv element. Do not merely tell readers to
+   use single quotes without defining how embedded quotes are handled. Add a regression that
+   proves a literal `$(printf injected)` reaches the validator unchanged and that no command
+   substitution runs.
+
+## Advisories
+
+- **`src/chapters/_figures/SkillsFigure.tsx:74-76` --- the two 35-character labels in the
+  216px right-hand card likely cross its border at the declared 10px mono size.** Split or
+  shorten them. The teaching relationship remains correct, so this is non-blocking.
