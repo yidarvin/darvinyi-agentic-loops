@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -134,3 +134,79 @@ explicit discovery-simulator limits, and larger, higher-contrast figure labels.
 
 Verification: `bash artifacts/ch10-skills/check.sh` passes 39 assertions, including the
 installed root-aware command; `npm run check` passes all seven stages.
+
+## Round 4 review (2026-07-16)
+
+Fresh-eyes re-review: read the full critique history, current `src/chapters/skills.mdx`,
+`SkillsFigure.tsx`, `SkillsWidget.tsx`, the complete `artifacts/ch10-skills` lab, bundled
+skill, validator, reference, README, and `docs/research/ch10-skills.md`. Re-verified that
+the required corrections from Rounds 1 through 3 remain in the current artifacts. Ran
+`npm run check` (all seven stages pass) and `bash artifacts/ch10-skills/check.sh` (39
+assertions pass). Checked the consequential claims against the current Agent Skills
+specification, Anthropic and Claude Code documentation, GitHub's MCP server documentation,
+Firecrawl, MCPJam, Keep a Changelog, and the source of the Murag attribution. The local
+in-app browser had no available backend, so the figure and widget review used current source,
+render tests, and static accessibility inspection rather than a screenshot pass.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:203-206` and `:276-309` --- the attributed Murag quotation has no source link in the chapter.** The listed Anthropic engineering post does not contain the quotation. Its source is the [VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard), which identifies Murag and gives the Skills/MCP formulation. Add that source to the Sources section next to the attribution, or remove the attributed quotation. The project rubric makes a missing source link blocking.
+
+2. **`artifacts/ch10-skills/README.md:8-9`, `src/chapters/skills.mdx:226-236`, and `artifacts/ch10-skills/skills_lab.py:504-520` --- the artifact claims Python 3.9+ and no requirements, but an advertised command requires Bash.** `python3 skills_lab.py --test` unconditionally starts `bash -c` to exercise the installed command, and `check.sh` also has a Bash shebang. On a Python 3.9 environment without Bash, the test raises before it can report a useful result. Declare a POSIX shell and `python3` command as requirements in the README and runnable-artifact block, or replace the shell-dependent test with a Python-only equivalent and make the documented workflow accurate.
+
+3. **`artifacts/ch10-skills/README.md:60-75` --- the advertised Claude Code install command fails on a fresh skills setup.** `cp -r changelog-entry ~/.claude/skills/changelog-entry` assumes the parent `~/.claude/skills` already exists. `cp` cannot create that missing parent, so the promised drop-in skill cannot be installed or triggered from a clean setup. Add `mkdir -p ~/.claude/skills` before the copy, state update or overwrite behavior, and test the install instructions from an empty skills directory. The [official Claude Code example](https://code.claude.com/docs/en/skills) creates `~/.claude/skills/<skill>/...` first.
+
+## Advisories
+
+- `artifacts/ch10-skills/skills_lab.py:65-82,192-205` treats unsupported unquoted YAML
+  structures as strings. A valid YAML sequence in `description` could therefore report
+  clean despite not being the string scalar the teaching profile promises. Reject clearly
+  unsupported YAML forms instead of accepting them as plain scalars.
+- `artifacts/ch10-skills/changelog-entry/references/FORMAT.md:10,25,38` presents the
+  Unreleased placement and the category ordering as universal Keep a Changelog requirements.
+  The source recommends an Unreleased section and groups categories but does not make every
+  local ordering rule universal. Label these as the bundled skill's convention or soften the
+  absolutes.
+- `src/chapters/_figures/SkillsFigure.tsx:11-14` safely scrolls in the shared Figure wrapper,
+  but its 860px minimum width still makes a phone reader pan across the central teaching
+  diagram. The labels are correct and legible at native width, so this is not blocking.
+- `src/chapters/_widgets/SkillsWidget.tsx:170-220` makes nearly every code line a separate
+  focusable button. The interaction works, but keyboard readers must traverse many tab stops;
+  grouped selectable regions or a roving control would be calmer.
+
+## Round 5 review (2026-07-16)
+
+Independent supplement to the open Round 4: read the current chapter, figure, widget, full
+artifact, research backbone, and critique history. Ran `npm run check` (all seven stages
+pass) and `bash artifacts/ch10-skills/check.sh` (39 assertions pass), then exercised the
+artifact's invalid-input boundary. Re-verified the Round 4 source and installation findings;
+they remain open and are not re-litigated here. This round records one new artifact defect.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/skills_lab.py:537,560-562,286-297` --- `--budget` accepts a negative library size and reports impossible negative context costs as success.** `python3 skills_lab.py --budget -1` exits 0 after printing `~-36 tokens`, `~-420 tokens`, and `-0.00x`, even though a library cannot contain negative skills. The argparse type check accepts every integer and no later guard rejects values below zero. Reject a negative count with a clear nonzero error before calculating, and add the boundary to `--test`/`check.sh`; the chapter's runnable-artifact contract requires meaningful failure behavior.
+
+## Advisories
+
+- `artifacts/ch10-skills/skills_lab.py:546-548` resolves every relative `--validate DIR`
+  against the lab directory rather than the caller's working directory. The documented
+  `cd artifacts/ch10-skills` path works, but a repo-relative path given from the repository
+  root fails unexpectedly. Document that resolution rule or honor caller-relative paths.
+
+## Round 6 review (2026-07-16)
+
+Independent review: read the full critique history and current `src/chapters/skills.mdx`,
+`SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in `artifacts/ch10-skills`, the research
+backbone, and the chapter's listed sources. Ran `npm run check` successfully through all
+seven stages and `bash artifacts/ch10-skills/check.sh` successfully with 39 assertions. I
+also checked the current Agent Skills specification, Claude Code Skills documentation, and
+the upstream `skills-ref` README. I re-verified the existing open requirements against the
+current artifacts without repeating them below.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:214-217`, `artifacts/ch10-skills/README.md:90-96`, and `artifacts/ch10-skills/skills_lab.py:6-10,238` --- the production-validation guidance recommends a tool whose maintainers say it is not for production.** The chapter calls `skills-ref validate` the production validator, the README tells production users to use it, and the lab directs a clean result to it for full-schema validation. The upstream [skills-ref README](https://github.com/agentskills/agentskills/tree/main/skills-ref) says the library is intended for demonstration purposes only and is not meant for production. Keep it as a reference or teaching comparison if useful, but direct production users to their target harness's maintained validator plus their own deployment gate. Do not present a `skills-ref` clean result as production validation.
+
+## Advisories
+
+- `artifacts/ch10-skills/changelog-entry/SKILL.md:2-4,22-25` remains model-invocable by default even though its workflow later writes `CHANGELOG.md`. Claude Code recommends `disable-model-invocation: true` for side-effect workflows. The existing permission language means this does not establish an unsafe automatic write, so it is not blocking, but a manual-only write skill or a separate read-only discovery skill would align the exemplar more closely with the chapter's security guidance.
