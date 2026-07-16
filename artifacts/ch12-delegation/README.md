@@ -57,6 +57,9 @@ python3 delegate.py --show-boundary
 # Assertions: the boundary holds, the return is compressed, leaking defeats it.
 python3 delegate.py --test
 
+# The artifact gate works from this directory or from the repository root.
+bash check.sh
+
 # Optional: use a real Claude subagent for the summary.
 export ANTHROPIC_API_KEY=sk-...      # pip install anthropic
 python3 delegate.py --show-boundary --live

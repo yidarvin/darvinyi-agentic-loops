@@ -224,29 +224,30 @@ latency that a cold subagent would blow.
 
 ## Sources
 
-- Anthropic, "How we built our multi-agent research system" (June 2025), for the
+- [Anthropic, "How we built our multi-agent research system" (June 2025)](https://www.anthropic.com/engineering/multi-agent-research-system), for the
   orchestrator-worker architecture, the 90.2 percent gain over single-agent Opus 4, the
   roughly four-times and fifteen-times token multiples, token usage explaining about 80
   percent of variance, the up-to-90-percent research-time cut, the S&P 500 board-members
   case, "teach the orchestrator how to delegate," the effort-scaling rules, the
   semiconductor-shortage failure, and the direct-to-filesystem artifact pattern. These are
   Anthropic's own internal evals on breadth-first research; treat them as such.
-- Anthropic, "Effective context engineering," for placing multi-agent architectures among
-  the long-horizon context strategies and for the framing that search is compression.
-- Claude Agent SDK and Claude Code documentation, for the Agent tool (renamed from Task in
+- [Anthropic, "Effective context engineering for AI agents"](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), for placing multi-agent architectures among the
+  long-horizon context strategies and for the framing that search is compression.
+- [Claude Code subagent documentation](https://code.claude.com/docs/en/sub-agents), for the Agent tool (renamed from Task in
   version 2.1.63, both names accepted), the subagent's fresh-but-not-empty starting context,
   the rule that the prompt string is the only channel from parent to subagent, the read-only
   Explore and Plan agents, the delegate-versus-inline guidance, and nested subagents to a
   depth of five (version 2.1.172).
-- Nelson Liu and colleagues, "Lost in the Middle" (2024), for the U-shaped positional
+- [Nelson Liu and colleagues, "Lost in the Middle"](https://arxiv.org/abs/2307.03172) (2024), for the U-shaped positional
   accuracy and the greater-than-thirty-percent drop when the relevant fact sits mid-context.
-- Chroma, "Context Rot" (Hong, Troynikov, and Huber, 2025), for the finding that all
+- [Chroma, "Context Rot" (Hong, Troynikov, and Huber, 2025)](https://www.trychroma.com/research/context-rot), for the finding that all
   eighteen frontier models tested degrade as input length grows.
-- Cognition, "Don't Build Multi-Agents" (Walden Yan, June 2025), for the share-context and
+- [Cognition, "Don't Build Multi-Agents" (Walden Yan, June 2025)](https://cognition.com/blog/dont-build-multi-agents), for the share-context and
   actions-carry-decisions principles and the incompatible-game-assets example; and
-  "Multi-Agents: What's Actually Working" (April 2026), for the writes-stay-single-threaded
+  ["Multi-Agents: What's Actually Working" (April 2026)](https://cognition.com/blog/multi-agents-working), for the writes-stay-single-threaded
   conclusion, the map-reduce-and-manage pattern, the clean-context-makes-it-smarter
   corollary, and the Devin Review figures of about two bugs per PR, roughly 58 percent
   severe.
-- OpenAI Agents SDK, for the agents-as-tools manager pattern and handoffs, the cross-stack
-  echo that delegation everywhere is a tool call pointed at an agent.
+- [OpenAI Agents SDK, "Agent orchestration"](https://openai.github.io/openai-agents-python/multi_agent/), for the agents-as-tools manager pattern and handoffs, the cross-stack
+  echo that delegation everywhere is a tool call pointed at an agent. [LangGraph's multi-agent concepts](https://langchain-ai.github.io/langgraph/concepts/multi_agent/)
+  documents the contrasting handoff-oriented implementation.
