@@ -102,8 +102,8 @@ file, and resends it. Static catalog or metadata inspection cannot catch that ru
 because it did not exist until the tool ran.
 
 Two more shapes round out the surface. A rug pull serves a benign definition at approval
-and swaps in a malicious one later, which worked because the spec historically had no
-requirement to re-approve changed capabilities. Tool shadowing appears when an agent host
+and swaps in a malicious one later. Semgrep documented that the historical specification had
+no requirement to broadcast tool changes or re-approve changed capabilities. Tool shadowing appears when an agent host
 aggregates descriptions from connected servers into one model context without an isolation
 or dataflow boundary. A malicious server's description can then inject instructions about a
 different, trusted server's tools, for example that every email must be blind-copied to the
@@ -136,17 +136,18 @@ token is intended for its own resources, reject one that is not, and MUST NOT pa
 client's token through to a downstream API. An `aud` claim is a common JWT-style way to make
 that intended recipient visible. Opaque or introspected tokens can establish it another way.
 A forwarded token collapses two trust boundaries into one, defeats the intended-recipient
-check, and turns a compromised server into a credential laundromat, with the specification
-enumerating bypassed controls, indistinguishable clients, misleading logs, and cross-service
-reuse. The normative machinery includes intended-recipient validation at the MCP server, RFC
+check, and turns a compromised server into a credential laundromat. The Security Best
+Practices document details the bypassed controls, indistinguishable clients, misleading logs,
+and cross-service reuse that follow. The normative machinery includes intended-recipient validation at the MCP server, RFC
 8707 Resource Indicators, protected-resource metadata, OAuth 2.1 with PKCE, and no
-client-token transit. When a server legitimately needs a downstream API, it must obtain a
-separately issued token for that API. RFC 8693 Token Exchange is one possible downstream
-issuance pattern when an authorization system supports it; the MCP authorization
-specification does not mandate it. These are requirements of the optional HTTP authorization
-profile. A stdio transport has a different trust boundary, and the specification says stdio
-implementations should not run that HTTP authorization flow. The failure this prevents is
-easy to build without noticing. Consider an illustrative `/mcp/orders` endpoint and a
+client-token transit. When an MCP server acts as an OAuth client to an upstream API, that API
+uses a separate token issued by its authorization server. Other integrations can use another
+independently authorized mechanism, but none may transit the client's token. RFC 8693 Token
+Exchange is one possible issuance pattern when an authorization system supports it; the MCP
+authorization specification does not mandate it. These are requirements of the optional HTTP
+authorization profile. A stdio transport has a different trust boundary, and the specification
+says stdio implementations should not run that HTTP authorization flow. The failure this
+prevents is easy to build without noticing. Consider an illustrative `/mcp/orders` endpoint and a
 `/mcp/billing` endpoint behind the same identity provider. If billing validates only the
 token's issuer, an orders token sails through because both endpoints trust the same signer,
 and the intended-recipient boundary exists on paper only.
@@ -165,8 +166,9 @@ the kingdom.
 The other half of the surface is ordinary implementation flaws exposed when an agentic host
 gives a non-deterministic caller tool access. Equixly's March 2025 assessment of selected
 popular MCP implementations reported command injection in 43%, path traversal or arbitrary
-file read in 22%, and SSRF in 30%, from the familiar pattern of user parameters concatenated
-into a shell call. These vendor results are directional, not a deployment census. Trend
+file read in 22%, and SSRF in 30%. Its command-injection examples include the familiar pattern
+of user parameters concatenated into a shell call. Path traversal and SSRF are separate classes
+that need their own path and egress controls. These vendor results are directional, not a deployment census. Trend
 Micro correlated public-directory metadata for 9,695 unique entries with its prior automated
 analysis and randomized manual verification, then reported confirmed issues in 2,259 of
 them. The tooling around MCP is an attack surface in its own right: Oligo reported
@@ -202,8 +204,9 @@ change which actions are possible instead of estimating whether text is maliciou
 Least-privilege scoping is the first. Docker's Gateway demonstration implements a "one
 repository per session" interceptor policy that blocks the public-to-private jump the
 toxic-agent flow depends on, because the injected read of a second repository is not
-permitted. Intended-recipient token validation with no passthrough, backed by a separately
-issued downstream credential, constrains the confused-deputy flow the same way.
+permitted. Intended-recipient token validation with no passthrough, and a separate credential
+when the server acts as an OAuth client to an upstream API, constrain the confused-deputy flow
+the same way.
 Human-in-the-loop approval remains useful for irreversible, destructive, and
 exfiltration-capable actions, though it is not sufficient if the approval interface trains
 people to click through every request.
@@ -211,10 +214,14 @@ people to click through every request.
 Two frameworks generalize the trifecta into a policy you can enforce. Meta's Agents Rule of
 Two, published in October 2025, says that until injection is reliably detectable, an agent
 session should satisfy no more than two of: process untrustworthy input, access sensitive
-data, and change state or communicate externally. If a task genuinely needs all three, run
-it with a fresh context and a human in the loop. It is a useful deterministic session policy,
-not a sufficient proof. Meta calls it a supplement, and Noma's analysis notes that
-property-counting can mislead when one tool supplies two legs at once, as in EchoLeak.
+data, and change state or communicate externally. If all three are needed without starting a
+new session, Meta says the agent must not operate autonomously and needs supervision, through
+human approval or another reliable validation mechanism. Meta also describes a safe one-way
+transition between configurations when it breaks the attack chain. This chapter takes the more
+conservative deployment policy of a fresh context plus human review for a task that genuinely
+needs all three. The framework remains useful, not a sufficient proof. Meta calls it a
+supplement, and Noma's analysis notes that property-counting can mislead when one tool supplies
+two legs at once, as in EchoLeak.
 Willison's Dual LLM pattern and Google DeepMind's CaMeL (arXiv 2503.18813) go further: a
 privileged model that can call tools never sees raw untrusted content, while a quarantined
 model handles the untrusted data and hands back only tagged variables. CaMeL tracks
@@ -223,9 +230,10 @@ interpreter, policy, and threat assumptions, it reports provable security on 77%
 tasks against 84% undefended, a real utility cost for a bounded guarantee. As Willison puts
 it, "this data cannot reach that capability" beats "this prompt is probably fine."
 Description integrity addresses the post-approval rug-pull gap: Trail of Bits'
-mcp-context-protector pins tool descriptions on first use and checks every message before it
-enters the context window, so a changed definition is caught. That trust-on-first-use pin
-does not establish that an initial definition was safe.
+mcp-context-protector blocks a newly seen server pending manual review of its instructions,
+descriptions, and parameter descriptions, then pins that reviewed configuration and checks
+every message before it enters the context window. A changed definition is caught, but the
+review process does not establish that an initial definition was safe.
 
 The widget below holds the untrusted provider input and the credulous agent constant under
 each of four attacks. It flips the **trusted agent host/gateway** between permissive and
@@ -330,12 +338,16 @@ longer do as a result.
   [Microsoft's CVE-2025-32711 advisory](https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2025-32711),
   for the Microsoft 365 Copilot case study.
 - CyberArk: [Full-Schema Poisoning and Advanced Tool Poisoning](https://www.cyberark.com/resources/threat-research-blog/poison-everywhere-no-output-from-your-mcp-server-is-safe).
+- Semgrep: [A Security Engineer's Guide to MCP](https://semgrep.dev/blog/2025/a-security-engineers-guide-to-mcp/),
+  for the historical absence of changed-tool notifications and re-approval requirements.
 - The [MCP Authorization specification, revision 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
+  [MCP Tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), and
   [MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
   [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html),
   [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html), and
   [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html), for audience validation,
-  resource binding, protected-resource metadata, and an optional token-exchange pattern.
+  resource binding, protected-resource metadata, tool-error handling, and an optional
+  token-exchange pattern.
 - Commercial assessments, treated as directional rather than peer-reviewed evidence:
   [Equixly's March 2025 MCP security assessment](https://equixly.com/blog/2025/03/29/mcp-server-new-security-nightmare/)
   and [Astrix's 5,205-repository README credential study](https://astrix.security/learn/blog/state-of-mcp-server-security-2025/).
@@ -353,7 +365,7 @@ longer do as a result.
   [Prompt Overflow](https://arxiv.org/abs/2605.23196),
   [CaMeL](https://arxiv.org/abs/2503.18813), and
   [mcp-context-protector](https://blog.trailofbits.com/2025/07/28/we-built-the-security-layer-mcp-always-needed/),
-  for adaptive attacks, capability-constrained execution, and trust-on-first-use description
+  for adaptive attacks, capability-constrained execution, and manual-review configuration
   pinning.
 - Meta: [Llama Prompt Guard 2's model card](https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M)
   and [the Agents Rule of Two](https://ai.meta.com/blog/practical-ai-agent-security/), for

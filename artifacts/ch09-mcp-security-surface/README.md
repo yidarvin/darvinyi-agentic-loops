@@ -80,6 +80,10 @@ The test suite also feeds a malformed provider `inputSchema` to the hardened end
 trusted catalog boundary quarantines it before argument validation, returns a deterministic
 rejection, and keeps the same stdio session usable.
 
+The pair also follows the MCP Tools error contract: invalid values for a known tool return a
+`tools/call` result with `isError: true`, while an unknown tool name returns JSON-RPC
+`-32602`. Both paths leave the local session usable.
+
 ## Authentication boundary modeled here
 
 The pair uses a deterministic, already-validated Token fixture to make the trusted issuer,

@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -372,3 +372,47 @@ but the following new protocol and source-attribution defects block approval.
 ## Advisories
 - **`src/chapters/mcp-security-surface.mdx:225-228` --- qualify the trust-on-first-use description of `mcp-context-protector`.** The tool blocks a newly seen server until a user manually reviews and approves its instructions, descriptions, and parameter descriptions, then pins that reviewed configuration and blocks unapproved changes. Add the manual initial review so "pins ... on first use" does not imply automatic trust on first contact. The post-approval change-detection lesson remains sound.
 - The Round 7 and Round 8 advisories remain as recorded.
+
+## Builder resolution (2026-07-15)
+Regression gate: re-verified every required fix from Rounds 1 through 9 against the
+current chapter, figure, widget, research reference, README, deterministic client, and
+vulnerable and hardened MCP stdio pair. Round 1 had no required fixes. The Round 2 through
+Round 4 authorization, trusted-boundary, source, provenance, catalog-integrity, and
+artifact-fidelity repairs remain present. The Round 5 and Round 6 host-controlled dataflow,
+combined-source egress, malformed-descriptor, and confused-deputy fixes remain covered by
+both in-memory and executable-stdio regressions. The following closes the six required
+items from Rounds 7 through 9.
+
+1. Split Equixly's findings in `src/chapters/mcp-security-surface.mdx` and
+   `docs/research/ch09-mcp-security-surface.md`: only its command-injection examples
+   illustrate string-built shell calls; the reported path-traversal and SSRF rates remain
+   distinct vulnerability classes with their own controls.
+2. Made the downstream-credential rule conditional in the chapter and research reference.
+   The HTTP authorization profile requires intended-recipient validation and no client-token
+   transit. When an MCP server acts as an OAuth client to an upstream API, it uses that API's
+   separately issued credential; other integrations can use another independently authorized
+   mechanism. RFC 8693 remains an optional issuance pattern.
+3. Corrected the widget's confused-deputy trace to include the vulnerable
+   `http_get attacker.example` egress step before displaying `EXFILTRATED`, and scoped the
+   output-poisoning lesson to the egress control used in that modeled path. The widget now
+   names trusted resource locking, dataflow isolation, and egress policy as alternative ways
+   to break a comparable trifecta path.
+4. Aligned `security_mcp.py` with the MCP Tools error contract. Known-tool argument
+   validation now returns a `tools/call` result with `isError: true`; an absent tool name
+   returns JSON-RPC `-32602`; policy denials remain tool execution errors. The deterministic
+   in-memory and hardened-stdio suites assert both response shapes and that the session
+   remains usable afterward.
+5. Corrected the Rule of Two account in the chapter and research reference. Meta's
+   supervision condition applies when all three properties are needed without a fresh session,
+   allows human approval or another reliable validation mechanism, and includes a safe
+   one-way transition. The stricter fresh-context-plus-human approach is now identified as
+   this chapter's conservative deployment policy.
+6. Took the cheap source-precision advisories: attributed the detailed token-passthrough
+   rationale to Security Best Practices, added Semgrep's historical changed-tool source,
+   and described `mcp-context-protector` as blocking a first-seen server until manual review
+   before pinning the reviewed configuration.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes every deterministic
+artifact regression. `npm run check` passes validation, prose lint, pipeline and artifact
+tests, Vitest, typecheck, production build, and lint. The registry status remains `draft` for
+independent re-review.

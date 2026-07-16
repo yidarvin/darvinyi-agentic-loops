@@ -830,9 +830,16 @@ class SecurityMcpServer:
             descriptor = self.gateway.descriptor_for_call(name)
             problem = self._validate_args(name, args, descriptor)
             if problem is not None:
-                return err(mid, INVALID_PARAMS, problem)
+                # The call envelope is valid and names a known tool. MCP reports a
+                # semantic argument failure as a tool execution result so a client can
+                # correct and retry it, rather than as a JSON-RPC protocol error.
+                return tool_err(mid, problem)
             return tool_ok(mid, self.gateway.call_tool(name, args, self.session, descriptor))
         except Blocked as blocked:
+            if blocked.control == "unknown-tool":
+                # An absent tool is a protocol error, not an execution failure. This
+                # matches the MCP Tools error-handling contract's InvalidParams example.
+                return err(mid, INVALID_PARAMS, f"Unknown tool: {name}")
             return tool_err(mid, str(blocked))
         except Exception:
             # A malformed request must not crash the stdio server or disclose an

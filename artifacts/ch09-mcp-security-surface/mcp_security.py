@@ -46,7 +46,7 @@ class AttackResult:
 
 
 def _tool_reply_text(reply: Dict[str, Any]) -> Tuple[str, bool]:
-    """Return the text and whether the MCP tool result is an execution error."""
+    """Return response text and whether the reply represents either MCP error path."""
 
     if "error" in reply:
         return reply["error"]["message"], True
@@ -378,6 +378,24 @@ def _stdio_malformed_descriptor() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[
     return wire, rejected, status, stderr
 
 
+def _stdio_tool_error_contract() -> Tuple[
+    Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], str
+]:
+    """Exercise MCP's distinct known-tool and unknown-tool error paths over stdio."""
+
+    client = StdioMcpClient("hardened_mcp_server.py")
+    try:
+        initialize = client.initialize()
+        catalog = client.list_tools()
+        invalid_argument = client.call_tool("http_get", {"url": 7})
+        unknown_tool = client.call_tool("not_a_tool", {})
+        status = _status_from_reply(client.call_tool("lab_status", {}))
+        wire = {"initialize": initialize, "catalog": catalog}
+    finally:
+        stderr = client.close()
+    return wire, invalid_argument, unknown_tool, status, stderr
+
+
 def run_tests() -> int:
     failures = 0
 
@@ -494,7 +512,10 @@ def run_tests() -> int:
     )
     check(
         "a dynamically valid schema mutation reaches the hardened catalog-integrity boundary",
-        schema_error and _control_from_text(schema_text) == "catalog-integrity",
+        schema_error
+        and "result" in schema_reply
+        and schema_reply["result"].get("isError") is True
+        and _control_from_text(schema_text) == "catalog-integrity",
     )
 
     dynamic_schema = SecurityMcpServer("vulnerable", catalog_mode="schema-mutation")
@@ -598,20 +619,30 @@ def run_tests() -> int:
         and direct_private.world.exfiltrated == [],
     )
 
-    # Input schema types are security boundaries too. A malformed request must return a
-    # JSON-RPC invalid-params error and leave the same stdio-style session usable.
+    # A valid tools/call envelope with a known tool but invalid arguments is a tool
+    # execution error. An absent tool name is a JSON-RPC protocol error. Both leave
+    # the same session usable.
     input_validation = SecurityMcpServer("hardened")
     input_validation_client = InMemoryMcpClient(input_validation)
     input_validation_client.initialize()
     invalid_url = input_validation_client.call_tool("http_get", {"url": 7})
-    status_after_invalid_url = input_validation_client.call_tool("lab_status", {})
+    unknown_tool = input_validation_client.call_tool("not_a_tool", {})
+    status_after_tool_errors = input_validation_client.call_tool("lab_status", {})
     invalid_url_text, invalid_url_error = _tool_reply_text(invalid_url)
     check(
-        "tools/call rejects a non-string URL without crashing the MCP session",
+        "known-tool input validation returns an MCP tools/call execution error",
         invalid_url_error
-        and invalid_url.get("error", {}).get("code") == INVALID_PARAMS
+        and "result" in invalid_url
+        and invalid_url["result"].get("isError") is True
+        and "error" not in invalid_url
         and "must be a string" in invalid_url_text
-        and not _tool_reply_text(status_after_invalid_url)[1],
+        and not _tool_reply_text(status_after_tool_errors)[1],
+    )
+    check(
+        "unknown tool names return the MCP JSON-RPC InvalidParams protocol error",
+        unknown_tool.get("error", {}).get("code") == INVALID_PARAMS
+        and unknown_tool.get("error", {}).get("message") == "Unknown tool: not_a_tool"
+        and "result" not in unknown_tool,
     )
 
     # Every modeled private value participates in the scoreboard, including the fake .env.
@@ -775,6 +806,33 @@ def run_tests() -> int:
         malformed_status["exfiltration_count"] == 0
         and malformed_status["secret_escaped"] is False
         and not malformed_stderr.strip(),
+    )
+
+    tool_error_wire, invalid_argument, unknown_tool, tool_error_status, tool_error_stderr = (
+        _stdio_tool_error_contract()
+    )
+    invalid_argument_text, invalid_argument_error = _tool_reply_text(invalid_argument)
+    check(
+        "hardened stdio endpoint returns known-tool input validation as a tools/call error",
+        tool_error_wire["initialize"]["result"]["protocolVersion"] == LATEST
+        and "http_get" in {tool["name"] for tool in tool_error_wire["catalog"]}
+        and invalid_argument_error
+        and "result" in invalid_argument
+        and invalid_argument["result"].get("isError") is True
+        and "error" not in invalid_argument
+        and "must be a string" in invalid_argument_text,
+    )
+    check(
+        "hardened stdio endpoint returns an unknown tool as a JSON-RPC protocol error",
+        unknown_tool.get("error", {}).get("code") == INVALID_PARAMS
+        and unknown_tool.get("error", {}).get("message") == "Unknown tool: not_a_tool"
+        and "result" not in unknown_tool,
+    )
+    check(
+        "hardened stdio endpoint stays usable after both MCP tool-error paths",
+        tool_error_status["exfiltration_count"] == 0
+        and tool_error_status["secret_escaped"] is False
+        and not tool_error_stderr.strip(),
     )
 
     print()
