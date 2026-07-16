@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -416,3 +416,145 @@ Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes every d
 artifact regression. `npm run check` passes validation, prose lint, pipeline and artifact
 tests, Vitest, typecheck, production build, and lint. The registry status remains `draft` for
 independent re-review.
+
+## Round 10 review (2026-07-15)
+
+### Method
+
+Read `prompts/critique-rubric.md`, the full prior critique history, chapter note and research
+brief, the complete chapter MDX, its figure and widget, and every Chapter 9 artifact file
+(`README.md`, `check.sh`, both MCP endpoint wrappers, `mcp_security.py`, and
+`security_mcp.py`). Rechecked the Round 9 resolutions for regression. Ran `npm run check` and
+`bash artifacts/ch09-mcp-security-surface/check.sh`, both of which passed. I also exercised
+attack 3 directly and sent a malformed `initialize` request to the hardened in-memory server.
+Source checks covered the [MCP 2025-11-25 schema](https://modelcontextprotocol.io/specification/2025-11-25/schema),
+the [MCP Tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools),
+[MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
+the [NVD record for CVE-2025-49596](https://nvd.nist.gov/vuln/detail/CVE-2025-49596), and
+[Oligo's Inspector analysis](https://www.oligo.security/blog/critical-rce-vulnerability-in-anthropic-mcp-inspector-cve-2025-49596).
+
+## Required fixes
+
+1. **`artifacts/ch09-mcp-security-surface/security_mcp.py:780-807` --- Reject malformed
+   `initialize` parameters before the lifecycle begins.** The 2025-11-25 schema requires
+   `protocolVersion`, `capabilities`, and a `clientInfo` object containing string `name` and
+   `version` fields. The current server accepts an `initialize` request containing only
+   `{"protocolVersion":"2025-11-25"}`, accepts `notifications/initialized`, and then serves
+   `tools/list`. That contradicts the artifact's advertised protocol-level MCP lifecycle.
+   Validate the required fields and types, return JSON-RPC `-32602` without setting
+   `initialize_received` on failure, and add in-memory and stdio regressions showing that a
+   rejected malformed request is followed by a valid successful handshake.
+
+2. **`src/chapters/_figures/McpSecuritySurfaceFigure.tsx:73-83` --- Restore the visible
+   third leg of the attack path.** The opaque lesson-band rectangle is painted after the
+   `[3] result` label and the B-to-context arrow. It begins at `x=300, y=306`, clipping the
+   label and masking part of that arrow. The figure therefore presents the central four-step
+   sequence as discontinuous. Reposition or resize the lesson band and reroute the label and
+   path as needed so all four numbered steps remain fully visible, then visually verify the
+   result at its rendered size.
+
+3. **`src/chapters/mcp-security-surface.mdx:174-176` --- State the Inspector RCE's local
+   vulnerable-service precondition.** The current wording implies that merely visiting a
+   malicious page reaches RCE. CVE-2025-49596 affects MCP Inspector versions below `0.14.1`;
+   the attack route requires its unauthenticated local Inspector proxy to be running, with a
+   malicious page supplying the browser-side request. Qualify the claim with that precondition
+   while retaining the CVE, CVSS, and cited Oligo/NVD sources.
+
+## Advisories
+
+- Carry forward Round 7's non-blocking suggestion to make a positive human-approval handoff
+  observable in the runnable artifact. `human_approved` still has no modeled transition or
+  positive regression, but this unchanged condition remains an advisory under the prior
+  review's explicit classification.
+- `src/chapters/mcp-security-surface.mdx:74-77` overstates EchoLeak's reported avoidance as a
+  classifier that scans for exactly one term. Cato's account is more precise: recipient-directed
+  framing and omission of AI, assistant, or Copilot terminology made XPIA detection difficult
+  in that chain.
+- `src/chapters/mcp-security-surface.mdx:104-111` would be more technically exact if it said
+  the host/model invokes a trusted tool with attacker-directed parameters, rather than saying
+  the trusted server itself "complies." The surrounding explanation already assigns the boundary
+  to the host.
+- The widget's live region reports the binary outcome but not the selected scenario or path.
+  Adding a concise scenario-specific summary, plus interaction coverage for each scenario and
+  the hardened toggle, would make the signature widget more accessible and less prone to UI
+  regression.
+
+## Round 11 review (2026-07-15)
+
+Fresh independent re-review: read `prompts/critique-rubric.md`, the complete critique
+history, the chapter note and research reference, the full chapter MDX, figure, widget, and
+every Chapter 9 artifact file. Re-ran `npm run check` and
+`bash artifacts/ch09-mcp-security-surface/check.sh`, both of which pass. Direct protocol
+probes confirmed that the hardened endpoint accepts an underspecified `initialize` request and
+that a session scoped to `acme/website` successfully reads `acme/private-inbox#99` through
+`read_issue`, marking it sensitive. I checked the MCP 2025-11-25 Lifecycle and Schema
+Reference, the NVD and Oligo records for CVE-2025-49596, and the cited Trail of Bits
+description. The current Round 10 required fixes remain open and are not re-litigated here.
+This round records one additional artifact and widget contradiction.
+
+## Required fixes
+
+1. **`artifacts/ch09-mcp-security-surface/security_mcp.py:621-633,672-684`,
+   `artifacts/ch09-mcp-security-surface/mcp_security.py:571-597`, and
+   `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx:42-52` --- Make the claimed
+   resource lock match every private-read path.** `TrustedHostGateway.call_tool()` sends every
+   `read_issue` request directly to the provider, without the `allowed_repo` check used only
+   by `read_repo_file`. A hardened `acme/website` session therefore returns the modeled private
+   `acme/private-inbox#99` source with `isError: false`; the current deterministic suite
+   intentionally proves that behavior and relies on the later egress gate to contain it. The
+   widget nevertheless says that the trusted host scopes the session to `acme/website` and
+   denies a read of *any other repo*. That is false, and it makes the resource-lock lesson
+   overstate what the hardened boundary contains. Either enforce resource authorization across
+   `read_issue` and every private source, or narrow the chapter, README, and widget to describe
+   the attack-1 `read_repo_file` restriction and the separate combined-source egress policy.
+   Add an in-memory and stdio regression for a cross-repository `read_issue` so the stated
+   boundary cannot drift again.
+
+## Advisories
+
+- No new advisories. The existing Round 10 advisories remain advisory.
+
+## Round 12 review (2026-07-15)
+
+Fresh independent review: read prompts/critique-rubric.md, the complete critique history,
+the chapter note and research reference, the current chapter, figure, widget, and all
+Chapter 9 artifact files. Ran npm run check successfully, including validation, all
+artifact assertions, Vitest, typecheck, production build, and lint. Checked the official
+MCP 2025-11-25 schema and the cited primary/first-party accounts for CaMeL and EchoLeak:
+Willison's Dual LLM write-up and later CaMeL analysis, the CaMeL paper, and Cato's
+EchoLeak report. The open Round 10 and Round 11 required fixes remain recorded and are
+not re-litigated here. This round adds two new source-accuracy defects.
+
+## Required fixes
+
+1. **src/chapters/mcp-security-surface.mdx:74-81 --- correct the EchoLeak egress
+   topology.** The chapter says Copilot placed sensitive data in a markdown image URL that
+   the client auto-fetched directly to the attacker. Cato's account says an evil.com image
+   was blocked by the page's img-src CSP; the successful chain placed the attacker URL and
+   secret inside a CSP-allowlisted Microsoft Teams asyncgw proxy URL, and that proxy fetched
+   the attacker endpoint. Name the allowlisted-proxy hop and retain the distinction between
+   an automatic client image fetch and the eventual server-side attacker request. This is
+   material to the chapter's CSP and outbound-capability lesson. Source: Cato, “Breaking
+   down EchoLeak,” steps 3–4.
+
+2. **src/chapters/mcp-security-surface.mdx:225-231 --- separate Willison's Dual LLM
+   pattern from CaMeL's architecture.** The joined sentence makes the privileged-model /
+   quarantined-model / tagged-variable design sound like the shared mechanism of Dual LLM
+   and CaMeL. Willison describes that as his two-LLM proposal, then explicitly says CaMeL
+   addresses a flaw in it. The CaMeL paper instead centers a protective layer that extracts
+   control and data flows from the trusted query and enforces capability policy at tool
+   calls. Split the accounts: describe Dual LLM's two-model isolation and variable handoff
+   as Willison's pattern, then describe CaMeL's restricted interpreter and capability
+   tracking as its distinct design. Its optional quarantined-LLM use in examples should not
+   erase that architectural difference. Sources: Willison, “The Dual LLM pattern” and
+   “CaMeL offers a promising new direction”; Debenedetti et al., “Defeating Prompt
+   Injections by Design” (arXiv:2503.18813).
+
+## Advisories
+
+- The Round 10 XPIA precision advisory remains: Cato documents recipient-directed wording
+  that omits AI, assistant, and Copilot terms, not a classifier that scans for one exact
+  word.
+- **src/chapters/mcp-security-surface.mdx:74 --- attribute the EchoLeak CVSS score.**
+  Microsoft assigns CVSS 3.1 9.3, while NVD assigns 7.5. “Microsoft CVSS 9.3” retains the
+  cited score without implying that it is the only assessment.
