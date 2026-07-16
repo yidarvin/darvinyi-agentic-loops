@@ -40,6 +40,13 @@ the next stage. Delayed Codex output keeps its lease and is recovered after the 
 process exits; a quiet grace period prevents duplicate retries. `./run.sh status` shows
 the queue, last worker heartbeat, and any active lease.
 
+On macOS, the persistent LaunchAgent runs from a dedicated clone at
+`~/.local/share/darvinyi-agentic-loops-worker`. This avoids the privacy boundary around
+`Documents`, which applies differently to background services than to Terminal or
+Codex. Run `scripts/install-queue-worker.sh` from the primary checkout to create or
+fast-forward that clone, install the plist, and start the service. The primary checkout
+stores only an ignored pointer so `./run.sh status` transparently reads live worker state.
+
 ## Release
 
 Build output is static Vite content in `dist/`. Vercel is the deployment target, but

@@ -60,6 +60,13 @@ case "$SANDBOX" in workspace-write|danger-full-access) ;; *) die "invalid TERRA_
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GUARD="$ROOT/scripts/pipeline_guard.py"
+WORKER_ROOT_FILE="$ROOT/.pipeline/worker-root"
+if [[ "$VERB" == status && -f "$WORKER_ROOT_FILE" ]]; then
+  WORKER_ROOT="$(sed -n '1p' "$WORKER_ROOT_FILE")"
+  if [[ -n "$WORKER_ROOT" && "$WORKER_ROOT" != "$ROOT" && -x "$WORKER_ROOT/run.sh" ]]; then
+    exec "$WORKER_ROOT/run.sh" status
+  fi
+fi
 cd "$ROOT"
 [[ -f content/registry.json && -f prompts/queue.md && -x "$GUARD" ]] || die "not a runnable refsite repository"
 

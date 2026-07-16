@@ -173,6 +173,7 @@ def test_launchd_contract_starts_neutral_and_uses_os_lock() -> None:
     assert "WorkingDirectory" not in plist
     args = plist["ProgramArguments"]
     assert args[0] == "/bin/bash"
+    assert args[1] == "/Users/darvin/.local/share/darvinyi-agentic-loops-worker/scripts/queue-worker.sh"
     assert "/opt/homebrew/bin" in plist["EnvironmentVariables"]["PATH"]
     worker = (ROOT / "scripts/queue-worker.sh").read_text(encoding="utf-8")
     assert "/usr/bin/shlock" in worker

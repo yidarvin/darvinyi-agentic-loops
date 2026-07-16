@@ -6,7 +6,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/queue-worker.sh</string>
+    <string>/Users/darvin/.local/share/darvinyi-agentic-loops-worker/scripts/queue-worker.sh</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
