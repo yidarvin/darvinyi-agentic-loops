@@ -3,6 +3,12 @@
 set -euo pipefail
 umask 077
 
+ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export PIPELINE_GIT_BIN="${PIPELINE_GIT_BIN:-/usr/bin/git}"
+export PATH="$ROOT/scripts/service-bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+GIT_HELPER="$ROOT/scripts/pipeline-git.sh"
+SYNC_COMMAND="${PIPELINE_SYNC_COMMAND:-$ROOT/scripts/pipeline-sync.sh}"
+
 MODEL="${TERRA_MODEL:-gpt-5.6-terra}"
 EFFORT="${TERRA_EFFORT:-ultra}"
 SANDBOX="${TERRA_SANDBOX:-workspace-write}"
@@ -15,7 +21,7 @@ RETRIES=1
 
 usage() {
   cat <<'EOF'
-Usage: ./run.sh [status|next|loop [N]|build|critique|resolve|recover] [options]
+Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [options]
 
   -m, --model MODEL    Terra model (default: gpt-5.6-terra)
   -e, --effort LEVEL   reasoning effort (default: ultra)
@@ -29,7 +35,8 @@ Usage: ./run.sh [status|next|loop [N]|build|critique|resolve|recover] [options]
   -h, --help           show this help
 
 Exit codes: 0 success, 1 stage failure, 2 usage/invariant failure,
-75 asynchronous work still settling. loop N counts stages, not chapters.
+69 infrastructure synchronization failure, 75 asynchronous work still settling.
+loop N counts stages, not chapters.
 Terra never commits or pushes. The driver validates exact role-specific scope,
 the queue outcome, and the full project gate before creating a commit.
 EOF
@@ -40,7 +47,7 @@ is_positive() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 
 while (($#)); do
   case "$1" in
-    status|next|build|critique|resolve|recover) VERB="$1"; shift ;;
+    status|doctor|next|build|critique|resolve|recover) VERB="$1"; shift ;;
     loop) VERB=loop; LIMIT=999999; shift; if (($#)) && is_positive "$1"; then LIMIT="$1"; shift; fi ;;
     -m|--model) (($# >= 2)) || die "$1 needs a value"; MODEL="$2"; shift 2 ;;
     -e|--effort) (($# >= 2)) || die "$1 needs a value"; EFFORT="$2"; shift 2 ;;
@@ -58,17 +65,9 @@ done
 case "$EFFORT" in low|medium|high|xhigh|max|ultra) ;; *) die "invalid effort '$EFFORT'" ;; esac
 case "$SANDBOX" in workspace-write|danger-full-access) ;; *) die "invalid TERRA_SANDBOX '$SANDBOX'" ;; esac
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GUARD="$ROOT/scripts/pipeline_guard.py"
-WORKER_ROOT_FILE="$ROOT/.pipeline/worker-root"
-if [[ "$VERB" == status && -f "$WORKER_ROOT_FILE" ]]; then
-  WORKER_ROOT="$(sed -n '1p' "$WORKER_ROOT_FILE")"
-  if [[ -n "$WORKER_ROOT" && "$WORKER_ROOT" != "$ROOT" && -x "$WORKER_ROOT/run.sh" ]]; then
-    exec "$WORKER_ROOT/run.sh" status
-  fi
-fi
 cd "$ROOT"
-[[ -f content/registry.json && -f prompts/queue.md && -x "$GUARD" ]] || die "not a runnable refsite repository"
+[[ -f content/registry.json && -f prompts/queue.md && -x "$GUARD" && -x "$GIT_HELPER" && -x "$SYNC_COMMAND" ]] || die "not a runnable refsite repository"
 
 terra_active() {
   pgrep -f "codex .* -C $ROOT exec" >/dev/null 2>&1
@@ -152,7 +151,7 @@ EOF
 }
 
 push_head() {
-  git push -u origin HEAD
+  "$SYNC_COMMAND" --repo "$ROOT"
 }
 
 record_approved_critique() {
@@ -184,9 +183,9 @@ commit_stage() {
   if (( CHECK )); then npm run check; fi
   "$GUARD" --repo "$ROOT" outcome "$stage" "$slug"
   "$GUARD" --repo "$ROOT" branch >/dev/null
-  git add -A
+  "$GIT_HELPER" --repo "$ROOT" add -A
   "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num" >/dev/null
-  git commit -m "$message"
+  "$GIT_HELPER" --repo "$ROOT" commit -m "$message"
   "$GUARD" --repo "$ROOT" lease-clear
   if (( PUSH )); then push_head; fi
 }
@@ -294,19 +293,38 @@ show_status() {
   fi
 }
 
+show_doctor() {
+  local service_state=stopped resolved_git git_version branch
+  if launchctl print "gui/$(id -u)/com.darvin.agentic-loops-queue" >/dev/null 2>&1; then
+    service_state=loaded
+  fi
+  resolved_git="$(command -v git)"
+  git_version="$(git --version)"
+  branch="$("$GIT_HELPER" --repo "$ROOT" symbolic-ref --quiet --short HEAD)"
+  printf 'REPO_ROOT=%s\n' "$ROOT"
+  printf 'PIPELINE_GIT_BIN=%s\n' "$PIPELINE_GIT_BIN"
+  printf 'PATH=%s\n' "$PATH"
+  printf 'RESOLVED_GIT=%s\n' "$resolved_git"
+  printf 'GIT_VERSION=%s\n' "$git_version"
+  printf 'BRANCH=%s\n' "$branch"
+  printf 'AUTOMATION_SERVICE=%s\n' "$service_state"
+}
+
 if (( RETRIES != 1 )); then
   echo "run.sh: --retries is compatibility-only; the durable worker manages safe retries" >&2
 fi
 
 if [[ "$VERB" == status ]]; then
   show_status
+elif [[ "$VERB" == doctor ]]; then
+  show_doctor
 elif [[ "$VERB" == recover ]]; then
-  command -v git >/dev/null || die "git is not on PATH"
+  [[ -x "$PIPELINE_GIT_BIN" ]] || die "pinned Git is not executable: $PIPELINE_GIT_BIN"
   if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
   recover_stage
 else
   command -v codex >/dev/null || die "codex CLI is not on PATH"
-  command -v git >/dev/null || die "git is not on PATH"
+  [[ -x "$PIPELINE_GIT_BIN" ]] || die "pinned Git is not executable: $PIPELINE_GIT_BIN"
   if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
   if [[ "$VERB" == loop ]]; then
     for ((i=1; i<=LIMIT; i++)); do

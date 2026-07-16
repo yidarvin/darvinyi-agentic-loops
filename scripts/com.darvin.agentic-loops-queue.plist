@@ -6,12 +6,13 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/darvin/.local/share/darvinyi-agentic-loops-worker/scripts/queue-worker.sh</string>
+    <string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/queue-worker.sh</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/darvin</string>
-    <key>PATH</key><string>/Users/darvin/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/service-bin:/Users/darvin/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>
+    <key>PIPELINE_GIT_BIN</key><string>/usr/bin/git</string>
   </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>

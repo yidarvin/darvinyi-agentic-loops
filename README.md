@@ -40,12 +40,12 @@ the next stage. Delayed Codex output keeps its lease and is recovered after the 
 process exits; a quiet grace period prevents duplicate retries. `./run.sh status` shows
 the queue, last worker heartbeat, and any active lease.
 
-On macOS, the persistent LaunchAgent runs from a dedicated clone at
-`~/.local/share/darvinyi-agentic-loops-worker`. This avoids the privacy boundary around
-`Documents`, which applies differently to background services than to Terminal or
-Codex. Run `scripts/install-queue-worker.sh` from the primary checkout to create or
-fast-forward that clone, install the plist, and start the service. The primary checkout
-stores only an ignored pointer so `./run.sh status` transparently reads live worker state.
+On macOS, the persistent LaunchAgent runs directly from this checkout. The service
+pins `/usr/bin/git`, prepends `scripts/service-bin` so child agents resolve the same
+Apple Git identity, and routes parent Git calls through a neutral-cwd helper. Run
+`scripts/install-queue-worker.sh` to stop any loaded copy, install the current plist,
+and restart the service. `./run.sh doctor` reports the effective Git and service plan
+without changing repository or queue state.
 
 ## Release
 

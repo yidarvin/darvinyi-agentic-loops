@@ -167,16 +167,131 @@ def test_guard_stage_outcomes() -> None:
         shutil.rmtree(work)
 
 
-def test_launchd_contract_starts_neutral_and_uses_os_lock() -> None:
+def test_service_git_plan_is_pinned_and_shimmed() -> None:
     with (ROOT / "scripts/com.darvin.agentic-loops-queue.plist").open("rb") as handle:
         plist = plistlib.load(handle)
     assert "WorkingDirectory" not in plist
     args = plist["ProgramArguments"]
     assert args[0] == "/bin/bash"
-    assert args[1] == "/Users/darvin/.local/share/darvinyi-agentic-loops-worker/scripts/queue-worker.sh"
-    assert "/opt/homebrew/bin" in plist["EnvironmentVariables"]["PATH"]
+    assert args[1] == str(ROOT / "scripts/queue-worker.sh")
+    environment = plist["EnvironmentVariables"]
+    assert environment["PIPELINE_GIT_BIN"] == "/usr/bin/git"
+    assert environment["PATH"].split(":")[0] == str(ROOT / "scripts/service-bin")
     worker = (ROOT / "scripts/queue-worker.sh").read_text(encoding="utf-8")
     assert "/usr/bin/shlock" in worker
+    assert "PIPELINE_GIT_BIN" in worker
+
+
+def test_git_shim_and_parent_helper_pin_apple_git() -> None:
+    shim = ROOT / "scripts/service-bin/git"
+    helper = ROOT / "scripts/pipeline-git.sh"
+    assert shim.exists(), "service Git shim must exist"
+    assert helper.exists(), "parent Git helper must exist"
+
+    shim_version = run(str(shim), "--version", cwd=ROOT)
+    assert shim_version.returncode == 0, shim_version.stderr
+    assert "Apple Git" in shim_version.stdout
+
+    resolved = run(
+        "/bin/bash",
+        "-c",
+        "command -v git",
+        cwd=ROOT,
+        env={**os.environ, "PATH": f"{ROOT / 'scripts/service-bin'}:/opt/homebrew/bin:/usr/bin:/bin"},
+    )
+    assert resolved.stdout.strip() == str(shim)
+
+    work = Path(tempfile.mkdtemp())
+    home = Path(tempfile.mkdtemp())
+    try:
+        trace = work / "trace.json"
+        fake_git = work / "fake-git"
+        fake_git.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "pathlib.Path(os.environ['GIT_TRACE']).write_text(json.dumps({\n"
+            "    'cwd': os.getcwd(), 'args': sys.argv[1:]\n"
+            "}), encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        result = run(
+            str(helper), "--repo", str(work), "status", "--short",
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "HOME": str(home),
+                "PIPELINE_GIT_BIN": str(fake_git),
+                "GIT_TRACE": str(trace),
+            },
+        )
+        assert result.returncode == 0, result.stderr
+        observed = json.loads(trace.read_text(encoding="utf-8"))
+        assert Path(observed["cwd"]).resolve() == home.resolve()
+        assert observed["args"][:2] == ["-C", str(work)]
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_synchronized_branch_does_not_push() -> None:
+    sync = ROOT / "scripts/pipeline-sync.sh"
+    assert sync.exists(), "synchronization helper must exist"
+    work = Path(tempfile.mkdtemp())
+    home = Path(tempfile.mkdtemp())
+    try:
+        trace = work / "trace.jsonl"
+        pushed = work / "push-called"
+        fake_git = work / "fake-git"
+        fake_git.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "args = sys.argv[1:]\n"
+            "with pathlib.Path(os.environ['GIT_TRACE']).open('a', encoding='utf-8') as h:\n"
+            "    h.write(json.dumps(args) + '\\n')\n"
+            "if 'push' in args:\n"
+            "    pathlib.Path(os.environ['PUSH_CALLED']).write_text('yes', encoding='utf-8')\n"
+            "    raise SystemExit(99)\n"
+            "if 'rev-parse' in args and '@{u}' in args:\n"
+            "    print('origin/codex/test')\n"
+            "elif 'rev-list' in args:\n"
+            "    print(os.environ.get('SYNC_COUNTS', '0 0'))\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        result = run(
+            str(sync), "--repo", str(work),
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "HOME": str(home),
+                "PIPELINE_GIT_BIN": str(fake_git),
+                "GIT_TRACE": str(trace),
+                "PUSH_CALLED": str(pushed),
+                "SYNC_COUNTS": "0 0",
+            },
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not pushed.exists()
+        assert "already synchronized" in result.stdout
+
+        failed_push = run(
+            str(sync), "--repo", str(work),
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "HOME": str(home),
+                "PIPELINE_GIT_BIN": str(fake_git),
+                "GIT_TRACE": str(trace),
+                "PUSH_CALLED": str(pushed),
+                "SYNC_COUNTS": "0 1",
+            },
+        )
+        assert failed_push.returncode == 69, failed_push.stdout + failed_push.stderr
+        assert pushed.exists()
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
 
 
 def driver_fixture(
@@ -186,6 +301,10 @@ def driver_fixture(
     (work / "scripts").mkdir(exist_ok=True)
     for name in ("pipeline_guard.py", "decide.py", "validate.py", "mark.py"):
         shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
+    for name in ("pipeline-git.sh", "pipeline-sync.sh"):
+        shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
+    (work / "scripts/service-bin").mkdir()
+    shutil.copy2(ROOT / "scripts/service-bin/git", work / "scripts/service-bin/git")
     shutil.copy2(ROOT / "scripts/queue-worker.sh", work / "scripts/queue-worker.sh")
     shutil.copy2(ROOT / "run.sh", work / "run.sh")
     (work / "prompts/notes").mkdir(parents=True, exist_ok=True)
@@ -200,7 +319,14 @@ def driver_fixture(
     pgrep = fake_bin / "pgrep"
     pgrep.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
     pgrep.chmod(0o755)
-    for path in (work / "run.sh", work / "scripts/pipeline_guard.py", work / "scripts/queue-worker.sh"):
+    for path in (
+        work / "run.sh",
+        work / "scripts/pipeline_guard.py",
+        work / "scripts/pipeline-git.sh",
+        work / "scripts/pipeline-sync.sh",
+        work / "scripts/queue-worker.sh",
+        work / "scripts/service-bin/git",
+    ):
         path.chmod(0o755)
     assert run("git", "add", "-A", cwd=work).returncode == 0
     assert run("git", "commit", "-m", "driver fixture", cwd=work).returncode == 0
@@ -287,10 +413,14 @@ def test_worker_waits_on_existing_lease_and_refuses_unleased_changes() -> None:
         pgrep.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
         pgrep.chmod(0o755)
         env["HOME"] = str(home)
+        env["PIPELINE_LOCK_FILE"] = str(home / "test-worker.lock")
         assert guard(work, "lease-create", "build", "one", "01").returncode == 0
         assert guard(work, "lease-update", "awaiting-output").returncode == 0
         waiting = run("./scripts/queue-worker.sh", cwd=work, env=env)
-        assert waiting.returncode == 0, waiting.stdout + waiting.stderr
+        assert waiting.returncode == 0, (
+            waiting.stdout + waiting.stderr +
+            (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
         status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
         assert "awaiting delayed output for build one" in status
         assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
@@ -307,15 +437,88 @@ def test_worker_waits_on_existing_lease_and_refuses_unleased_changes() -> None:
         pgrep.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
         pgrep.chmod(0o755)
         env["HOME"] = str(home)
+        env["PIPELINE_LOCK_FILE"] = str(home / "test-worker.lock")
         (work / "unleased.txt").write_text("do not commit\n", encoding="utf-8")
         refused = run("./scripts/queue-worker.sh", cwd=work, env=env)
-        assert refused.returncode != 0
+        assert refused.returncode != 0, (
+            refused.stdout + refused.stderr +
+            (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
         status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
         assert "dirty worktree without a stage lease" in status
         assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
+
+
+def test_three_sync_failures_never_invoke_model_recovery() -> None:
+    fake_codex = """#!/bin/bash
+printf 'model\\n' >>"$MODEL_CALLS"
+exit 1
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        sync_attempts = home / "sync-attempts"
+        model_calls = home / "model-calls"
+        fake_sync = home / "fake-sync"
+        fake_sync.write_text(
+            "#!/bin/bash\n"
+            "printf 'sync\\n' >>\"$SYNC_ATTEMPTS\"\n"
+            "exit 69\n",
+            encoding="utf-8",
+        )
+        fake_sync.chmod(0o755)
+        env.update({
+            "HOME": str(home),
+            "PIPELINE_LOCK_FILE": str(home / "test-sync.lock"),
+            "PIPELINE_SYNC_COMMAND": str(fake_sync),
+            "PIPELINE_SYNC_BACKOFF_BASE_SECONDS": "0",
+            "SYNC_ATTEMPTS": str(sync_attempts),
+            "MODEL_CALLS": str(model_calls),
+        })
+        for _ in range(3):
+            result = run("./scripts/queue-worker.sh", cwd=work, env=env)
+            assert result.returncode == 69, (
+                result.stdout + result.stderr +
+                (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+            )
+        assert sync_attempts.read_text(encoding="utf-8").splitlines() == ["sync"] * 3
+        assert not model_calls.exists()
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_normal_model_failure_keeps_existing_delayed_recovery_path() -> None:
+    work, env = driver_fixture("#!/bin/bash\nexit 1\n")
+    try:
+        result = run("./run.sh", "next", "--no-check", cwd=work, env=env)
+        assert result.returncode == 75, result.stdout + result.stderr
+        lease = guard(work, "lease-show")
+        assert lease.returncode == 0
+        assert "build one 01 awaiting-output" in lease.stdout
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
+    finally:
+        shutil.rmtree(work)
+
+
+def test_status_and_doctor_are_non_mutating() -> None:
+    work, env = driver_fixture("#!/bin/bash\nexit 1\n")
+    try:
+        before = run("git", "status", "--porcelain=v1", cwd=work).stdout
+        head = run("git", "rev-parse", "HEAD", cwd=work).stdout
+        status = run("./run.sh", "status", cwd=work, env=env)
+        doctor = run("./run.sh", "doctor", cwd=work, env=env)
+        assert status.returncode == 0, status.stdout + status.stderr
+        assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+        assert "PIPELINE_GIT_BIN=/usr/bin/git" in doctor.stdout
+        assert run("git", "status", "--porcelain=v1", cwd=work).stdout == before
+        assert run("git", "rev-parse", "HEAD", cwd=work).stdout == head
+    finally:
+        shutil.rmtree(work)
 
 
 def main() -> int:
@@ -336,11 +539,16 @@ def main() -> int:
         test_guard_branch_and_lease()
         test_guard_scope_includes_every_git_state_and_enforces_roles()
         test_guard_stage_outcomes()
-        test_launchd_contract_starts_neutral_and_uses_os_lock()
+        test_service_git_plan_is_pinned_and_shimmed()
+        test_git_shim_and_parent_helper_pin_apple_git()
+        test_synchronized_branch_does_not_push()
         test_driver_retains_lease_for_delayed_output()
         test_driver_commits_valid_stage_once()
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
+        test_three_sync_failures_never_invoke_model_recovery()
+        test_normal_model_failure_keeps_existing_delayed_recovery_path()
+        test_status_and_doctor_are_non_mutating()
         print("pipeline state-machine tests: OK")
         return 0
     finally:

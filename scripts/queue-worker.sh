@@ -3,13 +3,17 @@
 set -euo pipefail
 umask 077
 
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export PIPELINE_GIT_BIN="${PIPELINE_GIT_BIN:-/usr/bin/git}"
+export PATH="$ROOT/scripts/service-bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 GUARD="$ROOT/scripts/pipeline_guard.py"
+SYNC_COMMAND="${PIPELINE_SYNC_COMMAND:-$ROOT/scripts/pipeline-sync.sh}"
 LOG="$ROOT/.pipeline/queue-worker.log"
 STATUS="$ROOT/.pipeline/queue-worker.status"
-LOCK=/private/tmp/com.darvin.agentic-loops-queue.lock
+LOCK="${PIPELINE_LOCK_FILE:-/private/tmp/com.darvin.agentic-loops-queue.lock}"
+SYNC_RETRY_FILE="$ROOT/.pipeline/sync-retry"
+SYNC_BACKOFF_BASE_SECONDS="${PIPELINE_SYNC_BACKOFF_BASE_SECONDS:-60}"
+SYNC_BACKOFF_CAP_SECONDS="${PIPELINE_SYNC_BACKOFF_CAP_SECONDS:-900}"
 ASYNC_GRACE_SECONDS="${QUEUE_ASYNC_GRACE_SECONDS:-180}"
 STAGES_PER_TICK="${QUEUE_STAGES_PER_TICK:-6}"
 LEASE_CONTINUE=0
@@ -51,19 +55,63 @@ has_changes() {
   return "$rc"
 }
 
-sync_push() {
-  local upstream ahead
-  "$GUARD" --repo "$ROOT" branch >/dev/null
-  if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-    ahead="$(git rev-list --count "$upstream"..HEAD)"
-    if (( ahead > 0 )); then
-      report_status "pushing $ahead committed stage(s)"
-      git push
-    fi
-  else
-    report_status 'establishing branch upstream'
-    git push -u origin HEAD
+clear_sync_backoff() {
+  rm -f "$SYNC_RETRY_FILE"
+}
+
+schedule_sync_retry() {
+  local count=0 ignored=0 exponent delay now not_before temp i
+  if [[ -f "$SYNC_RETRY_FILE" ]]; then
+    read -r count ignored <"$SYNC_RETRY_FILE" || count=0
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
   fi
+  ((count += 1))
+  exponent=$((count - 1))
+  (( exponent > 10 )) && exponent=10
+  delay=$SYNC_BACKOFF_BASE_SECONDS
+  for ((i=0; i<exponent; i++)); do delay=$((delay * 2)); done
+  (( delay > SYNC_BACKOFF_CAP_SECONDS )) && delay=$SYNC_BACKOFF_CAP_SECONDS
+  now="$(date +%s)"
+  not_before=$((now + delay))
+  temp="$SYNC_RETRY_FILE.$$.tmp"
+  printf '%s %s\n' "$count" "$not_before" >"$temp"
+  mv "$temp" "$SYNC_RETRY_FILE"
+  report_status "infrastructure sync failure $count; retrying in ${delay}s without model recovery"
+}
+
+sync_backoff_active() {
+  local count not_before now remaining
+  [[ -f "$SYNC_RETRY_FILE" ]] || return 1
+  if ! read -r count not_before <"$SYNC_RETRY_FILE" || [[ ! "$count" =~ ^[0-9]+$ || ! "$not_before" =~ ^[0-9]+$ ]]; then
+    clear_sync_backoff
+    return 1
+  fi
+  now="$(date +%s)"
+  if (( now < not_before )); then
+    remaining=$((not_before - now))
+    report_status "infrastructure sync backoff active (${remaining}s); no model will run"
+    return 0
+  fi
+  return 1
+}
+
+attempt_sync() {
+  local sync_rc
+  if "$SYNC_COMMAND" --repo "$ROOT"; then
+    sync_rc=0
+  else
+    sync_rc=$?
+  fi
+  if (( sync_rc == 0 )); then
+    clear_sync_backoff
+    return 0
+  fi
+  if (( sync_rc == 69 )); then
+    schedule_sync_retry
+    return 69
+  fi
+  report_status "unexpected synchronization exit $sync_rc; stopping safely"
+  return "$sync_rc"
 }
 
 handle_existing_lease() {
@@ -89,6 +137,11 @@ handle_existing_lease() {
       LEASE_CONTINUE=1
       return 0
     fi
+    if (( recover_rc == 69 )); then
+      schedule_sync_retry
+      report_status 'asynchronous stage is committed locally; synchronization deferred without model recovery'
+      return 69
+    fi
     report_status "asynchronous recovery failed with exit $recover_rc; preserving lease and changes"
     return "$recover_rc"
   else
@@ -112,7 +165,7 @@ handle_existing_lease() {
 }
 
 run_worker() {
-  local next run_rc active_rc
+  local next run_rc active_rc sync_rc
   date '+%Y-%m-%dT%H:%M:%S%z queue worker tick'
   "$GUARD" --repo "$ROOT" branch >/dev/null
 
@@ -122,6 +175,10 @@ run_worker() {
   else
     active_rc=$?
     [[ $active_rc -eq 1 ]] || return "$active_rc"
+  fi
+
+  if sync_backoff_active; then
+    return 0
   fi
 
   if [[ -f .pipeline/active-stage.json ]]; then
@@ -137,7 +194,12 @@ run_worker() {
     [[ $changed_rc -eq 1 ]] || return "$changed_rc"
   fi
 
-  sync_push
+  if attempt_sync; then
+    sync_rc=0
+  else
+    sync_rc=$?
+  fi
+  (( sync_rc == 0 )) || return "$sync_rc"
 
   for ((iteration=1; iteration<=STAGES_PER_TICK; iteration++)); do
     next="$(python3 scripts/decide.py next)"
@@ -161,6 +223,11 @@ run_worker() {
     if (( run_rc == 75 )); then
       report_status 'stage is still settling; launchd will resume automatically'
       return 0
+    fi
+    if (( run_rc == 69 )); then
+      schedule_sync_retry
+      report_status 'stage is committed locally; synchronization deferred without model recovery'
+      return 69
     fi
     report_status "stage failed with exit $run_rc; launchd will retry after the lease policy allows"
     return "$run_rc"

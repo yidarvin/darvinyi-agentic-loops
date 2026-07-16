@@ -20,10 +20,14 @@ class GuardError(RuntimeError):
 
 
 def git(repo: Path, *args: str, text: bool = True) -> subprocess.CompletedProcess:
-    """Run Git from a neutral cwd so launchd never inherits Documents as cwd."""
+    """Run Git through the pinned parent helper from a neutral readable cwd."""
+    helper = Path(os.environ.get("PIPELINE_GIT_HELPER", Path(__file__).with_name("pipeline-git.sh")))
+    neutral_cwd = Path(os.environ.get("HOME", "/"))
+    if not neutral_cwd.is_dir():
+        neutral_cwd = Path("/")
     proc = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        cwd="/",
+        [str(helper), "--repo", str(repo), *args],
+        cwd=neutral_cwd,
         text=text,
         capture_output=True,
         check=False,
