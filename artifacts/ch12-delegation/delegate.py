@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""delegate.py --- an orchestrator that dispatches an isolated subagent, with the
-context boundary made observable.
+"""delegate.py --- a context-boundary lab with an isolated worker model.
 
 The task: summarize what a small codebase does. Doing it means reading every file,
 which is a lot of tokens of mostly-uninteresting content. That is exactly the shape
-delegation is for: send the messy reading into a subagent's own context, and let
-only the distilled summary cross back.
+delegation is for: send the messy reading into a worker's own context, then return a
+distilled result to the lead.
 
-The boundary is literal in this code, not a metaphor. The lead and the subagent are
-separate `Context` objects. `run_subagent` takes a *string* prompt and returns a
-`Result`; it is never handed the lead's `Context`, so the only channel from parent to
-child is the prompt string, and the only channel back is the returned summary. Read
-that as the enforcement of Anthropic's rule for the Claude Agent SDK's Agent tool
-(renamed from Task; both names still work): a subagent does not receive the parent's
-conversation, and only its final message returns.
+This executable deliberately models a narrow case: one isolated, one-shot, non-fork
+worker with no messages or resume. The worker receives a fixed runtime baseline plus a
+task-specific briefing, never the lead Context. The selected return is either a
+summary or a transcript. That makes the boundary observable, but it is not a full
+Claude Code or Claude Agent SDK transport model. Real non-fork Claude Code subagents
+also receive their own system and environment, project rules and memory, a git-status
+snapshot, preloaded skills, and sometimes a sibling roster. Runtime output scanning,
+SendMessage, and resume add behavior outside this lab.
 
-Run `python3 delegate.py --help` for the modes. Everything runs offline with the
-standard library; `--live` uses a real Claude subagent if ANTHROPIC_API_KEY is set.
+Run python3 delegate.py --help for the modes. Everything runs offline with the
+standard library; --live makes one optional Anthropic Messages API call as a live
+model stand-in.
 """
 from __future__ import annotations
 
@@ -27,10 +28,17 @@ from dataclasses import dataclass, field
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "repo")
 
-# The prompt string is the ONLY channel from lead to subagent. It carries an
-# objective, an output format, tool guidance, and boundaries, exactly as Anthropic's
-# "teach the orchestrator how to delegate" lesson prescribes. Nothing about the lead's
-# own context leaks through except what is written here.
+# The lab represents this runtime baseline as a fixed worker turn. It is deliberately
+# not copied from the lead Context, and it does not try to emulate every Claude Code
+# configuration.
+MODELED_RUNTIME_BASELINE = (
+    "Runtime baseline: own system/environment; project rules and memory; "
+    "git-status snapshot; preloaded skills."
+)
+
+# In this lab model, the prompt is the direct, dynamic lead input. It carries an
+# objective, output format, tool guidance, and boundaries. Real Claude Code workers
+# also begin with the fixed runtime baseline represented above.
 DELEGATION_PROMPT = """\
 Objective: read every file in the repository at ./fixtures/repo and report what the
 project does and how it is structured.
@@ -119,8 +127,13 @@ def offline_summarize(files: dict[str, str]) -> str:
 
 
 def live_summarize(prompt: str, files: dict[str, str]) -> str | None:
-    """Use a real Claude subagent to produce the summary. Returns None (so the caller
-    falls back to offline) if the SDK or the key is missing, or the call fails."""
+    """Make one live Anthropic Messages API call as a model stand-in.
+
+    The full fixture corpus is preloaded into one request. This path does not invoke
+    Claude Code or the Agent tool, and it runs no tool-using agent loop. Return None
+    so the caller falls back to offline when the SDK or key is missing, or the call
+    fails.
+    """
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     try:
@@ -145,17 +158,21 @@ def live_summarize(prompt: str, files: dict[str, str]) -> str | None:
         return None
 
 
-# --- the subagent: a fresh context that only ever sees the prompt string ------------
+# --- the lab worker: fixed baseline + task-specific briefing -------------------------
 
 def run_subagent(prompt: str, use_live: bool) -> Result:
-    """Spin up an isolated agent loop. It is handed ONLY the prompt string; it builds
-    its own context by reading files and reasoning, then returns a distilled result.
-    Note the signature: no lead Context comes in, so isolation is enforced by the
-    call, not by convention."""
+    """Run the lab's isolated worker model.
+
+    The worker receives a task-specific briefing but no lead Context. Its separate
+    Context begins with the fixed modeled runtime baseline, then it reads files and
+    returns a selected result. The signature enforces this lab boundary; it does not
+    emulate every Claude Code communication path.
+    """
     ctx = Context("subagent")
-    # The subagent's context starts fresh but not empty: its own system prompt plus
-    # the delegation prompt. It never contains the lead's conversation.
+    # The worker starts fresh but not empty: system, modeled runtime baseline, and
+    # task-specific briefing. It never contains the lead's conversation.
     ctx.add("system", "You are a research subagent with a clean context window.")
+    ctx.add("runtime", MODELED_RUNTIME_BASELINE)
     ctx.add("user", prompt)
 
     files = load_repo()
@@ -230,7 +247,7 @@ def orchestrate(mode: str, use_live: bool) -> Report:
             lead_context_text=lead.text(),
         )
 
-    # delegate / leak: the lead emits a tool call and receives a result.
+    # delegate / leak: the lab lead invokes a worker and selects its return.
     lead.add("assistant", "This is verbose reading work. Delegating to a subagent.")
     result = run_subagent(DELEGATION_PROMPT, use_live)
 
@@ -273,11 +290,13 @@ def print_report(rep: Report) -> None:
 
 def print_boundary(use_live: bool) -> None:
     rep = orchestrate("delegate", use_live)
-    print("\n// what crossed DOWN (lead -> subagent): the prompt string, and nothing else")
+    print("\n// lab model: direct lead input DOWN is the task-specific briefing")
+    print("// the worker starts with its fixed modeled runtime baseline separately")
     print("-" * 72)
     print(rep.crossed_down)
     print("-" * 72)
-    print("\n// what crossed UP (subagent -> lead): the distilled summary, and nothing else")
+    print("\n// lab model: selected return UP is the distilled summary")
+    print("// real Claude Code may scan or annotate a final report; this lab does not")
     print("-" * 72)
     print(rep.crossed_up)
     print("-" * 72)
@@ -287,7 +306,7 @@ def print_boundary(use_live: bool) -> None:
 
 def print_compare(use_live: bool) -> None:
     modes = [("inline", "no delegation: the lead reads everything"),
-             ("delegate", "delegation: only the summary crosses back"),
+             ("delegate", "lab delegation: selected summary enters the lead"),
              ("leak", "delegation, but the subagent returns its transcript")]
     print("\n// same task, three ways. watch the lead's final context size.\n")
     print(f"  {'mode':10} {'lead after':>11}   {'':4} explanation")
@@ -319,8 +338,8 @@ def run_tests(use_live: bool) -> int:
     isolated = not any(m in deleg.lead_context_text for m in file_markers)
     checks.append(("delegation keeps every file body out of the lead context", isolated))
 
-    # 2. The only thing that crossed down is the prompt string.
-    checks.append(("the down-channel is exactly the delegation prompt",
+    # 2. The lab's direct down-channel is exactly its task-specific briefing.
+    checks.append(("the lab's direct down-channel is exactly the task-specific briefing",
                    deleg.crossed_down == DELEGATION_PROMPT))
 
     # 3. Compression: the lead grew far less than the subagent's peak.
@@ -349,15 +368,15 @@ def run_tests(use_live: bool) -> int:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="An orchestrator that delegates to an isolated subagent.")
+    parser = argparse.ArgumentParser(description="A context-boundary lab with an isolated worker model.")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--run", action="store_true", help="delegate to a subagent (default)")
+    group.add_argument("--run", action="store_true", help="run the isolated worker model (default)")
     group.add_argument("--inline", action="store_true", help="no delegation: the lead reads everything")
     group.add_argument("--leak", action="store_true", help="delegate but return the full transcript")
     group.add_argument("--compare", action="store_true", help="run all three and compare lead sizes")
-    group.add_argument("--show-boundary", action="store_true", help="print exactly what crosses each way")
+    group.add_argument("--show-boundary", action="store_true", help="print the lab model's briefing and selected return")
     group.add_argument("--test", action="store_true", help="assert the boundary holds")
-    parser.add_argument("--live", action="store_true", help="use a real Claude subagent if a key is set")
+    parser.add_argument("--live", action="store_true", help="use a one-shot Claude Messages API stand-in if a key is set")
     args = parser.parse_args(argv)
 
     if args.test:

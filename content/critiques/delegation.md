@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -14,3 +14,16 @@ Fresh-eyes review: read `prompts/critique-rubric.md`, the absent prior critique 
 ## Advisories
 
 - `delegate.py --test` checks three representative file-body markers rather than every fixture body. It is a meaningful deterministic test for the fixed fixture, but an exhaustive assertion would make its proof stronger.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete critique history, including `git log -p -- content/critiques/delegation.md`. Round 1 is the only review round, so its four REQUIRED fixes are the complete prior required set. Re-verified each against the current MDX, figure, widget, artifact, README, and research backbone.
+
+1. Scoped the chapter's delegation model to a one-shot, non-fork, no-message case in `src/chapters/delegation.mdx`. It now distinguishes the inherited Claude Code runtime baseline from the task-specific briefing, and qualifies the final report as a tool result subject to runtime scanning. Updated `DelegationFigure.tsx`, its accessible label, and `DelegationWidget.tsx` to teach the same bounded lab model.
+2. Updated `artifacts/ch12-delegation/delegate.py` and its README. The artifact now labels its fixed baseline and direct briefing as a deliberately narrow simulation. `--live` is accurately documented and labeled as one preloaded-corpus Anthropic Messages API model call, not a Claude Code or Agent SDK subagent loop.
+3. Corrected the source-backed long-context claims in `src/chapters/delegation.mdx` and the material factual backbone errors in `docs/research/ch12-delegation.md`: Liu et al.'s cited GPT-3.5-Turbo result is greater than 20 percent, and Chroma's result is broad but qualified by experiment-specific model coverage and the GPT-4 Turbo local peak.
+4. Replaced the stale LangGraph source with the current LangChain Handoffs documentation and aligned the surrounding claim with its tool-based state and routing model.
+
+Advisory not taken: the representative fixture-body assertions remain unchanged because the review classified exhaustive fixture-body coverage as non-blocking scope expansion.
+
+Verification: `npm run check` passed after the fixes, including validate, prose lint, artifact gates, Vitest, typecheck, production build, and advisory lint.

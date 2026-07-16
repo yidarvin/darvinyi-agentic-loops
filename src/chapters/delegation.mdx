@@ -22,20 +22,22 @@ result up.
 [Context-Window Economics](/context-window-economics) set the budget. This is the failure
 mode that spends it. As a window fills, its signal-to-noise ratio collapses, and the model's
 answers get worse even though the weights never changed. Three mechanisms compound. Liu and
-colleagues named the first in "Lost in the Middle": accuracy is U-shaped by position, and
-when the relevant fact sits in the middle of a long context, accuracy drops by more than
-thirty percent, a pattern they replicated across GPT-3.5, GPT-4, and Claude. The second is
+colleagues named the first in "Lost in the Middle": accuracy is U-shaped by position. In
+their GPT-3.5-Turbo multi-document QA evaluation, performance can drop by more than twenty
+percent in the worst case when the relevant document is poorly placed. The second is
 attention dilution, a fixed attention budget spread thinner across every additional token
 pair. The third is distractor interference, where similar-but-irrelevant content pulls the
 answer off course.
 
-Chroma's 2025 "Context Rot" study widened the claim. Across eighteen frontier models,
-including Claude 4 Opus and Sonnet, Gemini 2.5, and Qwen3, every model degraded as input
-length grew, at every increment, well below the nominal context limit, and without a clean
-needle-position pattern. The practical reading is blunt. A 200,000-token window is not
-200,000 tokens of usable working memory. A task that reads fifty files to answer one
-question is self-defeating in a single window, because by the time the answer is due, the
-files that mattered are buried in the ones that did not.
+Chroma's 2025 "Context Rot" report broadens the case. Across its experiments, performance
+generally degrades as input length grows. It covers eighteen frontier models overall,
+including Claude 4 Opus and Sonnet, Gemini 2.5, and Qwen3, but not every model appears in
+every experiment and individual curves are not monotonic. GPT-4 Turbo, for example, has a
+local performance peak around 500 words in the repeated-words experiment. The report found
+no notable needle-position variation for its specific NIAH task. The practical reading is
+blunt. A 200,000-token window is not 200,000 tokens of usable working memory. A task that
+reads fifty files to answer one question is self-defeating in a single window, because by
+the time the answer is due, the files that mattered are buried in the ones that did not.
 
 ## A subagent is a tool that happens to be an agent
 
@@ -43,21 +45,25 @@ The mechanic reuses machinery you already have. The lead decomposes the task and
 subagent by emitting a [tool call](/anatomy-of-a-tool-call). In Claude Code and the Claude
 Agent SDK that call names the Agent tool, renamed from Task in version 2.1.63, with both
 names still accepted. The runtime spins up an isolated agent loop, lets it run to
-completion, and hands the subagent's final message back as the tool result. The subagent is
+completion, and returns its final report through the Agent tool-result path. The subagent is
 a tool whose implementation is another agent loop. The same shape recurs across stacks: the
-OpenAI Agents SDK exposes it as `Agent.as_tool()`, LangGraph as prebuilt handoff tools.
-Delegation is not a new primitive. It is the tool call, pointed at an agent.
+OpenAI Agents SDK exposes it as `Agent.as_tool()`, and LangChain handoffs use tools to
+update routing state and transfer work. Delegation is not a new primitive. It is the tool
+call, pointed at an agent.
 
 What makes it delegation rather than a function call is the context the subagent starts
-with. That context is fresh but not empty. A Claude Code subagent receives its own system
-prompt and environment details, the delegation prompt, the CLAUDE.md and memory hierarchy,
-a git-status snapshot, and any preloaded skills. It does not receive the parent's
-conversation, the parent's tool results, or the parent's system prompt. One rule follows
-and it is load-bearing: the only channel from parent to subagent is the Agent tool's prompt
-string. Any file path, error message, or decision the subagent needs must be written into
-that string, because nothing else crosses.
+with. Take a one-shot, non-fork Claude Code delegation with no SendMessage exchange or
+resume. Its context is fresh but not empty: it receives its own system prompt and environment
+details, the task message, the CLAUDE.md and memory hierarchy, a git-status snapshot, and
+any preloaded skills. In configurations that enable it, it can also receive a sibling roster.
+It does not receive the parent's conversation, tool results, or full system prompt. The task
+message is therefore a task-specific briefing, not the subagent's complete input. Put file
+paths, error messages, and decisions that are not already in the runtime baseline into that
+briefing. When the worker finishes, its final report becomes the Agent tool result. Claude
+Code scans that report before the parent reads it and can add markers or escapes. Resumed and
+message-driven workers use additional paths that this one-shot model intentionally excludes.
 
-<Figure id="12.1" caption="Delegation is a context boundary, not just a fan-out. The lead and the subagent hold separate context windows, split by a membrane. The asymmetry is the point. Down, the only channel is the prompt string, carrying the objective, the output format, tool guidance, task boundaries, and any file paths the worker needs. Up, the only channel is a distilled result, one summary or a filesystem reference for a large artifact, never the raw transcript. The subagent's reading and backtracking fill its own window and are then discarded, so the lead's gauge stays low while the subagent's runs high. Isolation is why the lead can keep going; parallelism is the bonus on top.">
+<Figure id="12.1" caption="Delegation is a context boundary, not just a fan-out. This figure scopes the lab model to one shot, non-fork, and no messages. A real Claude Code worker begins with an inherited runtime baseline: its system and environment, project rules and memory, a git snapshot, and preloaded skills. The task-specific briefing supplements that baseline with the work at hand. The normal return is a final report as an Agent tool result, subject to runtime scanning. The subagent's reading and backtracking fill its own window, so the lead's gauge stays low while the worker's runs high. Isolation is why the lead can keep going; parallelism is the bonus on top.">
   <DelegationFigure />
 </Figure>
 
@@ -95,14 +101,15 @@ answers while a single agent ground through the same searches sequentially and f
 
 ## Teach the orchestrator to delegate
 
-Because the subagent shares none of the lead's context, the delegation prompt is the entire
-briefing, and Anthropic calls writing it well their single most important lesson. Each
-subagent needs an objective, an output format, guidance on which tools and sources to use,
-and clear task boundaries. Skip that and agents duplicate work, leave gaps, or never find
-what they were sent for. Their failure example is concrete: told only to "research the
-semiconductor shortage," one subagent went after the 2021 automotive chip crisis while two
-others duplicated each other on the current supply chain, with no division of labor because
-none was specified.
+Because a non-fork subagent does not inherit the lead's conversation or tool trace, the
+task-specific briefing carries the work it must do, and Anthropic calls writing it well their
+single most important lesson. It is not the worker's entire startup context: the runtime
+baseline remains separate. Each subagent needs an objective, an output format, guidance on
+which tools and sources to use, and clear task boundaries. Skip that and agents duplicate
+work, leave gaps, or never find what they were sent for. Their failure example is concrete:
+told only to "research the semiconductor shortage," one subagent went after the 2021
+automotive chip crisis while two others duplicated each other on the current supply chain,
+with no division of labor because none was specified.
 
 Scale the effort to the task, and put the rule in the orchestrator's own prompt so it stops
 over- and under-spending. Anthropic's embedded guidance is a good default: simple
@@ -126,12 +133,13 @@ restrictions, or when the work is self-contained and can come back as a summary.
 
 ## The return is a compression boundary
 
-The down-channel is the briefing. The up-channel decides whether delegation paid off. If a
-subagent returns its full context, you lose the entire benefit: you paid to read everything,
-then paid again to copy it into the lead, and polluted the very window you were protecting.
-The return has to be distilled. Mechanically, the parent receives the subagent's final
-message verbatim, so the compression discipline lives in the subagent's system prompt.
-Instruct it to return a structured summary, not a transcript.
+The down-channel is the task-specific briefing. The up-channel decides whether delegation
+paid off. If a subagent returns its full context, you lose the entire benefit: you paid to
+read everything, then paid again to copy it into the lead, and polluted the very window you
+were protecting. The return has to be distilled. In the one-shot Claude Code model, the
+worker's final report becomes the Agent tool result, but the runtime can scan and annotate it
+before the parent reads it. Put the compression discipline in the subagent's instructions:
+return a structured summary, not a transcript.
 
 For large or high-fidelity outputs, distillation would throw away too much, and the answer
 is not to widen the channel but to move around it. Anthropic's pattern is to let subagents
@@ -142,7 +150,7 @@ introduces and the token cost of dragging big outputs through the history. Eithe
 principle is the same: the return channel is a compression boundary, and you design it on
 purpose.
 
-<Widget name="delegation" hint="Press run and watch the subagent's window fill while the lead's stays flat: none of that reading has crossed. When it returns, flip the return contract from distilled summary to full transcript and watch the boundary leak. The token model mirrors the chapter's delegate.py.">
+<Widget name="delegation" hint="This lab model is one shot, non-fork, and no-message. Press run and watch the worker's window fill while the lead's stays flat: none of that reading has crossed. The worker keeps a separate runtime baseline, then receives a task-specific briefing. When it returns, flip the modeled return contract from distilled summary to full transcript and watch the boundary leak.">
   <DelegationWidget />
 </Widget>
 
@@ -170,29 +178,31 @@ Fails](/when-multi-agent-fails) take up next.
 
 ## Run it
 
-The artifact makes the boundary observable instead of asserting it. `delegate.py` dispatches
-an isolated subagent to summarize a small codebase. In the code, the lead and the subagent
-are separate context objects, and the subagent function is handed only a prompt string and
-returns only a result, so isolation is enforced by the call signature, not drawn as a
-picture. Run `--compare` and the same task runs three ways: inline, where the lead reads
-every file into its own window; delegate, where only the distilled summary crosses back; and
-leak, where the subagent returns its full transcript. Delegation keeps the lead more than
-thirteen times smaller than inline; leaking the transcript throws that away and lands right
-back near inline. `--show-boundary` prints exactly what crosses each direction, and `--test`
-asserts no file body ever reaches the lead's context. It runs offline with the standard
-library; `--live` swaps in a real Claude subagent when a key is set and degrades quietly to
-offline when it is not.
+The artifact makes the boundary observable instead of asserting it. `delegate.py` is a
+deliberately narrow lab model, not a full Claude Code or Claude Agent SDK transport model.
+It models one isolated, one-shot, non-fork worker with no messages or resume. The lead and
+worker are separate context objects. The worker starts with a modeled runtime baseline and
+receives a task-specific briefing without the lead context, so isolation is enforced by the
+call signature, not drawn as a picture. Run `--compare` and the same task runs three ways:
+inline, where the lead reads every file into its own window; delegate, where the modeled
+return is a distilled summary; and leak, where the worker returns its full transcript.
+Delegation keeps the lead more than thirteen times smaller than inline; leaking the
+transcript throws that away and lands right back near inline. `--show-boundary` prints the
+lab model's direct briefing and selected return, and `--test` asserts no file body ever
+reaches the lead's context. It runs offline with the standard library. With a key, `--live`
+makes one Anthropic Messages API call as a live model stand-in. It is not an Agent tool or a
+tool-using Claude subagent loop, and it degrades quietly to offline when unavailable.
 
 <RunnableArtifact
   name="delegation_lab"
   path="artifacts/ch12-delegation/"
   runtime="python 3.9+"
   run={["cd artifacts/ch12-delegation", "python3 delegate.py --compare", "python3 delegate.py --show-boundary", "python3 delegate.py --leak", "python3 delegate.py --test"]}>
-One orchestrator, one isolated subagent, one summary task run three ways. The context
-boundary is a fact of the code: the lead and subagent are separate objects, only the prompt
-string crosses down, and only the returned summary crosses up. `--compare` shows delegation
-keeping the lead small, `--leak` shows the boundary broken, and `--test` proves the files
-never reach the lead.
+One orchestrator, one isolated worker model, one summary task run three ways. The context
+boundary is a fact of the code: the lead and worker are separate objects, the worker has a
+modeled runtime baseline, and the task-specific briefing is the lab's direct lead input.
+`--compare` shows delegation keeping the lead small, `--leak` shows the boundary broken,
+and `--test` proves the files never reach the lead.
 </RunnableArtifact>
 
 ## Exercises
@@ -204,10 +214,10 @@ change erases the reason you delegated in the first place.
 </ExerciseCard>
 
 <ExerciseCard n="02" title="Write the down-channel">
-Run `python3 delegate.py --show-boundary` and read the prompt string it prints. That text is
-everything the subagent gets. Rewrite it to send the subagent after only the
-security-relevant files, then predict what your version lets the subagent do and what it now
-cannot, given that nothing else crosses.
+Run `python3 delegate.py --show-boundary` and read the task-specific briefing it prints.
+The lab holds the worker's runtime baseline separately. Rewrite the briefing to send the
+worker after only the security-relevant files, then predict what your version lets the
+worker do and what it now cannot.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Size a real return contract">
@@ -235,13 +245,15 @@ latency that a cold subagent would blow.
   long-horizon context strategies and for the framing that search is compression.
 - [Claude Code subagent documentation](https://code.claude.com/docs/en/sub-agents), for the Agent tool (renamed from Task in
   version 2.1.63, both names accepted), the subagent's fresh-but-not-empty starting context,
-  the rule that the prompt string is the only channel from parent to subagent, the read-only
-  Explore and Plan agents, the delegate-versus-inline guidance, and nested subagents to a
-  depth of five (version 2.1.172).
+  its inherited runtime baseline and task-specific delegation message, report scanning,
+  the read-only Explore and Plan agents, the delegate-versus-inline guidance, and nested
+  subagents to a depth of five (version 2.1.172).
 - [Nelson Liu and colleagues, "Lost in the Middle"](https://arxiv.org/abs/2307.03172) (2024), for the U-shaped positional
-  accuracy and the greater-than-thirty-percent drop when the relevant fact sits mid-context.
+  accuracy and the greater-than-twenty-percent worst-case GPT-3.5-Turbo multi-document-QA
+  drop.
 - [Chroma, "Context Rot" (Hong, Troynikov, and Huber, 2025)](https://www.trychroma.com/research/context-rot), for the finding that all
-  eighteen frontier models tested degrade as input length grows.
+  eighteen models were covered overall, the broad degradation with increasing input length,
+  the experiment-specific model coverage, and the local GPT-4 Turbo peak.
 - [Cognition, "Don't Build Multi-Agents" (Walden Yan, June 2025)](https://cognition.com/blog/dont-build-multi-agents), for the share-context and
   actions-carry-decisions principles and the incompatible-game-assets example; and
   ["Multi-Agents: What's Actually Working" (April 2026)](https://cognition.com/blog/multi-agents-working), for the writes-stay-single-threaded
@@ -249,5 +261,5 @@ latency that a cold subagent would blow.
   corollary, and the Devin Review figures of about two bugs per PR, roughly 58 percent
   severe.
 - [OpenAI Agents SDK, "Agent orchestration"](https://openai.github.io/openai-agents-python/multi_agent/), for the agents-as-tools manager pattern and handoffs, the cross-stack
-  echo that delegation everywhere is a tool call pointed at an agent. [LangGraph's multi-agent concepts](https://langchain-ai.github.io/langgraph/concepts/multi_agent/)
-  documents the contrasting handoff-oriented implementation.
+  echo that delegation everywhere is a tool call pointed at an agent. [LangChain, "Handoffs"](https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs)
+  documents the contrasting tool-based state and routing implementation.

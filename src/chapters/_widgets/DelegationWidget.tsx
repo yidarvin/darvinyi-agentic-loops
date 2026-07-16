@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
 // DelegationWidget: the signature widget for "Delegation". One focused move: step a
-// subagent through its messy work and watch the two context windows side by side. The
-// subagent's window fills as it reads files and backtracks; the lead's window stays
-// flat, because none of that crosses the boundary. Then the subagent returns, and one
-// toggle decides what crosses back: a distilled summary (a small bump) or the full
-// transcript (a bump nearly as large as everything the subagent read). Flipping that
-// toggle is the whole lesson: the return channel is a compression boundary, and
-// leaking the transcript throws the isolation benefit away. The token numbers mirror
-// the chapter's delegate.py. React state only, no persistence.
+// one-shot, non-fork, no-message lab worker through messy work and watch two context
+// windows side by side. The worker starts with a separate runtime baseline, then receives
+// a task-specific briefing. Its window fills as it reads files and backtracks; the lead's
+// window stays flat because none of that work crosses the boundary. When the worker returns,
+// one toggle chooses the modeled return: a distilled summary (a small bump) or the full
+// transcript (a bump nearly as large as everything the worker read). Flipping that toggle
+// is the whole lesson: the return channel is a compression boundary, and leaking the
+// transcript throws the isolation benefit away. React state only, no persistence.
 
 interface Work {
   label: string;
@@ -26,8 +26,8 @@ const WORK: Work[] = [
   { label: "draft → revise → distill", tok: 220 },
 ];
 
-const LEAD_BASE = 130; // system + user query + the pending Agent tool call
-const SUB_BASE = 180; // the subagent's own system prompt + the prompt string
+const LEAD_BASE = 130; // system + user query + the pending lab-worker call
+const SUB_BASE = 180; // modeled runtime baseline + task-specific briefing
 const SUB_PEAK = SUB_BASE + WORK.reduce((s, w) => s + w.tok, 0); // ~2000
 const SUMMARY_TOK = 150; // the distilled return
 const SCALE = LEAD_BASE + SUB_PEAK + 60; // common gauge max, so the two bars compare
@@ -132,7 +132,7 @@ export function DelegationWidget() {
           <ul className="mt-2 space-y-1">
             <Turn label="system: you are the lead" tok={40} />
             <Turn label="user: summarize the repo" tok={60} />
-            <Turn label={done ? "Agent(research) → returned" : "Agent(research) → running…"} tok={30} tone="text-fg/80" />
+            <Turn label={done ? "worker → returned" : "worker → running…"} tok={30} tone="text-fg/80" />
             {done && (
               <Turn
                 label={contract === "summary" ? "← distilled summary" : "← full transcript (leak)"}
@@ -154,10 +154,11 @@ export function DelegationWidget() {
         <div className="rounded border border-border bg-surface-2 p-3">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-[0.72rem] text-accent">{"// subagent context"}</span>
-            <span className="font-mono text-[0.66rem] text-comment">fresh, isolated window</span>
+            <span className="font-mono text-[0.66rem] text-comment">one-shot lab worker</span>
           </div>
           <ul className="mt-2 space-y-1">
-            <Turn label="system + prompt string" tok={SUB_BASE} />
+            <Turn label="baseline: system, rules, git, skills" tok={110} />
+            <Turn label="task-specific briefing" tok={70} />
             {WORK.slice(0, step).map((w, i) => (
               <Turn key={i} label={`· ${w.label}`} tok={w.tok} />
             ))}
@@ -177,19 +178,20 @@ export function DelegationWidget() {
       <div className="mt-3 rounded border border-accent/30 bg-surface p-3 font-mono text-[0.72rem] leading-relaxed">
         {!done ? (
           <p className="text-fg/80">
-            The subagent's window fills as it reads and backtracks. The lead's stays flat: none of that has
-            crossed the boundary. It never will, except the one thing that returns.
+            The worker's window fills as it reads and backtracks. The lead's stays flat: none of that work has
+            crossed the boundary. This lab keeps the worker's runtime baseline separate, then adds the
+            task-specific briefing and the selected return.
           </p>
         ) : contract === "summary" ? (
           <p className="text-fg/80">
-            The distilled result crossed: <span className="text-accent">+{SUMMARY_TOK} tok</span>. The lead holds{" "}
+            The modeled normal return crossed: <span className="text-accent">+{SUMMARY_TOK} tok</span>. The lead holds{" "}
             <span className="text-accent">{leadTokens} tok</span>. The subagent's {SUB_PEAK} tok of reading never
             crossed and is now discarded. Flip to <span className="text-fg">full transcript</span> to watch the
             boundary leak.
           </p>
         ) : (
           <p className="text-fg/80">
-            The full transcript crossed: <span className="text-fg">+{SUB_PEAK} tok</span>. The lead now holds{" "}
+            The modeled full transcript crossed: <span className="text-fg">+{SUB_PEAK} tok</span>. The lead now holds{" "}
             <span className="text-fg">{leadTokens} tok</span>, nearly everything the subagent read. You paid the
             tokens twice and the lead's window is polluted. Delegation bought you almost nothing.
           </p>
@@ -198,8 +200,8 @@ export function DelegationWidget() {
 
       <p className="mt-3 font-mono text-[0.7rem] text-comment">
         {done && contract === "transcript"
-          ? "// the return channel is a compression boundary. return a summary, not a transcript."
-          : "// isolation is the point: the mess stays on the subagent's side."}
+          ? "// lab model: the return is a compression boundary. return a summary, not a transcript."
+          : "// lab model: one-shot, non-fork, no messages. the worker baseline stays separate."}
       </p>
     </div>
   );
