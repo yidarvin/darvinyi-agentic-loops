@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -364,3 +364,56 @@ this resolution does not grant approval.
 
 Verification: `bash artifacts/ch10-skills/check.sh` passes 53 assertions, including the
 new line-break and scalar-boundary cases. `npm run check` passes all seven stages.
+
+## Round 10 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history, current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in
+`artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Re-verified that the
+required corrections from Rounds 1 through 9 remain in the current artifacts. Ran
+`npm run check` successfully through all seven stages and
+`bash artifacts/ch10-skills/check.sh` successfully with 53 assertions. Exercised the
+documented lab commands and its expected failure path. Spot-checked the consequential
+claims against the current Agent Skills specification and reference validator, Anthropic
+launch and Skills documentation, Claude Code Skills documentation, GitHub MCP server
+documentation, `skill-creator`, Firecrawl, MCPJam, VentureBeat, and the Oasis report.
+The visual pass used source and render-test inspection because no rendered-browser backend
+was available.
+
+The chapter is materially truthful and teaching: it keeps the portable core distinct from
+surface rules, accurately shows progressive disclosure and Claude Code's lifecycle, and
+ships a runnable, deterministic, permission-scoped artifact with meaningful failure modes.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:68-71`** Call the Firecrawl 30-to-50-token value an estimate
+  or report rather than an independent measurement. The linked article gives the figure but
+  no methodology. The source, caveat, and arithmetic are present and correct, so this is not
+  blocking.
+- **`src/chapters/_figures/SkillsFigure.tsx:13-14`** The 860px minimum width remains
+  functional because the shared figure wrapper scrolls horizontally, but a compact narrow
+  variant would reduce phone-reader panning.
+- **`src/chapters/_widgets/SkillsWidget.tsx:172-200`** Each highlighted code line is still a
+  separate keyboard tab stop. The controls work and are labelled, but a grouped or roving
+  selection pattern would make keyboard traversal calmer.
+
+## Round 11 review (2026-07-16)
+
+Independent re-review: read the complete critique history, current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, the complete
+`artifacts/ch10-skills` package, and `docs/research/ch10-skills.md`. Re-verified the
+resolved source, lifecycle, arithmetic, and artifact-boundary corrections from prior rounds
+against the current artifacts. Ran `npm run check` successfully through all seven stages and
+`bash artifacts/ch10-skills/check.sh` successfully with 53 assertions. Exercised the
+documented malformed-skill failure and the negative-budget failure. Checked the current Agent
+Skills specification, Anthropic Skills overview and authoring guidance, Claude Code Skills
+documentation, and Anthropic's current `skill-creator`. A rendered-browser backend was not
+available, so the visual pass used component-source inspection and the passing render tests.
+
+## Required fixes
+
+1. **`src/chapters/_widgets/SkillsWidget.tsx:86,142-154,173-199` and `src/chapters/skills.mdx:160-167` --- the signature widget presents bundled level-3 files as parts of `SKILL.md`, hiding the body-to-resource boundary that progressive disclosure depends on.** The control group calls all five selections "SKILL.md part", including `references/FORMAT.md` and `scripts/validate_entry.py`, although those are distinct files beside `SKILL.md`. When either resource is selected, no excerpt line becomes active because every directive line is tagged `body`; the reader cannot see the level-2 instruction that points to the selected level-3 file. The prose reinforces the error by calling these five relationships "the same file." The Agent Skills specification distinguishes `SKILL.md` from optional `references/` and `scripts/` in the skill directory. Relabel or split the controls as package elements, change the prose to refer to the skill package rather than one file, and make a resource selection visibly connect its level-2 body directive to the selected level-3 file. This is a central truthfulness problem in the chapter's signature interaction, not a cosmetic affordance.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:212-216`** “A common production shape” for a Skill orchestrating MCP tools is plausible, but the linked VentureBeat interview supports complementarity rather than prevalence. Soften the wording or cite a concrete production example.
