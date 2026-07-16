@@ -34,6 +34,12 @@ The state machine is `pending -> draft -> done`. Build marks a chapter draft; a
 separate critic writes `content/critiques/<slug>.md`; only `verdict: approve` allows
 the validator to record `done`. `runqueue.sh` is a compatibility wrapper only.
 
+The launchd worker runs one leased Terra stage at a time, validates exact role-specific
+write scope, commits only a valid state transition, pushes it, and immediately selects
+the next stage. Delayed Codex output keeps its lease and is recovered after the model
+process exits; a quiet grace period prevents duplicate retries. `./run.sh status` shows
+the queue, last worker heartbeat, and any active lease.
+
 ## Release
 
 Build output is static Vite content in `dist/`. Vercel is the deployment target, but
