@@ -62,7 +62,7 @@ if [[ "$VERB" == status ]]; then python3 scripts/decide.py status; exit 0; fi
 command -v codex >/dev/null || die "codex CLI is not on PATH"
 command -v git >/dev/null || die "git is not on PATH"
 if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
-if [[ -n "$(git status --porcelain)" && $ALLOW_DIRTY -eq 0 ]]; then
+if [[ -n "$(git status --porcelain)" && $ALLOW_DIRTY -eq 0 && "$VERB" != recover ]]; then
   die "working tree is dirty; commit/stash first or pass --allow-dirty"
 fi
 
