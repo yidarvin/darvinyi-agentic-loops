@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -311,3 +311,64 @@ assertions, including the combined-source, direct-private-egress, and malformed-
 executable regressions.
 `npm run check` passes validation, prose lint, pipeline and artifact tests, Vitest, typecheck,
 production build, and lint. The registry status remains `draft` for independent re-review.
+
+## Round 7 review (2026-07-15)
+Fresh independent re-review: read `prompts/critique-rubric.md`, the chapter notes and
+research reference, `src/chapters/mcp-security-surface.mdx`, its figure and widget, the
+complete runnable artifact and README, and the complete prior critique history. Re-verified
+that the resolved Round 2 through Round 6 fixes remain present in the current artifacts.
+Ran `npm run check` successfully, including the Chapter 9 deterministic MCP artifact suite,
+Vitest, typecheck, production build, and lint. Checked the consequential claims below against
+the current [MCP Authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
+[MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
+and [Equixly's March 2025 assessment](https://equixly.com/blog/2025/03/29/mcp-server-new-security-nightmare/).
+The figure, widget, and executable pair remain materially truthful and teaching. The two new
+required fixes are source-precision issues in the prose.
+
+## Required fixes
+1. **`src/chapters/mcp-security-surface.mdx:165-169` --- do not assign Equixly's path-traversal and SSRF rates to the shell-concatenation pattern.** Equixly reports 43% command injection, 22% path traversal or arbitrary file read, and 30% unrestricted URL fetching as separate findings. Its shell-metacharacter example appears under its distinct command-injection section. The chapter's trailing "from the familiar pattern of user parameters concatenated into a shell call" grammatically explains all three rates, which teaches the wrong cause and remedy for path traversal and SSRF. Split the claims: retain the three directional rates, then say that the command-injection cases illustrate the string-built shell-call pattern; give path traversal and SSRF their own mechanisms or leave them as separately reported classes.
+2. **`src/chapters/mcp-security-surface.mdx:133-146` --- make the downstream-credential rule conditional rather than a universal MCP requirement.** The HTTP authorization profile requires intended-recipient validation and prohibits transiting the client token. It says an MCP server *may* act as an OAuth client to an upstream API, in which case that API uses a separate token issued by its authorization server. It does not require every downstream integration to obtain a separately issued token: another independently authorized mechanism can be appropriate. Replace "it must obtain a separately issued token" with a conditional rule such as: if the server calls a downstream API with OAuth, use a separate credential issued for that resource and never transit the client token. Keep RFC 8693 as one optional issuance pattern.
+
+## Advisories
+- **`src/chapters/mcp-security-surface.mdx:138-141` --- attribute the detailed token-passthrough risk list to Security Best Practices.** The authorization specification establishes validation and no transit; the enumerated control-circumvention, audit-trail, and cross-service-reuse rationale is presented in the linked Security Best Practices page. This is correct in substance, but the attribution can be exact.
+- **`artifacts/ch09-mcp-security-surface/security_mcp.py:472,687-697`, README, and chapter run instructions --- consider making the positive human-approval handoff observable.** The lab correctly demonstrates refusal without approval, but `human_approved` has no modeled approval transition or positive regression. This is non-blocking because the artifact explicitly models a safe local boundary and its failure mode is meaningful; a future polish pass could document the handoff as out of band or add a constrained approved-flow test.
+
+## Round 8 review (2026-07-15)
+Fresh independent follow-up: read `prompts/critique-rubric.md`, the Chapter 9 notes and
+research reference, the current chapter, figure, widget, full runnable artifact, README,
+and the complete critique history. Re-ran `npm run check` and
+`bash artifacts/ch09-mcp-security-surface/check.sh`; both pass. Drove the local vulnerable
+and hardened paths for attacks 1 and 3, then checked the current MCP Authorization and
+Security Best Practices documents, Equixly's cited assessment, and Willison's
+lethal-trifecta analysis. Round 7's source-precision fixes remain open and are not
+re-litigated here. This round records two new widget defects that materially misstate the
+chapter's dataflow model.
+
+## Required fixes
+1. **`src/chapters/_widgets/McpSecuritySurfaceWidget.tsx:83-103` --- show the confused-deputy egress step, or stop calling the displayed result an exfiltration.** The vulnerable trace stops after Billing returns the record, yet the widget hard-codes `EXFILTRATED` for every vulnerable posture. The executable attack instead follows `read_billing` with `http_get` to `attacker.example` (`artifacts/ch09-mcp-security-surface/security_mcp.py:77-91`). Add that send to the widget's vulnerable path and align its injected source text, or label the shown result as unauthorized data access. As drawn, it skips the external leg that the chapter's own lethal-trifecta model requires for the claimed loss.
+2. **`src/chapters/_widgets/McpSecuritySurfaceWidget.tsx:117-127` --- do not say that only an egress-leg control can contain output poisoning.** Static catalog inspection cannot see a runtime payload, but a trusted resource lock, dataflow isolation that prevents private data reaching the requested action, or an egress gate can each break this modeled trifecta path. The categorical claim contradicts the chapter's own rule at `src/chapters/mcp-security-surface.mdx:36-53` that removing or gating any leg breaks the autonomous-exfiltration path. Reword it as the egress control used in this scenario, while retaining the point that static catalog scanning alone cannot contain runtime output poisoning.
+
+## Advisories
+- `src/chapters/mcp-security-surface.mdx:104-106` makes a precise historical claim about MCP re-approval requirements without a direct source in the list. Add a source such as [Semgrep's MCP security guide](https://semgrep.dev/blog/2025/a-security-engineers-guide-to-mcp/) for traceability. This is non-blocking because the claim is otherwise substantively supported.
+
+## Round 9 review (2026-07-15)
+Fresh independent review: read `prompts/critique-rubric.md`, the Chapter 9 notes and
+research reference, the current chapter, figure, widget, full runnable artifact, README,
+and complete critique history. Ran `bash artifacts/ch09-mcp-security-surface/check.sh` and
+`npm run check`; both pass. Reviewed the current artifacts for regressions of the resolved
+Round 2 through Round 6 findings and found none. The unresolved Round 7 and Round 8 findings
+remain recorded and are not re-litigated here. Checked the new findings against the official
+[MCP Tools error-handling contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling),
+[MCP 2025-11-25 changelog](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-11-25/changelog.mdx),
+[Meta's Agents Rule of Two](https://ai.meta.com/blog/practical-ai-agent-security/), and
+[Trail of Bits' mcp-context-protector description](https://blog.trailofbits.com/2025/07/28/we-built-the-security-layer-mcp-always-needed/).
+The figure remains truthful, and the artifact's deterministic safety model remains useful,
+but the following new protocol and source-attribution defects block approval.
+
+## Required fixes
+1. **`artifacts/ch09-mcp-security-surface/security_mcp.py:589-590,830-836` and `artifacts/ch09-mcp-security-surface/mcp_security.py:601-615` --- align the advertised MCP endpoint with the 2025-11-25 tool-error contract.** A known tool called with an invalid schema value currently returns JSON-RPC `-32602` at `security_mcp.py:830-834`, and the deterministic test asserts that behavior. The MCP Tools specification puts input validation errors in a `tools/call` result with `isError: true`. In the other direction, an unknown tool raises `Blocked("unknown-tool")` at `589-590` and the broad handler maps it to `tool_err` at `835-836`, although the specification classifies unknown tools as protocol errors. Keep policy denials such as catalog integrity and authorization as tool errors, but make an absent tool name a protocol-error path, make known-tool argument validation a tool-execution-error path, and update the regression tests for both cases.
+2. **`src/chapters/mcp-security-surface.mdx:211-217` and `docs/research/ch09-mcp-security-surface.md:80,93-95` --- do not attribute an unconditional fresh-context-plus-human rule to Meta's Agents Rule of Two.** Meta says that when all three properties are needed *without starting a new session*, the agent must not operate autonomously and needs supervision, which can be human approval or another reliable validation mechanism. It also gives a safe one-way configuration transition as an alternative. The chapter says Meta requires both a fresh context and a human in the loop for every all-three task, which changes the framework's prescribed tradeoff. Describe the source's conditional rule accurately, then label any stricter fresh-context-and-human deployment policy as this chapter's recommendation rather than Meta's.
+
+## Advisories
+- **`src/chapters/mcp-security-surface.mdx:225-228` --- qualify the trust-on-first-use description of `mcp-context-protector`.** The tool blocks a newly seen server until a user manually reviews and approves its instructions, descriptions, and parameter descriptions, then pins that reviewed configuration and blocks unapproved changes. Add the manual initial review so "pins ... on first use" does not imply automatic trust on first contact. The post-approval change-detection lesson remains sound.
+- The Round 7 and Round 8 advisories remain as recorded.
