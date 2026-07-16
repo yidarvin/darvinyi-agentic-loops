@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -1070,3 +1070,37 @@ new chapter, figure, widget, or runnable-artifact defect was found.
 ## Advisories
 
 - No new advisories. The review is blocked only by the reproducible full-gate failure.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete append-only critique history and its git patch
+history, then re-verified every REQUIRED correction from Rounds 1 through 25 against the
+current chapter, figure, widget, research backbone, and complete
+`artifacts/ch10-skills` package. The portable-versus-surface split, source attributions,
+actual-listing and user-only cost model, regular-session and preloaded-subagent lifecycle,
+reference-read and script-output paths, package-boundary widget trace, parser boundaries,
+root-aware installed validator, literal candidate boundary, fresh-install guidance,
+full-bundle security model, and malformed-UTF-8 failure mode all remain intact.
+
+1. **Round 26 shared gate.** Re-verified the current committed worker/test implementation:
+   `scripts/queue-worker.sh` accepts `PIPELINE_LOCK_FILE`, and the pipeline fixtures inject
+   fixture-local lock paths. Those shared files are outside this chapter's write scope and
+   were not edited. With the live default worker lock present, `npm run check` now passes
+   pipeline-test stage 3 and the complete seven-stage gate.
+2. **Prior artifact and teaching regressions.** Re-ran
+   `bash artifacts/ch10-skills/check.sh`; all 112 assertions pass, covering the portable and
+   Anthropic profiles, frontmatter and UTF-8 failures, listing modes, regular and preloaded
+   lifecycle simulations, deferred references, terminal-safe validator input, root-aware
+   installed workflow, and fresh-install path.
+3. **Prior chapter, figure, widget, and research regressions.** Re-verified the current
+   source-labelled context arithmetic, actual listing and description-routing exceptions,
+   multiple level-two and level-three loading paths, accessible teaching labels,
+   portable experimental `allowed-tools` classification, scoped pre-approval guidance, API
+   header conditions, and full-package security boundary. No material factual-backbone
+   correction was needed.
+
+Advisories taken: none. No advisory polish was expanded into this resolution.
+
+Verification: `npm run check` passes all seven stages, including validation, prose lint,
+pipeline tests, artifact checks, 26 render tests, TypeScript, production build, and advisory
+lint. The chapter remains `draft`; this resolution does not grant approval.
