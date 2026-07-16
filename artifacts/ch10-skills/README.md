@@ -38,8 +38,14 @@ python3 skills_lab.py --validate bad-skill --surface anthropic
 # Price a library: what 100 listed, model-invocable skills cost at startup vs. loading bodies.
 python3 skills_lab.py --budget 100
 
+# Contrast a Claude Code subagent whose named skills were preloaded at startup.
+python3 skills_lab.py --budget 3 --session preloaded
+
 # Simulate discovery: does a request trigger the skill, and what loads if it does?
 python3 skills_lab.py --simulate "add a changelog entry for the new export flag"
+
+# In preloaded-subagent mode, the named skill body already arrived at startup.
+python3 skills_lab.py --simulate "add a changelog entry for the new export flag" --session preloaded
 
 # Run the skill's own bundled validator (level-3 execution: output only).
 python3 skills_lab.py --entry "Added: --export flag to the CLI"
@@ -95,9 +101,12 @@ and may decline a skill whose description matches a one-step request it can hand
 directly. Treat `--simulate` as an illustration, then evaluate with fresh models in the
 target harness against positive and near-miss prompts.
 
-For the Claude Code lifecycle this lab illustrates, a first, distinct, or changed rendered
-body enters in full; an identical re-invocation adds only a short already-loaded note.
-Distinct skill bodies can coexist. Other harnesses can choose different lifecycle behavior.
+For the regular Claude Code lifecycle this lab illustrates, a first, distinct, or changed
+rendered body enters in full; an identical re-invocation adds only a short already-loaded
+note. Distinct skill bodies can coexist. A Claude Code subagent configured with named
+preloaded skills is different: it receives those full skill contents at startup. Use the
+--session preloaded mode to price and simulate that path. Other harnesses can choose
+different lifecycle behavior.
 
 ## Teaching-lint scope
 
@@ -105,8 +114,9 @@ Distinct skill bodies can coexist. Other harnesses can choose different lifecycl
 for this bundle's supported portable subset: plain or basic quoted scalar key-value
 fields, indented continuations, folded (`>`) or literal (`|`) description blocks, ASCII
 name syntax, and directory matching. Plain comments are stripped, while YAML null,
-boolean, and numeric values are rejected where a string is required. A clean result means
-only that the checked subset passed; it does not certify arbitrary YAML, Unicode name forms,
+boolean, and numeric values are rejected where a string is required. Unsupported nonblank
+top-level syntax also fails instead of producing a clean result. A clean result means only
+that the checked subset passed; it does not certify arbitrary YAML, Unicode name forms,
 or the complete optional Agent Skills schema. For production, use the target harness's
 maintained validator and your own deployment gate. `skills-ref` is a demonstration-only
 reference implementation useful for comparison, not a production certification.

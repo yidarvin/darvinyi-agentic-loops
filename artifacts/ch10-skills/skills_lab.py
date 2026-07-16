@@ -12,7 +12,8 @@ Three ideas from the Skills chapter, made executable:
      ``--surface anthropic`` profile adds Anthropic-only compatibility
      restrictions; authoring advice stays a warning in either profile.
   2. Price progressive disclosure: what one listed, model-invocable skill costs
-     at each loading level, and what listing N such skills costs at startup.
+     in a regular Claude Code session, then contrast it with a subagent whose
+     named skills are preloaded at startup.
   3. Simulate discovery with an intentionally crude keyword proxy. It illustrates
      the loading path but cannot establish how a production model will trigger.
 
@@ -20,15 +21,18 @@ No third-party packages, API key, or network are required. Python 3.9+ is requir
 Bash is required for the fresh-install smoke test and ``check.sh``. Token counts are
 estimates (~4 characters per token), and the discovery match is a two-keyword proxy rather
 than a production harness. The parser handles plain or basic quoted mappings and folded or
-literal block scalars used by this artifact. It rejects unsupported YAML collections and
-plain YAML forms that resolve to non-string values, rather than pretending to validate them.
+literal block scalars used by this artifact. It rejects unsupported YAML collections,
+top-level syntax, and plain YAML forms that resolve to non-string values, rather than
+pretending to validate them.
 
 Usage:
     python3 skills_lab.py                              # overview of the bundled skill
     python3 skills_lab.py --validate DIR               # supported portable-subset lint
     python3 skills_lab.py --validate DIR --surface anthropic
-    python3 skills_lab.py --budget 100                 # listed-skill startup cost
+    python3 skills_lab.py --budget 100                 # regular-session listing cost
+    python3 skills_lab.py --budget 3 --session preloaded
     python3 skills_lab.py --simulate "..."              # illustrative discovery path
+    python3 skills_lab.py --simulate "..." --session preloaded
     python3 skills_lab.py --entry "Added: X"            # run the bundled validator
     python3 skills_lab.py --test                        # assertions; non-zero on failure
 """
@@ -172,6 +176,10 @@ def parse_frontmatter(text: str):
                 )
                 unsupported_nested_keys.add(key)
             meta[key] = (meta[key] + " " + continuation).strip()
+        elif line.strip() and not line.lstrip().startswith("#"):
+            parse_errors.append(
+                "unsupported top-level YAML syntax; this teaching lint accepts top-level key-value fields only"
+            )
         i += 1
     body = "\n".join(lines[end + 1:]).strip("\n")
     return meta, body, True, parse_errors
@@ -309,11 +317,16 @@ def cost_model(skill) -> dict:
     return {"level1": level1, "level2": level2, "resources": resources}
 
 
-def print_cost(skill) -> None:
+def print_cost(skill, session: str = "regular") -> None:
     cost = cost_model(skill)
     print("// progressive-disclosure cost (token estimates, ~4 chars/token)")
-    print(f"  level 1  metadata (name + description)  ~{cost['level1']:>5} tokens   listed, model-invocable")
-    print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   Claude Code: first/distinct/changed render; identical re-invocation gets a short note")
+    if session == "preloaded":
+        print(f"  startup  SKILL.md body                  ~{cost['level2']:>5} tokens   configured preloaded subagent: full skill content")
+        print(f"  contrast regular-session metadata        ~{cost['level1']:>5} tokens   listed, model-invocable skill")
+        print("  regular  full body loads only after a first, distinct, or changed rendering")
+    else:
+        print(f"  level 1  metadata (name + description)  ~{cost['level1']:>5} tokens   listed, model-invocable")
+        print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   regular Claude Code session: first/distinct/changed render; identical re-invocation gets a short note")
     if cost["resources"]:
         print("  level 3+ bundled resources                            accessed on demand:")
         for rel, size in cost["resources"]:
@@ -324,16 +337,25 @@ def print_cost(skill) -> None:
             print(f"             {rel:<34} {size:>6} bytes   {behavior}")
     else:
         print("  level 3+ (none bundled)")
-    print("  note     user-only manual skills are absent from startup context")
+    if session == "preloaded":
+        print("  note     level-3 resources remain on demand after preloading")
+    else:
+        print("  note     user-only manual skills are absent from regular-session startup context")
 
 
-def print_budget(skill, count: int) -> None:
+def print_budget(skill, count: int, session: str = "regular") -> None:
     if count < 0:
         raise ValueError("budget count must be zero or greater")
     cost = cost_model(skill)
     level1 = cost["level1"]
     startup = level1 * count
     eager_bodies = cost["level2"] * count
+    if session == "preloaded":
+        print(f"// startup budget for {count} skills preloaded into a Claude Code subagent")
+        print(f"  full skill bodies at startup:         ~{eager_bodies:,} tokens  ({cost['level2']} body tokens each)")
+        print(f"  regular-session metadata contrast:    ~{startup:,} tokens  ({level1} metadata tokens each)")
+        print("  preloading is a configured subagent exception, not the regular-session lifecycle")
+        return
     print(f"// startup budget for {count} listed, model-invocable skills like this one")
     print(f"  progressive disclosure: ~{startup:,} tokens  ({level1} metadata tokens each; bodies stay on disk)")
     print(f"  if every body loaded up front instead: ~{eager_bodies:,} tokens")
@@ -354,7 +376,7 @@ def keywords(text: str) -> list[str]:
     return [word for word in re.findall(r"[a-z0-9]+", text.lower()) if word not in STOP and len(word) > 1]
 
 
-def simulate(skill, request: str) -> bool:
+def simulate(skill, request: str, session: str = "regular") -> bool:
     meta, body = skill["meta"], skill["body"]
     description = meta.get("description", "")
     description_terms = set(keywords(description))
@@ -363,13 +385,22 @@ def simulate(skill, request: str) -> bool:
 
     print(f"// illustrative discovery proxy for: {request!r}")
     print(f"  request keywords overlap description on: {overlap or '(none)'}")
+    if session == "preloaded":
+        print(f"  preloaded-subagent mode: {os.path.basename(skill['dir'])}/SKILL.md full content was injected at startup")
+        print("  no trigger or read is needed for this named skill; level-3 resources remain on demand")
+        for rel in sorted(set(REF_PATH.findall(body))):
+            if rel.startswith("scripts/"):
+                print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
+            else:
+                print(f"     level 3  reads {rel}; its contents enter context at that point")
+        return True
     if not triggered:
         print("  => below this proxy's threshold; only listed metadata is modeled as loaded")
         print("     (a real model also weighs task difficulty, wording, and its target harness)")
         return False
     print("  => this proxy triggers. possible loading sequence:")
     print(f"     level 1  already listed: name + description (~{est_tokens(description)} description tokens)")
-    print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); Claude Code: first/distinct/changed render, identical re-invocation gets a short note")
+    print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); regular Claude Code session: first/distinct/changed render, identical re-invocation gets a short note")
     for rel in sorted(set(REF_PATH.findall(body))):
         if rel.startswith("scripts/"):
             print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
@@ -578,12 +609,42 @@ def run_tests() -> int:
     indented_flow_collection_errors, _ = validate_skill(indented_flow_collection_skill)
     check("indented flow YAML collection trips P0", "P0" in codes(indented_flow_collection_errors))
 
+    malformed_meta, malformed_body, malformed_frontmatter, malformed_parse_errors = parse_frontmatter(
+        "---\nname: malformed-frontmatter\ndescription: Formats a thing. Use when needed.\nthis is not YAML\n---\n# Body"
+    )
+    malformed_skill = {
+        "meta": malformed_meta,
+        "body": malformed_body,
+        "has_fm": malformed_frontmatter,
+        "parse_errors": malformed_parse_errors,
+        "dir": os.path.join(HERE, "malformed-frontmatter"),
+    }
+    malformed_errors, _ = validate_skill(malformed_skill)
+    check("unsupported top-level YAML syntax trips P0", "P0" in codes(malformed_errors))
+
     zero_budget = run_lab_quiet("--budget", "0")
     check("zero budget remains valid", zero_budget.returncode == 0)
     negative_budget = run_lab_quiet("--budget", "-1")
     check(
         "negative budget returns a clear nonzero error",
         negative_budget.returncode != 0 and "must be zero or greater" in negative_budget.stderr,
+    )
+    preloaded_budget = run_lab_quiet("--budget", "2", "--session", "preloaded")
+    check(
+        "preloaded-subagent budget prices full bodies at startup",
+        preloaded_budget.returncode == 0 and "full skill bodies at startup" in preloaded_budget.stdout,
+    )
+    preloaded_overview = run_lab_quiet("--session", "preloaded")
+    check(
+        "preloaded-subagent overview separates full-body startup from regular metadata",
+        preloaded_overview.returncode == 0 and "contrast regular-session metadata" in preloaded_overview.stdout,
+    )
+    preloaded_simulation = run_lab_quiet(
+        "--simulate", "add a changelog entry for the export flag", "--session", "preloaded"
+    )
+    check(
+        "preloaded-subagent simulation skips the regular trigger path",
+        preloaded_simulation.returncode == 0 and "full content was injected at startup" in preloaded_simulation.stdout,
     )
 
     if good:
@@ -708,6 +769,12 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget/--simulate/--entry")
     parser.add_argument("--budget", metavar="N", type=nonnegative_int, help="print the startup cost of N listed skills")
+    parser.add_argument(
+        "--session",
+        choices=("regular", "preloaded"),
+        default="regular",
+        help="Claude Code lifecycle to model: regular session or a subagent with named skills preloaded",
+    )
     parser.add_argument("--simulate", metavar="REQUEST", help="illustrate discovery for a request string")
     parser.add_argument("--entry", metavar="LINE", help="run the skill's bundled validator on a changelog entry")
     parser.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
@@ -730,10 +797,10 @@ def main(argv: list[str]) -> int:
         return 1
 
     if args.budget is not None:
-        print_budget(skill, args.budget)
+        print_budget(skill, args.budget, args.session)
         return 0
     if args.simulate is not None:
-        simulate(skill, args.simulate)
+        simulate(skill, args.simulate, args.session)
         return 0
     if args.entry is not None:
         return 0 if run_entry(skill, args.entry) == 0 else 1
@@ -741,9 +808,9 @@ def main(argv: list[str]) -> int:
     print("=== a skills lab: linted, priced, and simulated ===\n")
     print_validation(skill, args.surface)
     print()
-    print_cost(skill)
+    print_cost(skill, args.session)
     print()
-    simulate(skill, "add a changelog entry for the new export flag")
+    simulate(skill, "add a changelog entry for the new export flag", args.session)
     print()
     print("run --test for assertions, --validate bad-skill for portable failures,")
     print("--surface anthropic for that profile, --budget 100 to price a listing, or")

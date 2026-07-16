@@ -41,8 +41,9 @@ directory. A
 name cannot begin or end with a hyphen or contain two consecutive hyphens. It requires a
 nonempty description of at most 1,024 characters, and recommends that the description say
 both what the skill does and when to reach for it. Anthropic adds surface-specific rules:
-it rejects reserved vendor words and XML-like angle brackets in frontmatter, and its
-authoring guidance prefers third-person descriptions. Keep those layers distinct. A
+it rejects reserved vendor words in `name` and XML-like angle brackets in `name` and
+`description`, and its authoring guidance prefers third-person descriptions. Keep those
+layers distinct. A
 harness may also expose the name as an explicit command.
 By convention `scripts/` holds executable code for deterministic work, `references/`
 holds documents the agent reads only when it needs them, and `assets/` holds templates or
@@ -57,7 +58,7 @@ The loading model is the design, and it has a name: progressive disclosure. Cont
 reveals itself in three levels, each loaded at a different moment and costing the context
 window a different amount.
 
-<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. In Claude Code, level 2 loads a full body for a first, distinct, or changed rendering, while an identical re-invocation adds a short already-loaded note. Distinct activated skills can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding filesystem round trips at runtime.">
+<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. In a regular Claude Code session, level 2 loads a full body for a first, distinct, or changed rendering, while an identical re-invocation adds a short already-loaded note. A subagent configured with preloaded skills instead receives its named full skill content at startup. Distinct activated skills can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding host-dependent retrieval round trips at runtime.">
   <SkillsFigure />
 </Figure>
 
@@ -69,9 +70,12 @@ documentation puts listed metadata near a hundred tokens per skill. Firecrawl re
 lower estimate, around thirty to fifty tokens each, in
 [Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so a hundred listed,
 model-invocable skills cost roughly three to five thousand tokens at session start. In
-Claude Code, level two adds the full `SKILL.md` body for a first, distinct, or changed
-rendering. An identical re-invocation adds a short already-loaded note instead. Distinct
-activated skills can stack, while exact re-invocation behavior remains host-specific. The
+a regular Claude Code session, level two adds the full `SKILL.md` body for a first,
+distinct, or changed rendering. An identical re-invocation adds a short already-loaded
+note instead. Distinct activated skills can stack, while exact re-invocation behavior
+remains host-specific. A Claude Code subagent
+configured with named preloaded skills takes the other path: it receives those full skill
+contents at startup, before a matching task needs to invoke them. The
 under-five-thousand-token and 500-line targets are authoring recommendations, not grammar.
 At level three, a reference document enters context only when the agent reads it; a script
 can execute and return output without first loading its source. Unread resources and
@@ -84,13 +88,14 @@ Do not turn that economy into a universal Skills-versus-MCP rule. Context cost d
 the host and its configuration. Claude Code now loads MCP tool names at startup and defers
 full schemas until a tool is needed, while GitHub's MCP server lets an operator narrow the
 available surface with `--toolsets` or `--tools`. An eagerly injected, large tool catalog
-is an expensive configuration, not the normal architecture of every MCP host. Progressive
-disclosure still trades startup tokens for filesystem round trips: the model has to `bash`
-out to read a body and any referenced file, which MCPJam argued can take roughly three to
-four times the tool calls of loading everything upfront in its illustrated comparison.
-Which trade wins depends
-on the harness, latency budget, and task. The next chapter, Skill or Server, takes up that
-comparison; hybrids are common.
+is an expensive configuration, not the normal architecture of every MCP host. In a
+filesystem-and-shell harness, including Anthropic's illustrated implementation, progressive
+disclosure trades startup tokens for retrieval round trips: the agent can use a shell read
+to load a body and any referenced file. The portable pattern prescribes staged loading, not
+that particular tool or protocol. MCPJam argued that this style of progressive retrieval can
+take roughly three to four times the tool calls of loading everything upfront in its
+illustrated comparison. Which trade wins depends on the harness, latency budget, and task.
+The next chapter, Skill or Server, takes up that comparison; hybrids are common.
 
 ## The description does the discovering
 
@@ -161,12 +166,13 @@ The widget below traces one small, correct skill package, the changelog skill fr
 artifact. Select a `SKILL.md` field or body excerpt to see where and when that file content
 loads. Then select a bundled reference or script to see its level-three behavior and the
 level-two body directive that points to it. The description sits at level one when the skill
-is listed for model invocation. In Claude Code, its full body waits at level two for a
-first, distinct, or changed rendering; an identical re-invocation gets a short already-loaded
-note. Distinct skill bodies can coexist. The reference and the script live at level three:
-reading the reference brings its text into context, while executing the script can return
-output without loading source first. One package, five elements, five different relationships
-with the context window.
+is listed for model invocation. In a regular Claude Code session, its full body waits at
+level two for a first, distinct, or changed rendering; an identical re-invocation gets a
+short already-loaded note. A subagent configured with this skill preloaded starts with its
+full content instead. Distinct skill bodies can coexist. The reference and the script live
+at level three: reading the reference brings its text into context, while executing the
+script can return output without loading source first. One package, five elements, five
+different relationships with the context window.
 
 <Widget name="skill_anatomy" hint="Hover or select a SKILL.md element, a bundled package file, or a highlighted directive to trace its progressive-disclosure path, load time, and context cost.">
   <SkillsWidget />
@@ -174,10 +180,11 @@ with the context window.
 
 One more habit separates skills that work from skills that look like they should. Build the
 evaluation first. Run the task without the skill and note exactly where the model fails,
-capture that gap into the leanest instructions that close it, and only then iterate. The
-practiced version uses two instances: one Claude drafts and refines the skill, a fresh
-Claude runs it cold on real tasks, and the second one's failures are the next edit. A skill
-you tuned against your own expectations is a skill that fires for you and no one else.
+capture that gap into the leanest instructions that close it, and only then iterate.
+Anthropic describes a two-instance workflow: one Claude drafts and refines the skill, a
+fresh Claude runs it cold on real tasks, and the second one's failures are the next edit.
+A skill you tuned against your own expectations is a skill that fires for you and no one
+else.
 
 ## Install only what you trust
 
@@ -193,8 +200,8 @@ change under it. On Anthropic's surface, frontmatter metadata enters the system 
 The platform separately disallows XML-like angle brackets in frontmatter. That is not a
 portable Agent Skills rule. Separately, Oasis Security demonstrated a Claude.ai chain
 with an injection hidden in a URL parameter, then used intentionally permitted Files API
-egress to exfiltrate data. It
-involved no skill, integration, tool, or MCP server. The lesson is narrower and stronger:
+egress to exfiltrate data. It involved no skill, integration, external or user-installed
+tool, or MCP server. The lesson is narrower and stronger:
 a sandbox alone cannot stop prompt injection or egress it deliberately permits. Control
 egress, filesystem access, and permissions explicitly.
 
@@ -212,11 +219,15 @@ Do not bake platform quotas, beta headers, or caching behavior into a portable s
 those details to the target surface's current documentation and revisit them at upgrade
 time. The deeper comparison, when the gap you are filling is procedural knowledge versus
 live connectivity, is the next chapter, Skill or Server. Mahesh Murag framed the split
-succinctly: MCP provides secure connectivity to external software and data; skills provide
-the procedural knowledge for using those tools effectively. The formulation comes from a
+succinctly: MCP connects agents to external software and data; skills provide the
+procedural knowledge for using those tools effectively. The formulation comes from a
 [VentureBeat interview](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard).
-The two compose. A skill can orchestrate MCP tools when it supplies the procedure those
-tools need.
+MCP does not make a connection secure by itself. Its authorization framework is optional;
+authentication, transport, authorization, and least-privilege deployment determine whether
+an integration is secure. The [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+and [security best practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices)
+name the required implementation work. The two compose. A skill can orchestrate MCP tools
+when it supplies the procedure those tools need.
 
 ## Run it
 
@@ -226,31 +237,34 @@ paths. It ships a real, correct skill, `changelog-entry/`, that a compatible loc
 directory can discover and trigger, complete with a `references/FORMAT.md` read one hop away and a
 `scripts/` validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does
 three things the chapter describes. Its default teaching lint checks the bundle's supported
-portable subset: ASCII name syntax, directory matching, and description bounds. It is not a
-general YAML or full-schema validator. For production, use the target harness's maintained
-validator and a deployment gate. `skills-ref` is a demonstration-only reference implementation,
-useful for comparison but not production certification. An explicit Anthropic profile adds that
-surface's reserved-word and angle-bracket checks. Third-person phrasing, what-and-when
-coverage, and the 500-line budget remain labelled authoring warnings, not portable failures.
-The lab prices listed, model-invocable skills at startup and makes the
-user-only exception visible. Its discovery simulator is deliberately illustrative: it uses
-a two-keyword proxy and prints a possible loading sequence, not evidence that a production
-model would trigger. A deliberately broken `bad-skill/` is included so you can watch the
-layers fail, and `--test` exercises the portable boundary cases, the surface profile, raw
-stdin validation, and the installed-validator path.
+portable subset: ASCII name syntax, directory matching, and description bounds. It rejects
+unsupported nonblank top-level YAML syntax instead of reporting malformed frontmatter as
+clean. It is not a general YAML or full-schema validator. For production, use the target
+harness's maintained validator and a deployment gate. `skills-ref` is a demonstration-only
+reference implementation, useful for comparison but not production certification. An explicit
+Anthropic profile adds that surface's reserved-word and angle-bracket checks. Third-person
+phrasing, what-and-when coverage, and the 500-line budget remain labelled authoring warnings,
+not portable failures. The lab models startup cost for listed, model-invocable skills in a
+regular session, makes the user-only exception visible, and offers a preloaded-subagent mode
+where named full skill bodies arrive at startup instead. Its discovery simulator is
+deliberately illustrative: it uses a two-keyword proxy and prints a possible loading
+sequence, not evidence that a production model would trigger. A deliberately broken
+`bad-skill/` is included so you can watch the layers fail, and `--test` exercises the
+portable boundary cases, the surface profile, raw stdin validation, the installed-validator
+path, and both lifecycle modes.
 
 <RunnableArtifact
   name="skills_lab"
   path="artifacts/ch10-skills/"
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch10-skills"
   runtime="python3 (Python 3.9+) + Bash for install/check"
-  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --test"]}>
+  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --budget 3 --session preloaded", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\" --session preloaded", "python3 skills_lab.py --test"]}>
 One real skill you can install and trigger, plus a teaching lint that checks its supported
 portable subset and an optional Anthropic profile, a progressive-disclosure cost model that
-prices listed skills, and an illustrative discovery simulator. A broken skill demonstrates
-the boundary between portable rules and surface-specific checks, while test mode covers the
-remaining boundaries. No third-party packages, API key, or network; Bash powers the
-documented install and check path.
+prices both a regular listing and a preloaded-subagent path, and an illustrative discovery
+simulator for each lifecycle. A broken skill demonstrates the boundary between portable
+rules and surface-specific checks, while test mode covers the remaining boundaries. No
+third-party packages, API key, or network; Bash powers the documented install and check path.
 </RunnableArtifact>
 
 ## Exercises
@@ -267,10 +281,12 @@ near-miss negatives. Tune the words, then measure the actual trigger behavior.
 <ExerciseCard n="02" title="Price the context">
 Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred listed,
 model-invocable skills against the cost of a full body on a first, distinct, or changed
-rendering. Now state, in one
-sentence, why a large listed skill library can stay cheap while triggering the wrong heavy
-skill consumes its full body budget. Then name the exception: a Claude Code user-only skill with
-`disable-model-invocation: true` is absent from startup context until manual invocation.
+rendering in a regular session. Then run `python3 skills_lab.py --budget 3 --session
+preloaded`. State why a large listed skill library can stay cheap while either triggering
+the wrong heavy skill or preloading it into a configured subagent consumes its full body
+budget. Name the other exception: a Claude Code user-only skill with
+`disable-model-invocation: true` is absent from regular-session startup context until manual
+invocation.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Break a rule and watch it fail">
@@ -301,6 +317,10 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   "context window is a public good" and new-hire-onboarding framings.
 - [VentureBeat, "Anthropic launches enterprise Agent Skills and opens the standard"](https://venturebeat.com/technology/anthropic-launches-enterprise-agent-skills-and-opens-the-standard),
   for Mahesh Murag's Skills/MCP formulation.
+- [The MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+  and [MCP security best practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices),
+  for the optional authorization model, implementation attack classes, and least-privilege
+  deployment guidance.
 - [The Agent Skills specification](https://agentskills.io/specification), for the portable
   format, frontmatter contract, directory structure, progressive-disclosure guidance, and
   reference validator.
@@ -321,7 +341,8 @@ Security Surface](/mcp-security-surface) would have to be in place before you wo
   estimate, not a platform guarantee.
 - [Claude Code's Skills documentation](https://code.claude.com/docs/en/skills) and its
   [feature-loading overview](https://code.claude.com/docs/en/features-overview), for
-  user-only invocation, stacked skills, bundled-script paths, and deferred MCP schemas.
+  user-only invocation, regular-session and preloaded-subagent lifecycles, stacked skills,
+  bundled-script paths, and deferred MCP schemas.
 - [GitHub's MCP server documentation](https://github.com/github/github-mcp-server), for
   the `--toolsets` and `--tools` controls that narrow the available tool surface.
 - [Simon Willison, "Claude Skills are awesome, maybe a bigger deal than MCP"](https://simonwillison.net/2025/Oct/16/claude-skills/),

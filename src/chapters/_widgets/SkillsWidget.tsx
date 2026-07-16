@@ -4,11 +4,12 @@ import { useState } from "react";
 // real skill package and watch its load profile appear. The reader should feel that SKILL.md
 // fields and the package's distinct bundled files live at different levels of progressive
 // disclosure and cost the context window very differently. The description is resident only
-// when the skill is listed for model invocation; a first, distinct, or changed rendered body
-// loads in Claude Code, while an identical re-invocation adds a short already-loaded note; a
-// referenced doc enters context when read; a bundled script can return output without first
-// loading its source. Selecting a bundled file also highlights the level-2 body directive
-// that points to it.
+// when the skill is listed for model invocation. In a regular Claude Code session, a first,
+// distinct, or changed rendered body loads while an identical re-invocation adds a short
+// already-loaded note. A configured preloaded subagent receives named full skill content at
+// startup instead. A referenced doc enters context when read; a bundled script can return
+// output without first loading its source. Selecting a bundled file also highlights the
+// level-2 body directive that points to it.
 // React state only, no persistence. Profiles distinguish portable design from Agent
 // Skills-specific limits where those limits are useful examples.
 
@@ -52,12 +53,12 @@ const PROFILES: Record<PartKey, Profile> = {
   body: {
     key: "body",
     label: "SKILL.md body",
-    level: "level 2 · instructions",
+    level: "regular session · level 2",
     hot: false,
-    when: "after this skill's first, distinct, or changed rendering in Claude Code",
-    cost: "< 5k tokens recommended for a full rendered body; identical re-invocation adds a short note",
-    enters: "a full body for first, distinct, or changed rendering; a short already-loaded note for an identical re-invocation",
-    role: "The procedure the model follows once the skill is activated. It is absent until that point, which is the whole point: a hundred listed skills can sit available without paying for every body. In Claude Code, an identical re-invocation adds a short already-loaded note rather than another body; a changed render, such as new arguments or dynamic context, adds the full body. Distinct activated skill bodies may coexist. The 500-line target is authoring guidance, not portable syntax.",
+    when: "regular session: after this skill's first, distinct, or changed rendering; preloaded subagent: at startup",
+    cost: "regular: < 5k tokens recommended for a full rendered body; preloaded: that full named body is paid at startup",
+    enters: "regular: full body for first, distinct, or changed rendering; preloaded subagent: full named skill content at startup",
+    role: "The procedure the model follows once the skill is activated. In a regular Claude Code session it stays absent until then, which is the whole point: a hundred listed skills can sit available without paying for every body. An identical re-invocation adds a short already-loaded note rather than another body; a changed render, such as new arguments or dynamic context, adds the full body. A subagent configured with named preloaded skills starts with their full content instead. Distinct activated skill bodies may coexist. The 500-line target is authoring guidance, not portable syntax.",
   },
   reference: {
     key: "reference",
@@ -268,7 +269,9 @@ export function SkillsWidget() {
       </div>
 
       <p className="mt-3 font-mono text-[0.7rem] text-comment">
-        {p.hot
+        {selected === "body"
+          ? "// Claude Code exception: a subagent configured with this named skill preloaded starts with its full content."
+          : p.hot
           ? "// startup context: listed model-invocable skills only; user-only skills enter after manual invocation."
           : "// off-window until needed: this package element costs nothing until the skill actually reaches it."}
       </p>

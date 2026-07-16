@@ -1,11 +1,12 @@
 // SkillsFigure: the figure for "Skills".
 // The structure it encodes: progressive disclosure as a three-level loading ladder.
-// Listed, model-invocable skills contribute metadata at startup. A first, distinct, or changed
-// rendered activation can contribute its body; an identical Claude Code re-invocation adds a
-// short already-loaded note. Distinct skill bodies can stack. At level 3, read reference text
-// enters context; executed script output enters context while unread resources and uninspected
-// script source remain on disk. A user-only skill is absent from startup context until manual
-// invocation.
+// Listed, model-invocable skills contribute metadata at startup. In a regular Claude Code
+// session, a first, distinct, or changed rendered activation can contribute its body; an
+// identical re-invocation adds a short already-loaded note. A configured preloaded subagent
+// receives named full skill content at startup instead. Distinct skill bodies can stack. At
+// level 3, read reference text enters context; executed script output enters context while
+// unread resources and uninspected script source remain on disk. A user-only skill is absent
+// from regular-session startup context until manual invocation.
 
 export function SkillsFigure() {
   return (
@@ -13,7 +14,7 @@ export function SkillsFigure() {
       viewBox="0 0 900 570"
       className="w-full min-w-[860px]"
       role="img"
-      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding a context window in an Agent Skills-style harness. Metadata for listed model-invocable skills loads at startup; user-only skills do not. In Claude Code, a first, distinct, or changed rendered SKILL.md body enters context, while an identical re-invocation adds a short already-loaded note. Distinct skill bodies can stack. A reference file enters context when read. A script can execute and return output without loading its source."
+      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding a context window in an Agent Skills-style harness. Metadata for listed model-invocable skills loads at startup; user-only skills do not. In a regular Claude Code session, a first, distinct, or changed rendered SKILL.md body enters context, while an identical re-invocation adds a short already-loaded note. A configured subagent with preloaded skills receives its named full skill content at startup instead. Distinct skill bodies can stack. A reference file enters context when read. A script can execute and return output without loading its source."
       fill="none"
     >
       <rect x="1" y="1" width="898" height="568" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
@@ -28,7 +29,7 @@ export function SkillsFigure() {
       </defs>
 
       <text x="22" y="20" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
-        {"// progressive disclosure: each path enters context at a different moment"}
+        {"// progressive disclosure: regular session plus preloaded-subagent exception"}
       </text>
 
       {/* level 1: metadata, listed/model-invocable only */}
@@ -41,9 +42,9 @@ export function SkillsFigure() {
       {/* level 2: all activated bodies, not one selected body */}
       <rect x="28" y="166" width="440" height="100" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.35" strokeDasharray="5 4" />
       <text x="44" y="190" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">level 2 · instructions</text>
-      <text x="44" y="211" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">loaded: first, distinct, or changed rendering</text>
+      <text x="44" y="211" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">regular session: first, distinct, or changed rendering</text>
       <text x="44" y="230" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">full body: &lt; 5k tokens recommended</text>
-      <text x="44" y="251" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">distinct bodies can stack; identical re-invocation: short note</text>
+      <text x="44" y="251" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">regular: distinct bodies stack; identical re-invocation: short note</text>
 
       {/* level 3+: read and execute are intentionally separate paths */}
       <rect x="28" y="286" width="440" height="132" rx="8" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.6" strokeDasharray="2 3" />
@@ -71,7 +72,7 @@ export function SkillsFigure() {
       <text x="646" y="142" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">startup · model-invocable only</text>
 
       <rect x="632" y="170" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.3" strokeDasharray="4 3" />
-      <text x="646" y="190" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">first / distinct / changed bodies</text>
+      <text x="646" y="190" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">regular: first / distinct / changed</text>
       <text x="646" y="206" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">identical re-invocation: short note</text>
 
       <rect x="632" y="234" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
@@ -82,8 +83,9 @@ export function SkillsFigure() {
       <text x="646" y="318" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">script execution output</text>
       <text x="646" y="334" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">source stays available on disk</text>
 
-      <text x="740" y="374" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">manual-only user skill: zero at startup;</text>
-      <text x="740" y="390" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">its body joins after manual invocation</text>
+      <text x="740" y="368" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">preloaded subagent</text>
+      <text x="740" y="384" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">named full body at startup</text>
+      <text x="740" y="402" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">regular user-only: zero at startup</text>
 
       {/* lesson band */}
       <rect x="28" y="438" width="840" height="112" rx="8" fill="var(--surface)" stroke="var(--border)" />
@@ -91,10 +93,10 @@ export function SkillsFigure() {
         {"// the payoff: list what might help; load only what the task actually uses"}
       </text>
       <text x="44" y="485" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"startup pays for listed metadata; bodies, reference text, and script output arrive only along the path taken."}
+        {"regular startup pays for listed metadata; preloaded subagents choose named bodies up front."}
       </text>
       <text x="44" y="506" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
-        {"the savings hold even when several skills activate, because unread files and uninspected script source remain off-window."}
+        {"unread files and uninspected script source remain off-window in either session shape."}
       </text>
       <text x="44" y="530" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">
         {"100 listed skills: Firecrawl ~3 to 5k; Anthropic rule of thumb ~10k at startup."}

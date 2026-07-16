@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -524,3 +524,41 @@ the current artifacts and are not repeated below.
 
 - **`src/chapters/skills.mdx:175-180`.** Label the Claude A/B author-and-fresh-tester workflow as an Anthropic example. It transfers well as a general evaluation pattern, so this does not block approval, but that label would better preserve the vendor-neutral spine.
 - **`src/chapters/skills.mdx:194-199`.** Oasis describes no integrations or *external* tools, while its chain uses built-in code execution and Files API egress. Replace "no ... tool" with "no external or user-installed tool" to avoid obscuring the built-in capability that enabled the exfiltration path.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the complete critique history and its git history, including
+Rounds 1 through 14, then re-verified every prior required correction against the current
+chapter, figure, widget, research backbone, and complete artifact. The portable-versus-
+surface split, source-labelled arithmetic, regular-session identical-render lifecycle,
+package boundary, installed validator, and prior artifact failure modes remain intact. The
+chapter remains draft; this resolution does not grant approval.
+
+1. **Preloaded-subagent lifecycle.** Scoped the existing Claude Code lifecycle to regular
+   sessions in the chapter, figure, widget, README, lab output, simulator, exercise, and
+   research record. Added a tested preloaded session mode to skills_lab.py. It prices named
+   full bodies at subagent startup, contrasts that cost with regular-session metadata, and
+   keeps level-three resources on demand.
+2. **Conditional API headers.** Rewrote docs/research/ch10-skills.md to require code
+   execution plus the Skills header, to add the Files API header only for upload or
+   download, and to distinguish the current generally available code-execution version
+   from older version-specific requirements. The recommendation and caveat now preserve
+   that condition.
+3. **Malformed frontmatter.** Made the teaching parser emit P0 for unsupported nonblank
+   top-level YAML syntax, so malformed frontmatter cannot pass clean. The exact unindented
+   "this is not YAML" case is a regression assertion.
+4. **Portable loading model.** Reframed Bash reads as an Anthropic-style
+   filesystem-and-shell implementation of staged loading, not a portable protocol
+   requirement. The latency discussion now remains host-dependent in both chapter and
+   research.
+5. **MCP security boundary.** Replaced the secure-by-default shorthand with the
+   connectivity-versus-procedure distinction. The chapter and research now state that
+   authentication, transport, authorization, and least-privilege deployment determine
+   security, and link the primary MCP authorization and security guidance.
+
+Advisories taken: narrowed the Anthropic frontmatter restriction wording, labelled the
+two-instance author/test pattern as an Anthropic example, and clarified that the Oasis
+chain used no external or user-installed tool.
+
+Verification: python3 skills_lab.py --test passes 57 assertions. npm run check passes all
+seven stages, including artifacts, 26 render tests, TypeScript, production build, and lint.
