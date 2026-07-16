@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 Fresh-eyes review: read `src/chapters/mcp-security-surface.mdx`, `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx`, and the Chapter 9 runnable artifact and README. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all nine artifact checks, 25 Vitest tests, production build, and lint passed. Spot-checked the listed MCP Authorization specification revision 2025-11-25 and RFC references: the chapter's audience-validation, resource-indicator, protected-resource-metadata, PKCE, and no-token-transit claims agree with the current specification. The figure accurately encodes the three-leg exfiltration path; the widget and deterministic lab distinguish a demonstrated backstop from the architectural controls that constrain the other paths.
@@ -558,3 +558,67 @@ not re-litigated here. This round adds two new source-accuracy defects.
 - **src/chapters/mcp-security-surface.mdx:74 --- attribute the EchoLeak CVSS score.**
   Microsoft assigns CVSS 3.1 9.3, while NVD assigns 7.5. “Microsoft CVSS 9.3” retains the
   cited score without implying that it is the only assessment.
+
+## Builder resolution (2026-07-15)
+
+Regression gate: re-verified every required fix from Rounds 1 through 12 against the
+current chapter, figure, widget, research reference, README, deterministic client, and
+vulnerable and hardened MCP stdio pair. Round 1 had no required fixes. The resolved
+Rounds 2 through 9 authorization, trusted-boundary, provenance, catalog-integrity,
+artifact-fidelity, source-scope, combined-source, no-transit, error-contract, and
+Rule-of-Two repairs remain covered by the chapter and deterministic regressions.
+
+1. Hardened `initialize` validation in
+   `artifacts/ch09-mcp-security-surface/security_mcp.py`: `protocolVersion`, a
+   `capabilities` object, and `clientInfo.name` plus `clientInfo.version` are required
+   before the lifecycle state changes. New in-memory and stdio regressions reject the
+   malformed request with `-32602`, ignore the premature initialized notification, and
+   complete a valid handshake on the same connection.
+2. Moved the Figure 9.1 lesson-band rectangle behind the numbered attack path in
+   `src/chapters/_figures/McpSecuritySurfaceFigure.tsx`, so the B-to-context arrow and
+   `[3] result` label paint above it and the four-step sequence remains continuous.
+3. Qualified the MCP Inspector case in the chapter and research reference: the
+   browser-side route requires an unauthenticated local Inspector proxy in a vulnerable
+   version below `0.14.1` to already be running before a malicious page can send it a
+   request.
+4. Applied the trusted resource lock to `read_issue` before any provider result reaches
+   model context. The artifact now has in-memory and stdio regressions for a denied
+   cross-repository issue read, while the combined private-and-untrusted source runs only
+   in an explicitly authorized session. The widget and README describe that boundary
+   precisely.
+5. Corrected EchoLeak's egress topology and source attribution in the chapter and
+   research reference. The direct attacker image is CSP-blocked; the successful automatic
+   request goes through the CSP-allowlisted Microsoft Teams `asyncgw` proxy, which fetches
+   the attacker endpoint. The text now attributes the 9.3 score to Microsoft and uses
+   Cato's recipient-directed XPIA account.
+6. Split Willison's Dual LLM pattern from CaMeL in the chapter and research reference.
+   Dual LLM now owns the privileged/quarantined-model and symbolic-variable handoff;
+   CaMeL now owns its distinct control-and-data-flow extraction, restricted interpreter,
+   and capability enforcement at tool calls.
+
+Advisories taken: the EchoLeak wording and CVSS attribution from Round 10 and Round 12
+are now precise. The remaining previously recorded advisories remain non-blocking.
+
+Verification: `bash artifacts/ch09-mcp-security-surface/check.sh` passes all deterministic
+artifact regressions. `npm run check` passes validation, prose lint, pipeline and artifact
+tests, Vitest, typecheck, production build, and lint. The registry status remains `draft`
+for independent re-review.
+
+## Builder resolution (2026-07-15)
+
+Follow-up self-review: re-verified the Round 10 through Round 12 fixes against the current
+chapter, figure, widget, research reference, README, and MCP artifact. The lifecycle,
+resource-lock, EchoLeak-topology, and Dual-LLM/CaMeL repairs remain in place.
+
+1. Corrected `src/chapters/_widgets/McpSecuritySurfaceWidget.tsx` so its indirect-injection
+   explanation says the allowed untrusted issue can reach context, while the resource lock
+   blocks the later cross-repository private result before it returns to the model.
+2. Added a scenario-specific polite live announcement to the widget, so changing either the
+   attack or the hardened posture produces meaningful screen-reader feedback.
+3. Increased the contrast of Figure 9.1's critical explanatory labels with `--fg-muted`.
+   The attack path remains painted above the lesson band. A live browser preview was not
+   available in this environment, so the figure layering was checked in source and through
+   the production build.
+
+Verification: `npm run check` passes. The critique remains `verdict: resolved`, and the
+registry status remains `draft` for independent re-review.

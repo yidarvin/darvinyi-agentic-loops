@@ -14,6 +14,11 @@ in mcp_security.py has a readable walkthrough of the same JSON-RPC server core. 
 exploit through those methods. It is safe to run: no tool contacts a network, reads a
 local file, or uses a real secret.
 
+The lifecycle boundary is deliberate: `initialize` must include `protocolVersion`, a
+`capabilities` object, and `clientInfo.name` plus `clientInfo.version`. A malformed
+handshake does not start a session, and the same connection can still complete a valid
+handshake afterward.
+
 ## Run it
 
     cd artifacts/ch09-mcp-security-surface
@@ -62,6 +67,12 @@ attacker-controlled and marks the session tainted **before** returning the text 
 client. Neither a provider-supplied hint nor a credulous client decides that provenance. A
 direct protocol sequence that omits any agent-level metadata still hits the egress gate
 after an untrusted result, private read, and external send.
+
+For every repository-addressed read, including `read_issue`, the trusted host checks the
+per-session allowed repository before the provider can return content. An issue from a
+different repository is denied before it can become model context. A separately configured
+authorized session keeps the combined private-and-untrusted retrieval regression distinct
+from that cross-repository boundary.
 
 Sensitivity is tracked independently. A private inbox or RAG retrieval can contain
 attacker-controlled text while also returning private data, so one source can set both

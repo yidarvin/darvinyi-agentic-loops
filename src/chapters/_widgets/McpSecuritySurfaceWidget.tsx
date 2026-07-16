@@ -47,7 +47,7 @@ const SCENARIOS: Scenario[] = [
     leaked: "a private roadmap, published in a public pull request",
     control: "resource-lock",
     controlWhy:
-      "The trusted host scopes this session to acme/website. A read of any other repo is denied there, outside the untrusted provider, so the public-to-private jump the toxic-agent flow needs never happens. The trifecta cannot close.",
+      "The trusted host scopes this session to acme/website. The untrusted issue may reach context, but a repo-addressed read outside that session is denied before the private result can return to the model. The public-to-private jump the toxic-agent flow needs never happens, so the trifecta cannot close.",
     takeaway:
       "The GitHub toxic-agent flow, in miniature. Nothing here is a bug in the tool provider's code, so no provider-side patch fixes it. Per-session resource locking removes leg [B]'s reach.",
   },
@@ -187,8 +187,13 @@ export function McpSecuritySurfaceWidget() {
       <div className="mt-3 rounded border border-border bg-surface p-3">
         <div className="flex items-baseline justify-between">
           <span className="font-mono text-[0.7rem] text-comment">{"// what the agent does"}</span>
-          <span aria-live="polite" aria-atomic="true" className={`font-mono text-[0.7rem] font-semibold ${OUTCOME_COLOR[outcome]}`}>
+          <span className={`font-mono text-[0.7rem] font-semibold ${OUTCOME_COLOR[outcome]}`}>
             {outcome === "BLOCKED" ? `BLOCKED by [${s.control}]` : "EXFILTRATED"}
+          </span>
+          <span aria-live="polite" aria-atomic="true" className="sr-only">
+            {outcome === "BLOCKED"
+              ? `${s.label}: blocked by ${s.control}`
+              : `${s.label}: exfiltrated ${s.leaked}`}
           </span>
         </div>
         <pre className="mt-1.5 overflow-x-auto font-mono text-[0.7rem] leading-relaxed text-fg/80">

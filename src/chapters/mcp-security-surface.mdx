@@ -71,15 +71,18 @@ public sink. A separate July 2026 GitLost demonstration against GitHub Agentic W
 reported that adding the word "Additionally" bypassed restrictive guardrails in that proof
 of concept. The mechanism is product-specific; the lesson is not.
 
-EchoLeak (CVE-2025-32711, CVSS 9.3), found by Aim Labs in Microsoft 365 Copilot, is widely
-described as the first documented zero-click prompt-injection exfiltration in a production
-LLM system. A malicious email carries hidden instructions, worded so they never mention AI
-so that the classifier scanning for exactly that never fires. When retrieval later pulls
-the email into context, Copilot embeds sensitive data into a markdown image URL that the
-client auto-fetches to the attacker. Aim Labs called the pattern an LLM Scope Violation. It
-chained four separate bypasses to get there, and it was patched with no known exploitation
-in the wild. Its value is as proof that the attack class works end to end against a real,
-well-resourced product.
+EchoLeak (CVE-2025-32711, Microsoft CVSS 3.1 9.3), found by Aim Labs in Microsoft 365
+Copilot, is widely described as the first documented zero-click prompt-injection
+exfiltration in a production LLM system. A malicious email carries hidden instructions
+framed as directions to its recipient and omits AI, assistant, and Copilot terminology,
+which made XPIA detection difficult. When retrieval later pulls the email into context,
+Copilot can place sensitive data and an attacker endpoint in a reference-style markdown
+image URL. A direct `evil.com` image was blocked by `img-src` CSP. The successful chain
+sent the automatic image request to a CSP-allowlisted Microsoft Teams `asyncgw` proxy,
+which then fetched the attacker endpoint carrying the secret. Aim Labs called the pattern
+an LLM Scope Violation. It chained four separate bypasses to get there, and it was patched
+with no known exploitation in the wild. Its value is as proof that the attack class works
+end to end against a real, well-resourced product.
 
 ## The poisoned surface: descriptions, schemas, outputs
 
@@ -172,8 +175,9 @@ that need their own path and egress controls. These vendor results are direction
 Micro correlated public-directory metadata for 9,695 unique entries with its prior automated
 analysis and randomized manual verification, then reported confirmed issues in 2,259 of
 them. The tooling around MCP is an attack surface in its own right: Oligo reported
-CVE-2025-49596, a remote code execution in the MCP Inspector (CVSS 9.4) reachable by merely
-visiting a malicious web page. JFrog characterized CVE-2025-6514 as the first documented
+CVE-2025-49596, a remote code execution in MCP Inspector versions below 0.14.1 (CVSS 9.4).
+The browser-side route requires its unauthenticated local Inspector proxy to already be
+running, then a malicious page can send it the request. JFrog characterized CVE-2025-6514 as the first documented
 full RCE on a client's own operating system from a remote server, through the widely
 installed `mcp-remote` proxy (CVSS 9.6). Backslash found the single most common issue was
 servers bound to `0.0.0.0`, reachable by anyone on the network. These are the threats
@@ -222,13 +226,15 @@ conservative deployment policy of a fresh context plus human review for a task t
 needs all three. The framework remains useful, not a sufficient proof. Meta calls it a
 supplement, and Noma's analysis notes that property-counting can mislead when one tool supplies
 two legs at once, as in EchoLeak.
-Willison's Dual LLM pattern and Google DeepMind's CaMeL (arXiv 2503.18813) go further: a
-privileged model that can call tools never sees raw untrusted content, while a quarantined
-model handles the untrusted data and hands back only tagged variables. CaMeL tracks
-capabilities on every value and enforces policy at the moment of the tool call. Under its
-interpreter, policy, and threat assumptions, it reports provable security on 77% of AgentDojo
-tasks against 84% undefended, a real utility cost for a bounded guarantee. As Willison puts
-it, "this data cannot reach that capability" beats "this prompt is probably fine."
+Willison's Dual LLM pattern uses a privileged model that can call tools and never sees raw
+untrusted content. A quarantined model handles that content, while a controller hands the
+privileged model symbolic variables instead of the raw or tainted text. CaMeL (arXiv
+2503.18813) is a distinct architecture: a protective layer extracts control and data flows
+from the trusted query, uses a restricted interpreter, and enforces capability policy at
+tool calls. Under its interpreter, policy, and threat assumptions, it reports provable
+security on 77% of AgentDojo tasks against 84% undefended, a real utility cost for a bounded
+guarantee. As Willison puts it, "this data cannot reach that capability" beats "this prompt
+is probably fine."
 Description integrity addresses the post-approval rug-pull gap: Trail of Bits'
 mcp-context-protector blocks a newly seen server pending manual review of its instructions,
 descriptions, and parameter descriptions, then pins that reviewed configuration and checks

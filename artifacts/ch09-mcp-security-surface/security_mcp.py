@@ -441,7 +441,7 @@ class UntrustedMcpProvider:
             repo, number = args.get("repo"), args.get("number")
             if repo == "acme/website" and number == 7:
                 return POISONED_ISSUE
-            if repo == "acme/support" and number == 42:
+            if repo == "acme/website" and number == 42:
                 return POISONED_TICKET
             if repo == COMBINED_SOURCE_REPO and number == COMBINED_SOURCE_NUMBER:
                 return (
@@ -619,6 +619,12 @@ class TrustedHostGateway:
             descriptor = self.descriptor_for_call(name)
 
         if name in UNTRUSTED_PROVIDER_TOOL_NAMES:
+            if name == "read_issue":
+                # A provider result can be attacker-controlled and still name a private
+                # repository. Apply the resource lock before the provider returns it so
+                # the host does not rely on a later egress check to contain an unauthorized
+                # cross-repository read.
+                self._assert_repo_allowed(args.get("repo"), session)
             result = self.provider.call(name, args)
             # Provenance is attached before the caller receives text from a policy the
             # gateway owns. Neither the agent nor a malicious provider descriptor can
@@ -669,15 +675,21 @@ class TrustedHostGateway:
             and args.get("number") == COMBINED_SOURCE_NUMBER
         )
 
-    def _read_repo_file(self, args: Dict[str, Any], session: Session) -> str:
-        repo, path = args["repo"], args["path"]
-        # The home directory remains deliberately outside this repo lock. That lets the
-        # rug-pull and output-poisoning examples isolate their own controls.
-        if self.hardened and repo not in ("~", session.allowed_repo):
+    def _assert_repo_allowed(self, repo: Any, session: Session, *, allow_home: bool = False) -> None:
+        """Enforce the host-owned repository boundary before a provider read runs."""
+
+        allowed = ("~", session.allowed_repo) if allow_home else (session.allowed_repo,)
+        if self.hardened and repo not in allowed:
             raise Blocked(
                 "resource-lock",
                 f"session is scoped to {session.allowed_repo!r}; read of {repo!r} denied",
             )
+
+    def _read_repo_file(self, args: Dict[str, Any], session: Session) -> str:
+        repo, path = args["repo"], args["path"]
+        # The home directory remains deliberately outside this repo lock. That lets the
+        # rug-pull and output-poisoning examples isolate their own controls.
+        self._assert_repo_allowed(repo, session, allow_home=True)
         content = PRIVATE_FILES.get(f"{repo}:{path}")
         if content is not None:
             session.mark_sensitive(f"read_repo_file:{repo}:{path}")
@@ -746,7 +758,12 @@ def tool_err(mid: Any, text: str) -> Dict[str, Any]:
 class SecurityMcpServer:
     """One real MCP server core. Instantiate it as vulnerable or hardened."""
 
-    def __init__(self, posture: str, catalog_mode: str = "normal"):
+    def __init__(
+        self,
+        posture: str,
+        catalog_mode: str = "normal",
+        allowed_repo: str = "acme/website",
+    ):
         if posture not in {"vulnerable", "hardened"}:
             raise ValueError("posture must be 'vulnerable' or 'hardened'")
         self.posture = posture
@@ -760,7 +777,7 @@ class SecurityMcpServer:
         # not sent in JSON-RPC and is not presented as HTTP OAuth or JWT verification.
         self.session = self.gateway.open_session(
             user="alice",
-            allowed_repo="acme/website",
+            allowed_repo=allowed_repo,
             token=Token("alice", "acme-mcp", {"read:orders"}),
         )
         self.initialize_received = False
@@ -788,6 +805,16 @@ class SecurityMcpServer:
             requested = params.get("protocolVersion")
             if not isinstance(requested, str):
                 return err(mid, INVALID_PARAMS, "initialize protocolVersion must be a string")
+            capabilities = params.get("capabilities")
+            if not isinstance(capabilities, dict):
+                return err(mid, INVALID_PARAMS, "initialize capabilities must be an object")
+            client_info = params.get("clientInfo")
+            if not isinstance(client_info, dict):
+                return err(mid, INVALID_PARAMS, "initialize clientInfo must be an object")
+            if not isinstance(client_info.get("name"), str):
+                return err(mid, INVALID_PARAMS, "initialize clientInfo.name must be a string")
+            if not isinstance(client_info.get("version"), str):
+                return err(mid, INVALID_PARAMS, "initialize clientInfo.version must be a string")
             # MCP version negotiation is a response, not a request rejection. When a
             # client asks for an unsupported revision, advertise the newest revision
             # this server supports. A client that cannot use it can then disconnect.
@@ -943,10 +970,14 @@ class InMemoryMcpClient:
         return self.request("tools/call", {"name": name, "arguments": arguments})
 
 
-def serve_stdio(posture: str, catalog_mode: str = "normal") -> None:
+def serve_stdio(
+    posture: str,
+    catalog_mode: str = "normal",
+    allowed_repo: str = "acme/website",
+) -> None:
     """Serve real newline-delimited JSON-RPC over stdio. Protocol replies use stdout."""
 
-    server = SecurityMcpServer(posture, catalog_mode=catalog_mode)
+    server = SecurityMcpServer(posture, catalog_mode=catalog_mode, allowed_repo=allowed_repo)
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -966,9 +997,10 @@ def serve_stdio(posture: str, catalog_mode: str = "normal") -> None:
 
 
 def run_entrypoint(posture: str, argv: Sequence[str]) -> int:
-    """Parse the one optional lab-only scenario flag and serve the selected posture."""
+    """Parse lab-only scenario and session-scope flags, then serve the selected posture."""
 
     catalog_mode = "normal"
+    allowed_repo = "acme/website"
     if "--scenario" in argv:
         index = argv.index("--scenario")
         if index + 1 >= len(argv):
@@ -978,6 +1010,12 @@ def run_entrypoint(posture: str, argv: Sequence[str]) -> int:
             )
             return 2
         catalog_mode = argv[index + 1]
+    if "--allowed-repo" in argv:
+        index = argv.index("--allowed-repo")
+        if index + 1 >= len(argv) or not argv[index + 1]:
+            print("--allowed-repo requires a non-empty repository name", file=sys.stderr)
+            return 2
+        allowed_repo = argv[index + 1]
     if catalog_mode not in {
         "normal",
         "rug-pull",
@@ -988,5 +1026,5 @@ def run_entrypoint(posture: str, argv: Sequence[str]) -> int:
     }:
         print(f"unsupported scenario: {catalog_mode}", file=sys.stderr)
         return 2
-    serve_stdio(posture, catalog_mode=catalog_mode)
+    serve_stdio(posture, catalog_mode=catalog_mode, allowed_repo=allowed_repo)
     return 0

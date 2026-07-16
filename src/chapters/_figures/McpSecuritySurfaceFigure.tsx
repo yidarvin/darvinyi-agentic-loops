@@ -44,30 +44,33 @@ export function McpSecuritySurfaceFigure() {
       {/* leg A: untrusted content, carrying the injection */}
       <rect x="34" y="62" width="214" height="72" rx="8" fill="var(--surface)" stroke="var(--danger)" strokeOpacity="0.5" />
       <text x="48" y="84" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[A] untrusted content</text>
-      <text x="48" y="101" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">tool result: a public issue,</text>
-      <text x="48" y="114" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a web page, an email</text>
+      <text x="48" y="101" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">tool result: a public issue,</text>
+      <text x="48" y="114" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a web page, an email</text>
       <text x="48" y="128" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">carries the injected instruction</text>
 
       {/* leg B: private data */}
       <rect x="34" y="326" width="214" height="72" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.45" />
       <text x="48" y="348" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[B] private data</text>
-      <text x="48" y="365" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a legitimate tool that reads</text>
-      <text x="48" y="378" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a private repo, a secret file,</text>
-      <text x="48" y="391" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a downstream record</text>
+      <text x="48" y="365" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a legitimate tool that reads</text>
+      <text x="48" y="378" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a private repo, a secret file,</text>
+      <text x="48" y="391" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a downstream record</text>
 
       {/* the center: the context window where data becomes instructions */}
       <rect x="352" y="182" width="196" height="98" rx="9" fill="var(--accent)" fillOpacity="0.08" stroke="var(--accent)" strokeOpacity="0.7" />
       <text x="450" y="210" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--accent)">context window</text>
       <text x="450" y="234" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12.5" fill="var(--fg)">data becomes</text>
       <text x="450" y="250" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12.5" fill="var(--fg)">instructions</text>
-      <text x="450" y="269" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">no instruction / data boundary</text>
+      <text x="450" y="269" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">no instruction / data boundary</text>
 
       {/* leg C: exfiltration sink */}
       <rect x="646" y="196" width="200" height="72" rx="8" fill="var(--surface)" stroke="var(--danger)" strokeOpacity="0.5" />
       <text x="660" y="218" fontFamily="var(--font-mono)" fontSize="11.5" fill="var(--fg)">[C] exfiltration sink</text>
-      <text x="660" y="235" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a legitimate tool that sends:</text>
-      <text x="660" y="248" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a public PR, a fetched URL,</text>
-      <text x="660" y="261" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">a rendered markdown image</text>
+      <text x="660" y="235" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a legitimate tool that sends:</text>
+      <text x="660" y="248" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a public PR, a fetched URL,</text>
+      <text x="660" y="261" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">a rendered markdown image</text>
+
+      {/* The lesson band sits behind the attack path so it cannot mask step [3]. */}
+      <rect x="300" y="306" width="558" height="162" rx="8" fill="var(--surface)" stroke="var(--border)" />
 
       {/* numbered attack path: every request and result passes through model context */}
       <line x1="248" y1="102" x2="349" y2="196" stroke="var(--danger)" strokeWidth="1.6" strokeDasharray="5 4" markerEnd="url(#mcp9-arrow-danger)" />
@@ -80,7 +83,6 @@ export function McpSecuritySurfaceFigure() {
       <text x="560" y="220" fontFamily="var(--font-mono)" fontSize="10" fill="var(--danger)">[4] action</text>
 
       {/* lesson band: the legs are capabilities, and one source can supply more than one */}
-      <rect x="300" y="306" width="558" height="162" rx="8" fill="var(--surface)" stroke="var(--border)" />
       <text x="316" y="330" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
         {"// capability combinations can overlap; inspection can lower exposure"}
       </text>
@@ -99,7 +101,7 @@ export function McpSecuritySurfaceFigure() {
       <text x="316" y="436" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--danger)">
         {"overlap: private retrieved data can carry untrusted text"}
       </text>
-      <text x="316" y="458" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+      <text x="316" y="458" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">
         {"policy gates a capability; inspection can lower exposure, not prove safety."}
       </text>
     </svg>

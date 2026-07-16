@@ -141,10 +141,10 @@ def attack_2_reviewed_baseline_rug_pull(posture: str, verbose: bool = False) -> 
 
 
 def attack_3_confused_deputy(posture: str, verbose: bool = False) -> AttackResult:
-    """Poisoned support ticket attempts a direct Billing read and external send."""
+    """Poisoned issue attempts a direct Billing read and external send."""
 
     client = _new_client(posture, verbose=verbose)
-    reply = client.call_tool("read_issue", {"repo": "acme/support", "number": 42})
+    reply = client.call_tool("read_issue", {"repo": "acme/website", "number": 42})
     ticket, is_error = _tool_reply_text(reply)
     control = _control_from_text(ticket) if is_error else _follow_plan(client, ticket, verbose)
     return _outcome(client.server, control)
@@ -191,10 +191,17 @@ def run_demo(only: Optional[int] = None) -> int:
 class StdioMcpClient:
     """Small JSON-lines client used only to prove both entrypoints run over stdio."""
 
-    def __init__(self, entrypoint: str, scenario: Optional[str] = None):
+    def __init__(
+        self,
+        entrypoint: str,
+        scenario: Optional[str] = None,
+        allowed_repo: Optional[str] = None,
+    ):
         command = [sys.executable, str(HERE / entrypoint)]
         if scenario is not None:
             command.extend(["--scenario", scenario])
+        if allowed_repo is not None:
+            command.extend(["--allowed-repo", allowed_repo])
         self.process = subprocess.Popen(
             command,
             cwd=HERE,
@@ -271,6 +278,23 @@ def _status_from_reply(reply: Dict[str, Any]) -> Dict[str, Any]:
     return json.loads(text)
 
 
+def _stdio_initialize_validation() -> Tuple[
+    Dict[str, Any], Dict[str, Any], Dict[str, Any], List[Dict[str, Any]], str
+]:
+    """Reject a malformed handshake, then complete a valid one on the same endpoint."""
+
+    client = StdioMcpClient("hardened_mcp_server.py")
+    try:
+        malformed = client.request("initialize", {"protocolVersion": LATEST})
+        client.notify_initialized()
+        before_valid_handshake = client.request("tools/list")
+        valid = client.initialize()
+        catalog = client.list_tools()
+    finally:
+        stderr = client.close()
+    return malformed, before_valid_handshake, valid, catalog, stderr
+
+
 def _stdio_attack(entrypoint: str, attack: int) -> Tuple[Dict[str, Any], Optional[str], Dict[str, Any], str]:
     """Drive one complete attack through an actual vulnerable or hardened stdio server."""
 
@@ -293,7 +317,7 @@ def _stdio_attack(entrypoint: str, attack: int) -> Tuple[Dict[str, Any], Optiona
                 else "catalog-integrity"
             )
         elif attack == 3:
-            source = client.call_tool("read_issue", {"repo": "acme/support", "number": 42})
+            source = client.call_tool("read_issue", {"repo": "acme/website", "number": 42})
             text, is_error = _tool_reply_text(source)
             control = _control_from_text(text) if is_error else _follow_plan(client, text, verbose=False)
         elif attack == 4:
@@ -319,7 +343,10 @@ def _stdio_attack(entrypoint: str, attack: int) -> Tuple[Dict[str, Any], Optiona
 def _stdio_combined_source() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], str]:
     """Prove a private source that also carries untrusted text cannot bypass egress."""
 
-    client = StdioMcpClient("hardened_mcp_server.py")
+    client = StdioMcpClient(
+        "hardened_mcp_server.py",
+        allowed_repo=COMBINED_SOURCE_REPO,
+    )
     try:
         initialize = client.initialize()
         catalog = client.list_tools()
@@ -339,6 +366,24 @@ def _stdio_combined_source() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, 
     finally:
         stderr = client.close()
     return wire, egress, status, stderr
+
+
+def _stdio_cross_repo_issue() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], str]:
+    """Prove the hardened resource lock rejects a cross-repository provider read."""
+
+    client = StdioMcpClient("hardened_mcp_server.py")
+    try:
+        initialize = client.initialize()
+        catalog = client.list_tools()
+        rejected = client.call_tool(
+            "read_issue",
+            {"repo": COMBINED_SOURCE_REPO, "number": COMBINED_SOURCE_NUMBER},
+        )
+        status = _status_from_reply(client.call_tool("lab_status", {}))
+        wire = {"initialize": initialize, "catalog": catalog}
+    finally:
+        stderr = client.close()
+    return wire, rejected, status, stderr
 
 
 def _stdio_private_egress() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], str]:
@@ -443,6 +488,37 @@ def run_tests() -> int:
             f"{posture} returns valid object inputSchema values for every listed tool",
             bool(tools) and all(isinstance(tool.get("inputSchema"), dict) for tool in tools),
         )
+
+    malformed_initialize = SecurityMcpServer("hardened")
+    malformed_initialize_reply = malformed_initialize.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": LATEST},
+        }
+    )
+    malformed_initialize.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    malformed_lifecycle_unset = (
+        malformed_initialize.initialize_received is False
+        and malformed_initialize.initialized is False
+    )
+    before_valid_initialize = malformed_initialize.handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+    )
+    recovered_initialize_client = InMemoryMcpClient(malformed_initialize)
+    recovered_initialize = recovered_initialize_client.initialize()
+    recovered_initialize_tools = recovered_initialize_client.list_tools()
+    check(
+        "malformed initialize parameters return InvalidParams without starting the lifecycle",
+        bool(malformed_initialize_reply)
+        and malformed_initialize_reply.get("error", {}).get("code") == INVALID_PARAMS
+        and malformed_lifecycle_unset
+        and bool(before_valid_initialize)
+        and before_valid_initialize.get("error", {}).get("code") == INVALID_REQUEST
+        and recovered_initialize["result"]["protocolVersion"] == LATEST
+        and bool(recovered_initialize_tools),
+    )
 
     fallback = SecurityMcpServer("hardened")
     fallback_reply = fallback.handle(
@@ -568,7 +644,7 @@ def run_tests() -> int:
     # One source can be both private and untrusted, as with an inbox or RAG retrieval
     # that contains attacker-controlled text. The host classifies both properties before
     # returning it, then the egress rule sees the complete [A]+[B]+[C] flow.
-    combined = SecurityMcpServer("hardened")
+    combined = SecurityMcpServer("hardened", allowed_repo=COMBINED_SOURCE_REPO)
     combined_client = InMemoryMcpClient(combined)
     combined_client.initialize()
     combined_source = combined_client.call_tool(
@@ -594,6 +670,26 @@ def run_tests() -> int:
         combined_egress_error
         and _control_from_text(combined_egress_text) == "exfil-gate"
         and combined.world.exfiltrated == [],
+    )
+
+    cross_repo = SecurityMcpServer("hardened")
+    cross_repo_client = InMemoryMcpClient(cross_repo)
+    cross_repo_client.initialize()
+    cross_repo_read = cross_repo_client.call_tool(
+        "read_issue",
+        {"repo": COMBINED_SOURCE_REPO, "number": COMBINED_SOURCE_NUMBER},
+    )
+    cross_repo_text, cross_repo_error = _tool_reply_text(cross_repo_read)
+    cross_repo_status = _status_from_reply(cross_repo_client.call_tool("lab_status", {}))
+    check(
+        "hardened resource locking denies a cross-repository issue before provider output enters context",
+        cross_repo_error
+        and _control_from_text(cross_repo_text) == "resource-lock"
+        and cross_repo.session.tainted is False
+        and cross_repo.session.read_private is False
+        and cross_repo.world.exfiltrated == []
+        and cross_repo_status["tainted"] is False
+        and cross_repo_status["sensitive"] is False,
     )
 
     # A direct private-data send is still an exfiltration-capable action. It must not
@@ -755,6 +851,22 @@ def run_tests() -> int:
             not vulnerable_stderr.strip() and not hardened_stderr.strip(),
         )
 
+    (
+        malformed_initialize_wire,
+        before_valid_initialize_wire,
+        recovered_initialize_wire,
+        recovered_initialize_catalog,
+        initialize_validation_stderr,
+    ) = _stdio_initialize_validation()
+    check(
+        "hardened stdio endpoint rejects malformed initialize parameters and recovers on the same connection",
+        malformed_initialize_wire.get("error", {}).get("code") == INVALID_PARAMS
+        and before_valid_initialize_wire.get("error", {}).get("code") == INVALID_REQUEST
+        and recovered_initialize_wire.get("result", {}).get("protocolVersion") == LATEST
+        and bool(recovered_initialize_catalog)
+        and not initialize_validation_stderr.strip(),
+    )
+
     combined_wire, combined_egress, combined_status, combined_stderr = _stdio_combined_source()
     combined_egress_text, combined_egress_error = _tool_reply_text(combined_egress)
     check(
@@ -773,6 +885,21 @@ def run_tests() -> int:
         and combined_status["secret_escaped"] is False
         and combined_status["exfiltration_count"] == 0
         and not combined_stderr.strip(),
+    )
+
+    cross_repo_wire, cross_repo_reply, cross_repo_status, cross_repo_stderr = _stdio_cross_repo_issue()
+    cross_repo_text, cross_repo_error = _tool_reply_text(cross_repo_reply)
+    check(
+        "hardened stdio endpoint denies a cross-repository issue before it reaches context",
+        cross_repo_wire["initialize"]["result"]["protocolVersion"] == LATEST
+        and "read_issue" in {tool["name"] for tool in cross_repo_wire["catalog"]}
+        and cross_repo_error
+        and _control_from_text(cross_repo_text) == "resource-lock"
+        and cross_repo_status["tainted"] is False
+        and cross_repo_status["sensitive"] is False
+        and cross_repo_status["secret_escaped"] is False
+        and cross_repo_status["exfiltration_count"] == 0
+        and not cross_repo_stderr.strip(),
     )
 
     direct_wire, direct_private_reply, direct_egress, direct_status, direct_stderr = _stdio_private_egress()
