@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -27,3 +27,15 @@ Regression gate: read the complete critique history, including `git log -p -- co
 Advisory not taken: the representative fixture-body assertions remain unchanged because the review classified exhaustive fixture-body coverage as non-blocking scope expansion.
 
 Verification: `npm run check` passed after the fixes, including validate, prose lint, artifact gates, Vitest, typecheck, production build, and advisory lint.
+
+## Round 2 review (2026-07-16)
+
+Fresh-eyes review: read `prompts/critique-rubric.md`, the complete critique and git history, `src/chapters/delegation.mdx`, `DelegationFigure.tsx`, `DelegationWidget.tsx`, the full `artifacts/ch12-delegation/` artifact and fixture, `docs/research/ch12-delegation.md`, and the linked primary sources. Re-verified all four Round 1 required fixes against the current artifacts and current Claude Code, Liu et al., Chroma, Cognition, OpenAI Agents SDK, and LangChain documentation. Ran `npm run check` successfully, then independently exercised `--compare`, `--show-boundary`, `--leak`, `--test`, and the no-key `--live` fallback. The figure, widget, artifact, prior fixes, and full gate hold. The opening context premise does not.
+
+## Required fixes
+
+1. **`src/chapters/delegation.mdx:4-12` --- scope the opening context premise to an un-compacted single-agent loop and present delegation as one context-management strategy, not the sole structural answer.** It currently says every file, failed command, and long tool result in a single agent's window "stays there," then calls delegation "the structural answer." That is false for the named Claude Code runtime and materially changes the design choice the chapter teaches: Anthropic's cited [context-engineering guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) identifies compaction, structured note-taking, and multi-agent architectures as separate long-horizon strategies, and says Claude Code compacts message history while discarding redundant tool outputs. Qualify the accumulation claim as applying without compaction or externalized memory, and make clear that delegation is the appropriate strategy for focused, independently explorable work, alongside compaction and note-taking for their respective cases.
+
+## Advisories
+
+- No new advisories.
