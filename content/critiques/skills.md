@@ -1,0 +1,78 @@
+verdict: revise
+
+## Round 1 review (2026-07-15)
+
+Fresh-eyes review: read `src/chapters/skills.mdx`, `SkillsFigure.tsx`,
+`SkillsWidget.tsx`, the complete `artifacts/ch10-skills` lab, its bundled skill,
+script, reference, README, and `docs/research/ch10-skills.md`. Ran `npm run check`
+(passes) and `bash artifacts/ch10-skills/check.sh` (22 assertions pass). I also ran
+the bundled skill's literal validator command, which failed with permission denied
+(exit 126), then checked the chapter's consequential claims against the current Agent
+Skills specification, Anthropic documentation, Firecrawl, MCPJam, and Oasis Security.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:172-176`: the Oasis example is misattributed to a skill.** The linked Oasis report describes a default Claude.ai chain using invisible prompt injection in a URL parameter and the Files API. It says no integration, tool, or MCP server was required. It does not involve a `SKILL.md`. Rewrite this as a general prompt-injection and egress example, or replace it with evidence of a skill-specific attack. Evidence: [Oasis Security's Claudy Day report](https://www.oasis.security/blog/claude-ai-prompt-injection-data-exfiltration-vulnerability).
+
+2. **`artifacts/ch10-skills/changelog-entry/SKILL.md:17`: the real skill cannot execute the validator it instructs the agent to run.** `scripts/validate_entry.py` is not executable, so `./changelog-entry/scripts/validate_entry.py "Added: --export flag to the CLI"` exits 126. `skills_lab.py` masks this by calling the file through `sys.executable` at lines 287 and 389, while the widget repeats the unusable literal command at `src/chapters/_widgets/SkillsWidget.tsx:112`. Either make the script executable or instruct `python3 scripts/validate_entry.py ...` everywhere, then test the actual documented workflow.
+
+3. **`artifacts/ch10-skills/skills_lab.py:46,138-169`: the validator is neither a correct portable validator nor clearly scoped as an Anthropic-specific lint.** The current [Agent Skills specification](https://agentskills.io/specification) requires names not to start or end with a hyphen, forbids consecutive hyphens, and requires a name to match its parent directory. This validator accepts `-bad--name-` with a nonmatching directory as clean, while hard-failing Anthropic-surface rules and authoring guidance such as reserved vendor words, angle brackets, third person, and the 500-line recommendation. Provide a standards-correct portable mode and separate surface-specific checks, or explicitly rename and document the lab as a partial Anthropic authoring lint. Do not present clean output as portable validity until its contract is accurate.
+
+4. **`src/chapters/_figures/SkillsFigure.tsx:45-86` and `src/chapters/_widgets/SkillsWidget.tsx:55-58`: the loading model is materially incomplete.** The figure says one selected skill's body enters the window and only draws a Level-3 script-output path. Skills can stack, and reading a referenced document puts that document's content into the context window. The figure's panel headed "what actually lands here" therefore omits a central Level-3 path, while the widget says only one triggered skill pays for its body. Update the prose, figure, and widget to show each activated skill's body, a separate reference-read-to-context path, and a script-execute-to-output path. Only unread resources and uninspected script source stay out of context. Evidence: [Anthropic's Skills overview](https://claude.com/skills) and [Agent Skills documentation](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview).
+
+5. **`src/chapters/skills.mdx:62-64` and `:262-292`: a quantitative attribution has no listed source.** The text attributes the 30 to 50 token and 3,000 to 5,000 token estimates to Firecrawl, but the Sources section does not link Firecrawl. Add [the Firecrawl article](https://www.firecrawl.dev/blog/agent-skills) beside the claim or remove the attribution and numbers. The project rubric requires source links for consequential claims.
+
+6. **`artifacts/ch10-skills/README.md:60-64`: the artifact's security claim is broader than its behavior.** The README says the skill touches no files outside its input, but `changelog-entry/SKILL.md:21-22` directs the agent to write `CHANGELOG.md`. Limit that claim to `validate_entry.py`, or state the skill's actual write scope and required permission. The chapter treats this artifact as a trust-boundary exercise, so its access description must be exact.
+
+## Advisories
+
+- `artifacts/ch10-skills/changelog-entry/scripts/validate_entry.py:48` strips stdin before validation. A documented stdin invocation with leading or trailing whitespace therefore passes even though `validate()` claims to reject it. Preserve the raw input except for the terminal newline, or remove stdin support.
+- `src/chapters/skills.mdx:231-236` presents `--simulate` as evidence that a description would be discovered, although the artifact implements only a two-keyword proxy and the chapter correctly explains that task difficulty also affects triggering. Label the exercise as illustrative and direct readers to target-harness, fresh-model trigger evaluations with near-miss negative cases.
+- Increase the contrast or size of the figure's 8.5 to 9.5px explanatory labels. They are likely marginal at the figure's minimum width.
+
+## Round 2 review (2026-07-15)
+
+Independent supplement to the still-open Round 1: re-read the current chapter, figure,
+widget, complete ch10 artifact, README, research file, and listed sources. Ran `npm run
+check` (passes) and `bash artifacts/ch10-skills/check.sh` (22 assertions pass), then
+exercised the installed skill's literal validator command. Checked the current Agent Skills
+specification and reference validator, Anthropic Skills and Claude Code documentation,
+the GitHub MCP server documentation, the Oasis report, Firecrawl's article, and Keep a
+Changelog 1.1.0. The Round 1 required fixes remain unaddressed; this round records only
+additional material defects.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:37-42, 172-175, 202-205, and 246-251` --- the prose and exercises conflate the portable Agent Skills contract with Anthropic-only restrictions.** The current [Agent Skills specification](https://agentskills.io/specification) and its [reference validator](https://github.com/agentskills/agentskills/blob/main/skills-ref/src/skills_ref/validator.py) require the name to match its directory and forbid leading, trailing, and consecutive hyphens, but do not reserve `claude` or `anthropic` or ban angle brackets in descriptions. The current [Anthropic platform rules](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) impose those latter restrictions. Round 1 item 3 correctly flags the lab's behavior; also correct the chapter, widget, and exercise so the conceptual spine stays vendor-neutral, teach the missing portable name checks, and either make the lab spec-correct or explicitly present it as an Anthropic-surface lint.
+
+2. **`src/chapters/skills.mdx:56, 60-64`, `SkillsFigure.tsx:42-51, 81-86`, and `SkillsWidget.tsx:38-58` --- the startup-cost model incorrectly applies to every installed skill.** In Claude Code, `disable-model-invocation: true` hides a user-only skill entirely until manual invocation, so it has zero startup context cost. The chapter itself introduces that surface feature at lines 104-108. Scope the figure, widget, and hundred-skill arithmetic to model-invocable/listed skills and explain the user-only exception. Evidence: [Claude Code's current context-cost documentation](https://code.claude.com/docs/en/features-overview).
+
+3. **`src/chapters/skills.mdx:73-80` --- the MCP comparison presents an outdated host behavior as the normal architecture.** Current Claude Code defers MCP schemas by default and loads only tool names at startup; the official GitHub server also supports `--toolsets` and `--tools` specifically to reduce context. An eagerly injected, large tool catalog is a useful historical or host-specific counterexample, but “typically load in full” and the unqualified GitHub tens-of-thousands claim now mislead. Reframe the comparison by harness/configuration, date and source any historical number, and name deferred-schema hosts as the counterexample. Evidence: [Claude Code context costs](https://code.claude.com/docs/en/features-overview) and [GitHub MCP tool configuration](https://github.com/github/github-mcp-server).
+
+4. **`artifacts/ch10-skills/changelog-entry/references/FORMAT.md:5`, `SKILL.md:15-18`, and `scripts/validate_entry.py:40-43` --- the bundled validator rejects entries that the stated source format permits.** `FORMAT.md` says it paraphrases Keep a Changelog 1.1.0, but the skill makes a trailing period and a 120-character ceiling hard failures. The primary [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) examples use trailing periods and specify no such length cap; `python3 scripts/validate_entry.py "Added: The default script runs."` currently fails. Either align the validator with the cited format or label, document, and source these as this skill's local house rules. Also reconcile “under 120” with the implementation, which accepts 120 characters.
+
+5. **`src/chapters/skills.mdx:172-176` and `docs/research/ch10-skills.md:119` --- the security conclusion overstates what the Oasis incident establishes.** Beyond Round 1's incorrect Skill attribution, use of an intentionally allowed Files API egress route does not demonstrate a sandbox escape or establish that a sandbox is only a convenience boundary. Reframe the lesson precisely: a sandbox alone does not stop prompt injection or intentionally permitted egress, so agents need explicit egress, filesystem, and permission controls. Correct the research backbone at the same time so the error is not reintroduced later.
+
+## Advisories
+
+- No additional advisory findings. The Round 1 advisories remain open.
+
+## Round 3 review (2026-07-15)
+
+Independent re-review: read the current chapter, figure, widget, complete `ch10-skills`
+artifact, bundled skill, README, research backbone, and listed sources. Ran `npm run check`
+(passes) and `bash artifacts/ch10-skills/check.sh` (22 assertions pass). I then exercised the
+literal validator command from the package root, a project root, and the skill directory. The
+first two exit 127 because `scripts/validate_entry.py` is not relative to either working
+directory; the last exits 126 because the file is not executable. I checked the current Agent
+Skills specification, Claude Code Skills documentation, Anthropic's Skills overview, the Oasis
+report, and Keep a Changelog 1.1.0. Round 1 and 2 required fixes remain unaddressed; this round
+records one additional defect rather than re-litigating them.
+
+## Required fixes
+
+1. **`artifacts/ch10-skills/changelog-entry/SKILL.md:17`, `artifacts/ch10-skills/README.md:45-63`, and `src/chapters/_widgets/SkillsWidget.tsx:112`: the installed artifact cannot locate its own validator.** The README tells readers to copy `changelog-entry/` into `~/.claude/skills/changelog-entry` and invoke it from a project, but its literal `scripts/validate_entry.py "Type: summary"` command resolves from the project working directory, not the skill directory. It exits 127 from both the artifact package root and this repository root; executing it from the skill directory instead exits 126 because the script is mode `100644`. `skills_lab.py` hides both failures with `sys.executable`. Make the documented workflow root-aware and runnable, for example use `python3 ${CLAUDE_SKILL_DIR}/scripts/validate_entry.py` in the Claude Code installation path and state the equivalent skill-root convention for other harnesses. Then extend `check.sh` to execute the literal installed-workflow command from a non-skill working directory. Evidence: [Claude Code documents `${CLAUDE_SKILL_DIR}` specifically for bundled scripts](https://code.claude.com/docs/en/skills).
+
+## Advisories
+
+- No new advisory findings. The Round 1 and 2 advisories remain open.
