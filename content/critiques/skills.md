@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-15)
 
@@ -246,3 +246,76 @@ workflow still passes. The chapter remains `draft`; this resolution does not gra
 
 Verification: `bash artifacts/ch10-skills/check.sh` passes 46 assertions, including the
 clean-home install and negative-budget cases. `npm run check` passes all seven stages.
+
+## Round 7 review (2026-07-16)
+
+Independent re-review: read the complete critique history and current
+`src/chapters/skills.mdx`, `SkillsFigure.tsx`, `SkillsWidget.tsx`, every file in
+`artifacts/ch10-skills`, and `docs/research/ch10-skills.md`. Ran `npm run check`
+(all seven stages pass) and `bash artifacts/ch10-skills/check.sh` (46 assertions
+pass), then exercised the documented validator failure path. Checked the current
+Agent Skills specification and reference validator, Anthropic and Claude Code
+documentation, GitHub's MCP server documentation, Firecrawl, MCPJam, Simon
+Willison's cited example, Keep a Changelog, the Oasis report, and the Murag
+attribution. Re-verified the required corrections from Rounds 1 through 6. The
+available rendered-browser backend could not be reached, so the figure and widget
+pass used source inspection and the passing render tests rather than screenshots.
+
+## Required fixes
+
+1. **`src/chapters/_figures/SkillsFigure.tsx:36-37,99-100` --- the figure gives contradictory startup-cost arithmetic.** It says listed metadata costs `~100 tokens` multiplied by listed skills, then concludes that one hundred listed skills cost "a few kilotokens." The displayed premise yields about 10,000 tokens, while `skills.mdx:68-71` correctly distinguishes Anthropic's near-100-token rule of thumb from Firecrawl's 30-to-50-token, 3,000-to-5,000 estimate. Show a source-labelled range, for example the Firecrawl estimate alongside the Anthropic rule of thumb, or make the closing claim agree with the figure's own 100-token premise. The relevant sources are [Anthropic's Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) and [Firecrawl's measurement](https://www.firecrawl.dev/blog/agent-skills). As drawn, the central figure teaches a false quantitative relationship.
+
+2. **`src/chapters/skills.mdx:101-109` and `docs/research/ch10-skills.md:91` --- the chapter presents model-dependent discovery behavior as a universal, reliable rule.** "The model only reaches for a skill on tasks it cannot already handle in one step" and the claim that multi-step, format-sensitive work "reliably triggers" have no supporting primary source and conflict with the chapter's later instruction to measure triggering empirically. Current [Claude Code guidance](https://code.claude.com/docs/en/skills) says to separately measure invocation and output with realistic prompts in fresh sessions, comparing skill-enabled and disabled baselines. Reframe the PDF example as a harness-, model-, and task-dependent tendency, not a rule, and direct readers to target-harness trigger evaluation. Correct the research backbone at the same time so the unsupported certainty is not reintroduced. This claim was added after the earlier critique rounds, so it is a new regression rather than a re-raised finding.
+
+## Advisories
+
+- **`src/chapters/skills.mdx:86-88` --- qualify the MCPJam number more precisely.** Its source says MCP "probably" uses three to four times fewer filesystem-tool calls in the illustrated comparison. The chapter already calls it external and not a platform guarantee, but "argued" or "observed" would be truer than "estimated."
+
+## Round 8 review (2026-07-16)
+
+Independent re-review: read the complete critique history and the current chapter,
+figure, widget, complete `artifacts/ch10-skills` lab, bundled skill, research backbone,
+and listed sources. Ran `npm run check` successfully through all seven stages and
+`bash artifacts/ch10-skills/check.sh` successfully with 46 assertions. Checked the
+Agent Skills specification, Anthropic's Skills overview and current
+`skill-creator` source, Claude Code Skills documentation, and Simon Willison's cited
+example. I re-confirmed that Round 7 item 1 remains open. Round 7 item 2 is superseded:
+Anthropic's current `skill-creator` explicitly gives the same simple-task versus
+complex-task triggering guidance, so it needs precise attribution and scope rather than
+removal as unsupported.
+
+## Required fixes
+
+1. **`src/chapters/skills.mdx:128-132` and `docs/research/ch10-skills.md:98` --- the attributed `slack-gif-creator` example turns a possible retry into an observed retry.** [Willison's post](https://simonwillison.net/2025/Oct/16/claude-skills/) shows a builder followed by `check_slack_size()` and says that, if the GIF is too large, the model *can* have another go. It does not show a failed validation or a retry. Change "if it fails the model adjusts and runs again" and "the model retries" to a capability or a feedback-loop pattern, such as "can adjust and rerun."
+
+2. **`artifacts/ch10-skills/changelog-entry/scripts/validate_entry.py:29` --- the deterministic validator accepts multi-line entries despite its documented one-line contract.** Both `validate("Added: good\\rInjected")` and `validate("Added: good\\u2028Injected")` currently return `None`, because the check rejects only `\\n`; `changelog-entry/SKILL.md:32-34` promises one nonempty line before the workflow writes `CHANGELOG.md`. Reject all line-break code points, for example by requiring `len(entry.splitlines()) == 1` after the existing empty and outer-whitespace checks, and add CR and Unicode-line-separator cases to `skills_lab.py --test`.
+
+3. **`src/chapters/skills.mdx:101-109`, `docs/research/ch10-skills.md:91`, and the Sources list --- repair the source and scope of the triggering guidance that Round 7 misclassified.** The current [Anthropic `skill-creator`](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md#L555-L558) explicitly says that simple one-step requests may not trigger and that matching complex, multi-step, or specialized requests reliably trigger. Do not remove the claim as unsupported. Attribute it to this current Anthropic guidance, add the source to the chapter's Sources list, and identify it as Anthropic-specific behavior while retaining the chapter's target-harness evaluation advice. The project rubric requires source links and a vendor-neutral conceptual spine.
+
+4. **`src/chapters/skills.mdx:182-183` and `docs/research/ch10-skills.md:155-156` --- the XML-tag prohibition is presented as a documented injection-defense rationale without a source.** Anthropic's overview establishes separately that Skill metadata enters the system prompt and that XML tags are prohibited, but it does not state that the prohibition exists *because* of that injection risk. Either cite a source for the causal rationale or state the two documented facts without implying an established mechanism. The project rubric rejects hand-wavy security claims.
+
+5. **`docs/research/ch10-skills.md:93` --- the factual backbone contradicts itself about Claude Code invocation.** It says every Skill is a slash command, then immediately describes `user-invocable: false` as Claude-only. Current [Claude Code documentation](https://code.claude.com/docs/en/skills) says `user-invocable: false` hides a Skill from the `/` menu. Correct this to user-invocable Skills so a future chapter revision does not inherit a false rule.
+
+## Advisories
+
+- **`src/chapters/_figures/SkillsFigure.tsx:11-14,36-100` --- increase contrast for essential explanatory labels.** The 10px `--comment` text on `--surface-2` is approximately 3.3:1. It is legible at native size but below normal-text AA; use `--fg-muted` where the labels carry the teaching path.
+- **`docs/research/ch10-skills.md:107` --- qualify "edits apply mid-session."** Current Claude Code documentation says already invoked rendered Skill content remains in the conversation and is not reread on later turns. Distinguish discovery or future invocation from an update to content already loaded in the session.
+
+## Round 9 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique history, the current chapter, figure,
+widget, complete `artifacts/ch10-skills` lab, bundled skill, research backbone, and
+listed sources. Re-verified the prior open findings for regression without restating them.
+Ran `npm run check` successfully through all seven stages and
+`bash artifacts/ch10-skills/check.sh` successfully with 46 assertions. Checked the
+current Agent Skills specification and current Claude Code Skills documentation. The
+widget's source and the passing render tests confirm that its five selections teach the
+intended loading paths.
+
+## Required fixes
+
+1. **`src/chapters/_figures/SkillsFigure.tsx:43-46,73-75`, `artifacts/ch10-skills/skills_lab.py:293-295`, and `docs/research/ch10-skills.md:55-57`: the level-two cost model charges a full body for every activation.** The figure says `× every activation` and `one per activation`, while the lab and research table repeat that model. Current [Claude Code Skills documentation](https://code.claude.com/docs/en/skills) says that an identical rendered Skill re-invocation adds only a short already-loaded note. It appends the full body again only when the rendering differs, such as after different arguments or dynamic-context output. Since the chapter uses Claude Code as a concrete implementation, distinguish a first, distinct, or changed rendered body from an identical re-invocation. Keep stacking as a host-dependent property rather than teaching duplicate context growth as inevitable, and update the figure, artifact, and research backbone together.
+
+## Advisories
+
+- **`src/chapters/_widgets/SkillsWidget.tsx:146-160,202-220`: the resource controls duplicate accessible names.** The top control strip and bundled-resource strip expose indistinguishable buttons for the same resources. The interaction works, but a labelled resource group or contextual accessible names would make keyboard and screen-reader navigation calmer.
