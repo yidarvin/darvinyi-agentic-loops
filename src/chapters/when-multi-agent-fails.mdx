@@ -1,0 +1,94 @@
+import { WhenMultiAgentFailsFigure } from "./_figures/WhenMultiAgentFailsFigure";
+import { WhenMultiAgentFailsWidget } from "./_widgets/WhenMultiAgentFailsWidget";
+
+A multi-agent system is an optimization, not an architecture to adopt by default. Every agent boundary adds token spend, latency, hidden decisions, and another interface that can silently distort the task. For coupled work, the safer baseline is one well-contexted agent with one write path. Add agents only when independent, read-heavy work demonstrably raises end-to-end task success.
+
+[MAST](https://arxiv.org/abs/2503.13657), the Multi-Agent System Failure Taxonomy, puts empirical weight behind that default. Its authors annotated 1,642 execution traces from seven frameworks and found failure rates from 41% to 86.7%, depending on the framework and benchmark. That range is not a leaderboard because the systems were evaluated on different tasks. The useful result is architectural: 44.2% of observed failures were specification and system-design issues, 32.3% were inter-agent misalignment, and 23.5% were verification or termination failures. The largest category is organization design, not a weak base model.
+
+## A handoff is a reliability multiplier
+
+An agent handoff carries more than a message. It exports assumptions about what matters, what has already been decided, who owns the next mutation, and what counts as complete. If any of those are implicit, a downstream agent receives plausible text instead of an executable contract.
+
+The arithmetic is unforgiving. If five handoffs each preserve the required semantics 90% of the time, the end-to-end path succeeds only `0.9^5 = 59%` of the time. Two handoffs at the same rate yield 81%. Those are illustrative rates, not a fitted model. The design implication is real: removing a weak edge often beats polishing one worker.
+
+Shared write state is the red flag. Parallel agents can each make a locally reasonable choice about an API, data model, visual language, or migration. The conflict becomes visible only after both choices have spread through the work. Product example, [Cognition's field report](https://cognition.com/blog/multi-agents-working) argues for the same boundary: additional agents contribute intelligence, while a single thread owns writes and reconciles decisions. That is a product team's observation, not a universal benchmark, but it is a useful operational rule.
+
+<Figure id="14.1" caption="Topology follows dependency shape. Keep tightly coupled decisions in one contextual loop. Fan out only independent reads, require bounded results, and funnel every mutation through one writer. The MAST category shares are from its full 1,642-trace dataset.">
+  <WhenMultiAgentFailsFigure />
+</Figure>
+
+The preceding chapter showed how to choose a topology. This chapter supplies its veto: when [coordination patterns](/coordination-patterns) introduce more coupled edges than independent work, collapse the graph back toward a single agent.
+
+## Diagnose the organization, not the model
+
+MAST groups fourteen trace-level failure modes into three categories. **FC1, specification and system design**, covers repeated steps, lost conversation history, unclear roles, and unaware termination. **FC2, inter-agent misalignment**, covers missing facts, ignored inputs, task derailment, and a mismatch between stated reasoning and tool actions. **FC3, task verification and termination**, catches systems that stop early, skip meaningful checks, or prove the wrong property.
+
+The taxonomy changes a postmortem question. Do not ask why an agent was confused. Ask where the trace lost a fact, duplicated an action, or converted progress into success. Those questions point to a state schema, a decision owner, a retry condition, or a verifier that can be implemented and tested.
+
+## Map the symptom to a control
+
+Start with observable behavior, not a retrospective story about an agent's intent. Select a symptom below. The mitigation is intentionally architectural: prompts can reinforce the contract, but the control plane must make the bad path difficult or impossible to take.
+
+<Widget name="mast_failure_mapper" hint="Choose the symptom your trace exposes. Then turn the selected mitigation into an explicit state, routing, retry, or verification rule.">
+  <WhenMultiAgentFailsWidget />
+</Widget>
+
+Context sharing helps, but it is not sufficient. A full trace can prevent a forgotten decision while still leaving two agents free to mutate the same artifact. A verifier can catch a bad result while still allowing a retry storm to exhaust the budget. Treat the categories as interacting controls, not interchangeable prompt clauses.
+
+## Earn fan-out with an evaluation
+
+The positive case is narrow and valuable: a task has many independent sources to read, each worker can return a bounded result, the task value can absorb the extra inference, and one lead can synthesize before anything writes. Product example, [Anthropic's multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) reported a 90.2% internal-evaluation improvement over a single-agent research baseline on its chosen task. Anthropic also reports roughly 15 times the token use of a single chat for multi-agent systems. Read both figures together: the gain is task-specific, and the cost is part of the architecture.
+
+Do not infer that more calls are generally safer. [Chen and colleagues](https://arxiv.org/abs/2403.02419) found that performance in simple multi-call systems can rise and then fall as call count grows, especially on hard queries. [Zhang and colleagues](https://arxiv.org/abs/2502.08788) likewise found that multi-agent debate did not reliably beat simpler single-agent baselines across their study. Parallelism pays only when its independence survives contact with the final answer.
+
+Use a strict escalation sequence:
+
+1. Give one agent a coherent context, useful tools, and a clear objective. Measure that baseline first.
+2. Split only work that can be completed without another worker's intermediate decision. Prefer research, retrieval, inspection, and review over concurrent authorship.
+3. Make results structured and source-linked. Give exactly one owner the right to update shared state or publish an answer.
+4. Compare the topology with the single-agent baseline on held-out tasks, including cost, latency, and failure traces. Remove an added agent if it does not improve end-to-end success.
+
+<Callout kind="note">
+  The question is not whether a workflow contains multiple agents. The question is whether every added boundary buys more independent evidence than it costs in coordination, verification, and debugging.
+</Callout>
+
+## Make failure inspectable before scale
+
+Instrumentation is part of the design. For every run, retain a correlation id, role, source facts, state snapshot, decision provenance, tool arguments, retry reason, budget, and objective check. Record a decision separately from an action so a reasoning-action mismatch is visible in the trace. Give retries a changed-evidence requirement. Put a hard cap on recursive delegation and cost. Checkpoint enough state to resume instead of replaying an expensive, divergent run.
+
+Verification must be layered. A compiler pass, a successful API response, or an agent saying "done" is low-level evidence. The final verifier should test the user-visible objective with a rubric independent of the worker's self-report. MAST's case study found its largest improvement when a high-level objective check was added to a workflow, but a verifier only helps when it tests the right contract.
+
+## Run the coordination failure
+
+This artifact makes three MAST categories visible without an API key or nondeterminism. The naive path drops the fact that a login username must be a phone number, retries the same failing request three times, and exits without checking whether publication happened. The corrected path shares the finding, records a decision ledger, uses one orchestrator to write the execution plan, and requires objective-level verification before termination.
+
+<RunnableArtifact
+  name="coordination_failure_lab"
+  path="artifacts/ch14-when-multi-agent-fails/"
+  href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch14-when-multi-agent-fails"
+  runtime="python 3.9+"
+  run={["cd artifacts/ch14-when-multi-agent-fails", "./check.sh", "python3 simulate.py --mode compare --trace"]}>
+Run the naive and corrected control planes against the same local service. The numbered traces expose FC2 information loss, FC1 step repetition, and FC3 absent objective verification, then prove that the corrected design satisfies the task contract.
+</RunnableArtifact>
+
+## Sources
+
+- [Cemri and colleagues, "Why Do Multi-Agent LLM Systems Fail?"](https://arxiv.org/abs/2503.13657), for the MAST taxonomy, its 1,642-trace methodology, failure categories, prevalence figures, and system-design findings.
+- [Chen and colleagues, "Are More LLM Calls All You Need?"](https://arxiv.org/abs/2403.02419), for non-monotonic multi-call performance and the warning that more calls can hurt hard tasks.
+- [Anthropic, "How we built our multi-agent research system"](https://www.anthropic.com/engineering/multi-agent-research-system), for the breadth-first research architecture, its internal evaluation, and the token-cost discussion. The reported performance is vendor-authored and task-specific.
+- [Cognition, "Multi-Agents: What's Actually Working"](https://cognition.com/blog/multi-agents-working), for the single-writer pattern and the boundary between contributing intelligence and concurrent mutation. This is a product team's field report.
+- [Zhang and colleagues, "Stop Overvaluing Multi-Agent Debate"](https://arxiv.org/abs/2502.08788), for the debate comparison with simpler single-agent baselines.
+
+## Exercises
+
+<ExerciseCard n="01" title="Draw the actual dependency graph">
+Take one workflow your team calls multi-agent. Mark every source read, decision, shared write, and verifier. Circle the work that can finish without another circle's intermediate choice. Remove or serialize every worker that sits on a coupled write path.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Turn one failure into a trace assertion">
+Choose a recent retry, dropped handoff, or false success. Classify it with MAST, then add one deterministic assertion to the trace contract. Examples include a changed-evidence retry rule, a required-fact acknowledgement, or an objective check that blocks success.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Make the added agent earn its seat">
+Build a small held-out evaluation with representative tasks, a cost budget, and a user-visible success rubric. Run the single-agent baseline and the proposed topology. Keep the extra agent only if it improves end-to-end success enough to justify its latency and token cost.
+</ExerciseCard>
