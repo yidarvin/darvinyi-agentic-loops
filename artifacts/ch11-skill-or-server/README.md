@@ -21,7 +21,7 @@ ch11-skill-or-server/
   hybrid_lab.py                       # the driver: run each path, decide, test
   commit_server.py                    # the access layer: a stdio server in MCP's shape
   fixtures/commits.json               # the "external system's" data, so it runs offline
-  release_notes_skill/                # the judgment layer: a real skill
+  release-notes/                      # the judgment layer: a real skill
     SKILL.md
     references/CONVENTIONS.md          # the category rules, read on demand (level 3)
     scripts/format_notes.py            # the formatter the skill runs (level 3)
@@ -58,23 +58,29 @@ python3 hybrid_lab.py --decide --access --judgment --live     # => both
 python3 hybrid_lab.py --decide --judgment                     # => skill
 python3 hybrid_lab.py --decide --access --live                # => server
 python3 hybrid_lab.py --decide --access --cli-exists          # => skill (wrap the CLI)
+python3 hybrid_lab.py --decide --access --live --cli-exists   # => skill (the CLI fetches fresh data)
+python3 hybrid_lab.py --decide --access --shared --cli-exists # => server (governance still needs a shared boundary)
 
 # Assertions: the framework routes the canonical cases, and the three paths behave.
 python3 hybrid_lab.py --test
+
+# Deterministic artifact check, including the bundled skill's portable validation.
+./check.sh
 ```
 
 ## Install the release-notes skill (optional)
 
-`release_notes_skill/` is a valid skill. To use it in Claude Code:
+`release-notes/` is a valid skill. To use it in Claude Code:
 
 ```bash
-cp -r release_notes_skill ~/.claude/skills/release-notes
+cp -r release-notes ~/.claude/skills/release-notes
 ```
 
 Then ask for the release notes of a version. On its own the skill can only format
 commits you provide; layered over a GitHub (or git) MCP server that exposes the
-commit history, it fetches them itself. That upgrade path, skill first, server
-underneath when the skill needs live access, is the migration the chapter describes.
+commit history, it fetches them itself. That is this lab's chosen access layer. In a
+real workflow, first use an existing CLI or server that can make the fresh fetch; add
+a server when that access or a shared governance boundary is missing.
 
 ## The five questions behind `--decide`
 
@@ -87,13 +93,18 @@ underneath when the skill needs live access, is the migration the chapter descri
 - `--live` the data changes between invocations and must be fetched fresh.
 
 Access with no existing tool routes to a server; judgment routes to a skill; both
-route to both; a CLI that already provides the access routes to a skill wrapping it;
-nothing hard routes to "neither, the agent already does this."
+route to both; a CLI or existing server that already provides the access routes to a
+skill wrapping it. `--live` requires a fresh fetch, but an existing CLI or server can
+make that fetch, so it does not require a duplicate server. `--shared` is separate: a
+local CLI does not provide the central, auditable boundary, so it still routes to a
+server. Nothing hard routes to "neither, the agent already does this."
 
 ## The estimates, stated plainly
 
-The commit fixture stands in for a live system so the lab runs offline. The category
-rules in `format_notes.py` are a small, real Conventional-Commit-to-Keep-a-Changelog
-mapping, not the whole of either spec. The decision framework is a teaching model of
-the chapter's tree, not an oracle; real capabilities sit on a spectrum, and the honest
-answer to a close call is usually "both."
+The commit fixture stands in for a live system so the lab runs offline. It supports the
+single truthful range from `v0.3.0` to `v0.4.0`; an unsupported `--tag` exits with a
+visible error rather than returning invented commits. The category rules in
+`format_notes.py` are a small, real Conventional-Commit-to-Keep-a-Changelog mapping,
+not the whole of either spec. The decision framework is a teaching model of the chapter's
+tree, not an oracle; real capabilities sit on a spectrum, and the honest answer to a
+close call is usually "both."

@@ -65,13 +65,25 @@ def handle(req: dict) -> dict:
             return {"jsonrpc": "2.0", "id": rid,
                     "error": {"code": -32601, "message": f"unknown tool: {name}"}}
         data = load_fixture()
-        tag = args.get("tag", data.get("since_tag"))
-        # The fixture holds one range; a real server would query by tag. We echo the
-        # requested tag back so the boundary reads as a genuine parameterized call.
+        tag = args.get("tag")
+        supported_tag = data.get("since_tag")
+        # The fixture holds one truthful range. Reject another tag instead of
+        # pretending that its commits came from the range the caller requested.
+        if tag != supported_tag:
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "error": {
+                    "code": -32602,
+                    "message": (
+                        f"unsupported tag: {tag!r}; fixture supports only "
+                        f"{supported_tag!r}"
+                    ),
+                },
+            }
         return {
             "jsonrpc": "2.0", "id": rid,
             "result": {
-                "since_tag": tag,
+                "since_tag": supported_tag,
                 "head": data.get("head"),
                 "commits": data.get("commits", []),
             },

@@ -27,12 +27,11 @@ anything. There is no wire and no server.
 
 The consequence people miss is what a skill does not do. It does not load a tool. Armin
 Ronacher put the mechanics plainly: a skill "does not actually load a tool definition into
-the context. The tools remain the same: bash and the other tools the agent already has.
-All it learns from the skill are tips and tricks for how to use these tools more
-effectively." A server hands the agent a new verb. A skill teaches it to use the verbs it
-already has. Damian Galarza compressed the split to four words: MCPs are verbs, skills are
-playbooks. Block's Goose team wrote it from the other side: skills describe the workflow,
-MCP provides the runner.
+the context." The tools remain the verbs the agent already has; the skill adds techniques
+for using them well. A server hands the agent a new verb. A skill teaches it to use the
+verbs it already has. Damian Galarza compressed the split to four words: MCPs are verbs,
+skills are playbooks. Block's Goose team wrote it from the other side: skills describe the
+workflow, MCP provides the runner.
 
 That gives you a test you can run in your head, from Sumo Logic: if a senior expert on your
 team were doing this by hand, would the hard part be getting access to the data, or knowing
@@ -42,29 +41,34 @@ hard part is judgment, you need a skill.
 ## The token axis, and why it is narrowing
 
 The sharpest measurable difference is what each costs the [context
-window](/context-window-economics) before it does any work. A large MCP server loads all
-its tool definitions at connection time, every session. GitHub's official server runs to
-roughly 17,600 tokens across its tool set; a typical setup of five servers lands near
-55,000; Anthropic has measured 134,000 tokens of definitions in a worst case before any
-optimization. A skill inverts this. It announces itself with about a hundred tokens of
-metadata and loads its body, under five thousand tokens, only when a task actually matches
-its description. A hundred installed skills cost a few kilotokens at startup because you
-pay for names, not bodies.
+window](/context-window-economics) before it does any work. When a client eagerly loads a
+large MCP server, it places every tool definition in context at connection time. GitHub's
+official server runs to roughly 17,600 tokens across its tool set; a typical setup of five
+servers lands near 55,000; Anthropic has measured 134,000 tokens of definitions in a worst
+case before any optimization. A skill inverts this. It announces itself with about a hundred
+tokens of metadata and loads its body, under five thousand tokens, only when a task actually
+matches its description. A hundred installed skills cost a few kilotokens at startup because
+you pay for names, not bodies.
 
 That gap was the strongest argument for skills, and it is the one closing fastest. In
-January 2026 Anthropic shipped MCP Tool Search: when a server's definitions exceed about a
-tenth of the context, its tools are marked for deferred loading and discovered on demand,
-cutting the startup cost by around 85 percent, roughly 77,000 tokens down to 8,700 for a
-fifty-tool set, and improving tool-selection accuracy at the same time. Prompt caching
-already amortized the billing cost of large definitions across a session, but not the
-attention cost: schemas the model must read still occupy working memory even when they are
-cached. Treat the specific numbers as order-of-magnitude. They move with the tool subset,
-the measurement method, and the month.
+January 2026, Claude Code enabled a product-specific MCP Tool Search auto mode: once its
+combined MCP tool descriptions exceeded 10 percent of the context window, it deferred them
+and discovered them through `MCPSearch`. That was Claude Code behavior, not an MCP
+capability. Current Claude Code defaults to deferring eligible MCP tools on demand;
+`ENABLE_TOOL_SEARCH=auto` restores the historical 10-percent threshold. Separately, API
+callers on Anthropic's Developer Platform opt into Tool Search by marking tools with
+`defer_loading: true`. Anthropic's 50-plus-tool API example reduced starting context from
+roughly 77,000 tokens to 8,700, an 85-percent reduction. Prompt caching already amortized
+the billing cost of large definitions across a session, but not the attention cost: schemas
+the model must read still occupy working memory even when they are cached. Treat the specific
+numbers as order-of-magnitude. They move with the tool subset, the measurement method, and
+the month.
 
-Weight this axis correctly. Progressive disclosure was designed into skills from day one;
-MCP's deferred loading is a 2026 retrofit that mostly closes the startup gap and leaves the
-architecture untouched. The token argument is real and shrinking. The split underneath it,
-connection versus instruction, is not going anywhere.
+Weight this axis correctly. Progressive disclosure was designed into skills from day one.
+Deferred MCP loading is a 2026 client or API mechanism, not a change to the MCP protocol. It
+mostly closes the startup gap and leaves the architecture untouched. The token argument is
+real and shrinking. The split underneath it, connection versus instruction, is not going
+anywhere.
 
 ## The decision, in one question and a few corrections
 
@@ -86,12 +90,13 @@ Three corrections keep the question honest. First, before you build a server, as
 CLI the agent can already shell out to, or an official server someone else maintains,
 covers the access. Building an MCP server for git or the GitHub CLI was overengineered from
 the start: the agent already runs `gh pr create`, and a skill that documents your
-conventions on top of it is simpler than a service. Second, a capability that must serve
-many agents or clients under central governance pulls toward a server even when a skill
-could technically do it, because a server is the one auditable chokepoint you can observe,
-rate-limit, and swap. Third, follow the data. If the knowledge changes between invocations,
-you need a live connection; if it is stable enough to write down once and stay right for
-weeks, a skill file is simpler.
+conventions on top of it is simpler than a service. That CLI or existing server can also
+make a fresh fetch. `--live` means do not rely on a stale skill file, not build a duplicate
+connection. Second, a capability that must serve many agents or clients under central
+governance pulls toward a server even when a skill could technically do it, because a server
+is the one auditable chokepoint you can observe, rate-limit, and swap. Third, follow the
+data. If the knowledge changes between invocations, you need a live connection; if it is
+stable enough to write down once and stay right for weeks, a skill file is simpler.
 
 Run your own capability through the same logic. Flip the access or the judgment answer and
 watch the verdict cross a boundary.
@@ -109,18 +114,20 @@ touching infrastructure; the platform team swaps a data provider by changing an 
 the skill above it never notices. Anthropic shipped exactly this in its financial-services
 and life-sciences deployments, each arriving as a set of MCP servers plus a set of skills.
 
-Sentry is a clean public example. Its MCP server provides the connectivity, querying issues
-and traces through tools like `use_sentry`, and Sentry also ships skills, `sentry-fix-issues`
-and `sentry-code-review`, that encode the debugging workflow on top. MCP gave them an open
-foundation, the team wrote, and skills let them turn that context into focused workflows.
+Sentry's current Sentry for AI distribution makes the layered shape concrete. Its plugin
+configures the Sentry MCP server automatically, then its core skills take distinct workflow
+roles: `sentry-get-started` routes setup, `sentry-instrument` adds observability signals,
+and `sentry-debug-issue` pulls issue context, can run root-cause or autofix work, applies a
+fix, and resolves the issue. The skills turn a configured access layer into focused work.
 
-The layering has a failure mode worth naming, because it bites in practice. Ronacher moved
-off the Sentry MCP server and rebuilt it as a hand-maintained skill, for two reasons: the
-server cost about 8,000 tokens every time it loaded, and its tool descriptions changed
-without notice, breaking assumptions his workflow depended on. A skill that wraps a server
-inherits that server's instability. When the thing underneath you can shift its interface
-between releases, a wrapper is a maintenance liability rather than a simplification. Layer
-by all means, and pin what you depend on.
+The layering has a failure mode worth naming, because it bites in practice. Ronacher stopped
+using the Sentry MCP server and had Claude maintain a skill instead, in part because loading
+the server cost him about 8,000 tokens and a Sentry query-syntax shift broke his guidance. He
+makes a broader warning too: MCP servers can change tool descriptions, which breaks
+materialized calls and external READMEs or skill files. A skill that wraps a server inherits
+that instability. When the thing underneath you can shift its interface between releases, a
+wrapper is a maintenance liability rather than a simplification. Layer by all means, and pin
+what you depend on.
 
 ## The four ways to get it wrong
 
@@ -133,8 +140,9 @@ every client that reads `SKILL.md`.
 
 **Connectivity crammed into a skill**. Writing "this process calls the DeepL API" into a
 `SKILL.md` when the real requirement is authentication and a live connection. A skill is a
-static file with no auth model. The moment you need a token or fresh data, that is a
-server's job.
+static file with no auth model. The moment you need a token or fresh data, you need an access
+layer. Use an existing CLI or server when it already provides one; otherwise build or adopt a
+server.
 
 **The unlayered extreme**. A beautiful skill for a task the agent cannot reach, which one
 practitioner called an expensive search engine, or a rich server with no procedural guidance
@@ -163,16 +171,17 @@ between the two is also choosing between two threat models.
 
 The artifact solves one problem three ways, so you can watch each half fail and the whole
 succeed. The problem is producing the release notes for a version, which has an access half,
-reach the commits merged since the last tag, and a judgment half, turn them into a clean,
-categorized section. Run `--server-only` and you get raw commits with chores and docs mixed
-in: connectivity delivered, no judgment applied. Run `--skill-only` and the formatter is
-correct and produces nothing, because it was never handed the data: judgment starved of
-access. Run `--hybrid` and the skill calls the server's `list_commits_since` tool over a
-real process boundary, then runs its bundled formatter on the result, and you get the notes.
-The `--decide` mode is the chapter's question in code, the same routing the widget uses,
-and `--test` asserts the framework routes the canonical cases and all three paths behave.
-Zero dependencies, no API key, no network: the server reads a bundled commit fixture so the
-whole thing runs offline.
+reach the commits merged after a tag, and a judgment half, turn them into a clean,
+categorized section. Its offline fixture truthfully supports `v0.3.0` to `v0.4.0` and
+rejects another tag rather than inventing a range. Run `--server-only` and you get raw
+commits with chores and docs mixed in: connectivity delivered, no judgment applied. Run
+`--skill-only` and the formatter is correct and produces nothing, because it was never handed
+the data: judgment starved of access. Run `--hybrid` and the skill calls the server's
+`list_commits_since` tool over a real process boundary, then runs its bundled formatter on
+the result, and you get the notes. The `--decide` mode is the chapter's question in code, the
+same routing the widget uses, and `--test` asserts the framework routes the canonical cases
+and all three paths behave. Zero dependencies, no API key, no network: the server reads a
+bundled commit fixture so the whole thing runs offline.
 
 <RunnableArtifact
   name="hybrid_lab"
@@ -205,15 +214,16 @@ contrast is the entire case for layering.
 <ExerciseCard n="03" title="Find the boundary">
 Take an access-heavy capability and run `--decide --access`. It routes to a server. Now add
 `--cli-exists` and run it again. It routes to a skill wrapping the CLI. Explain why one flag
-moved the verdict, then run `--decide --access --live --cli-exists` and explain why the CLI
-no longer rescues you once the data is live.
+moved the verdict, then run `--decide --access --live --cli-exists`. It still routes to a
+skill because the CLI can fetch the fresh data. Explain why fresh data needs access, not a
+second server.
 </ExerciseCard>
 
 <ExerciseCard n="04" title="Audit a wrapper before you ship it">
-Reread the Sentry story: a skill that wrapped an MCP server broke when the server changed
-its tool descriptions without notice. Write the three checks you would run before wrapping
-any server in a skill, at least one about the server's interface stability and one about its
-token cost on load.
+Reread the Sentry story: a query-syntax change broke the guidance in a skill that wrapped the
+server, and Ronacher warns more generally that MCP tool descriptions can change without
+notice. Write the three checks you would run before wrapping any server in a skill, at least
+one about interface stability and one about token cost on load.
 </ExerciseCard>
 
 ## Sources
@@ -231,13 +241,22 @@ token cost on load.
   for the access-versus-judgment heuristic and the false-dichotomy rebuttal.
 - [Simon Willison's October 2025 assessment](https://simonwillison.net/2025/Oct/16/claude-skills/),
   for the argument that simple skills and existing CLIs can displace some thin server wrappers.
-- Product-specific examples: Anthropic's [advanced tool-use guide](https://www.anthropic.com/engineering/advanced-tool-use)
-  documents deferred tool loading and its internal token measurements; its
-  [Agent Skills guide](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)
+- [Armin Ronacher's account](https://lucumr.pocoo.org/2025/12/13/skills-vs-mcp/), for the
+  tool-definition explanation and his Sentry token and interface-stability experience, and
+  [Damian Galarza's framing](https://www.damiangalarza.com/posts/2026-02-05-mcps-vs-agent-skills/),
+  for "MCPs are verbs. Skills are playbooks."
+- Product-specific, historical Claude Code behavior: its [January 2026
+  changelog](https://code.claude.com/docs/en/changelog) recorded automatic deferral above
+  10 percent of context. Its current [MCP Tool Search documentation](https://code.claude.com/docs/en/mcp)
+  documents on-demand deferral by default and `ENABLE_TOOL_SEARCH=auto` for threshold mode.
+- Product-specific API behavior: Anthropic's [advanced tool-use guide](https://www.anthropic.com/engineering/advanced-tool-use)
+  documents the caller-selected `defer_loading` model and its internal 77,000-to-8,700-token
+  example; its [Agent Skills guide](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)
   describes an implementation of layered skills and tools. Treat the token measurements as
   order-of-magnitude, not universal constants.
-- Product-specific example: [Sentry for AI](https://github.com/getsentry/sentry-for-ai) pairs
-  an MCP server with workflow skills including `sentry-fix-issues` and `sentry-code-review`.
+- Product-specific example: [Sentry for AI](https://github.com/getsentry/sentry-for-ai)
+  configures Sentry MCP and lists its current `sentry-get-started`, `sentry-instrument`, and
+  `sentry-debug-issue` core skills.
 - [JFrog's CVE-2025-6514 report](https://jfrog.com/blog/2025-6514-critical-mcp-remote-rce-vulnerability/),
   for the `mcp-remote` remote-code-execution example; [The MCP Security
   Surface](/mcp-security-surface) and [Skills](/skills), for the two threat models this

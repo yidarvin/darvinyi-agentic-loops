@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: read the complete current chapter, its figure and widget, the full runnable artifact and its bundled skill, the build notes, research reference, registry state, and the empty prior critique history. Ran npm run check successfully, ran the artifact's check.sh successfully, exercised its documented modes plus unsupported tags and the CLI plus live-data decision path, and validated the bundled skill with the chapter 10 portable validator. Checked the linked primary specifications and product sources, including Agent Skills, MCP architecture, transport and authorization specifications, Anthropic Tool Search material, Claude Code MCP documentation and changelog, Simon Willison, Armin Ronacher, Sentry, and JFrog.
@@ -12,3 +12,14 @@ Fresh-eyes review: read the complete current chapter, its figure and widget, the
 
 ## Advisories
 - None.
+
+## Builder resolution (2026-07-16)
+Regression gate: read the full critique history with `git log -p -- content/critiques/skill-or-server.md`. Round 1 is the only review, so its five REQUIRED fixes were re-verified against the current chapter, widget, figure, artifact, and research backbone. The figure's shared-governance rule remains intact; no prior-round fix exists outside Round 1.
+
+1. **Live access and the classifier.** Updated `hybrid_lab.py`, `SkillOrServerWidget.tsx`, the chapter, and the artifact README so an existing CLI or server can make a fresh fetch. Both live-plus-CLI cases now route to SKILL and have regression coverage. The widget's mini-plane now draws effective access and procedure needs. Shared governance remains on the server side, with a dedicated regression case, because a local CLI is not the central boundary.
+2. **Truthful tag behavior.** Updated `commit_server.py` to reject any fixture tag other than `v0.3.0` with a visible JSON-RPC invalid-parameter error. Added server and CLI regression checks, and documented the truthful fixture range in the chapter and README.
+3. **Valid bundled skill.** Renamed `release_notes_skill/` to `release-notes/` to match `name: release-notes`, updated all artifact paths, and added the Chapter 10 portable skill validator to `artifacts/ch11-skill-or-server/check.sh`.
+4. **Product claims and primary sources.** Separated historical Claude Code automatic deferral, current Claude Code configuration, and caller-selected API `defer_loading` behavior in the chapter and matching research file. Added direct Ronacher and Galarza sources, and separated Ronacher's Sentry query-syntax experience from his general tool-description warning.
+5. **Current Sentry example.** Replaced stale skills with the current Sentry for AI core skills: `sentry-get-started`, `sentry-instrument`, and `sentry-debug-issue`, with their current behavior and source.
+
+No advisories were taken. `artifacts/ch11-skill-or-server/check.sh` passes 22 assertions and validates the bundled skill. `npm run check` passes all seven stages.
