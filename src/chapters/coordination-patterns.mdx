@@ -100,13 +100,17 @@ can merge safely. A shared product decision cannot. In a graph runtime, reducers
 produce the same state regardless of how writes were batched, or replay and recovery will
 quietly change meaning.
 
-This is why the practical rule is so sharp: **parallelize reads, serialize writes.** Let
-workers search, inspect, and propose independently. Funnel a shared decision, a final
-artifact, or a mutation of one codebase through one explicitly accountable writer. For
-breadth-first research, Anthropic reported that this shape can pay for its large token
-multiple. For tightly coupled coding, the same split often creates conflicts faster than
-it creates useful work. Both observations describe dependency structure, not competing
-ideologies.
+Use a sharper boundary: **parallelize separable investigation and independently owned
+artifacts; serialize coupled decisions and final integration.** Workers can search,
+inspect, propose, or persist a report, code module, or visualization independently when
+its owner, location, and explicit merge contract are defined. Funnel a shared decision, a
+mutation of coupled state, and the final integration through one explicitly accountable
+owner. Anthropic's research system demonstrates parallel research with lead-owned
+synthesis, while its appendix permits independently persisted artifacts with lightweight
+references back to the coordinator. Cognition's separate experience with tightly coupled
+coding is the warning: parallel writers make conflicting implicit decisions, so
+contributors add intelligence while writes stay single-threaded. Both observations
+describe dependency structure, not competing ideologies.
 
 ## Reconfigure the control plane
 
@@ -188,7 +192,8 @@ single final writer either way.
 
 ## Sources
 
-- [Anthropic, "How we built our multi-agent research system" (June 2025)](https://www.anthropic.com/engineering/multi-agent-research-system), for the orchestrator-worker research architecture, independent context windows, the reported breadth-first research result, the cost multiplier, effort scaling, and the read-parallel/write-serialized boundary. The performance figures are Anthropic's internal results, not an independent benchmark.
+- [Anthropic, "How we built our multi-agent research system" (June 2025)](https://www.anthropic.com/engineering/multi-agent-research-system), for the orchestrator-worker research architecture, independent context windows, parallel research with lead-owned synthesis, the reported breadth-first research result, the cost multiplier, effort scaling, and the independently persisted artifact pattern. The performance figures are Anthropic's internal results, not an independent benchmark.
+- [Cognition, "Multi-Agents: What's Actually Working" (April 2026)](https://cognition.com/blog/multi-agents-working), for the coupled-work warning that parallel writers make conflicting implicit decisions and for the narrower working pattern where multiple agents contribute intelligence while writes stay single-threaded.
 - [LangChain, "Benchmarking Multi-Agent Architectures" (June 2025)](https://www.langchain.com/blog/benchmarking-multi-agent-architectures), for the low-complexity single-agent baseline, supervisor translation cost, and architecture comparison. The benchmark is framework-authored and should be read as directional evidence.
 - [OpenAI Agents SDK, "Handoffs"](https://openai.github.io/openai-agents-python/handoffs/), for the control-transfer handoff model; and ["Agent orchestration"](https://openai.github.io/openai-agents-python/multi_agent/), for manager and decentralized examples.
 - [LangGraph, "Workflows and agents"](https://docs.langchain.com/oss/python/langgraph/workflows-agents), for explicit graph orchestration and parallel workflow examples.

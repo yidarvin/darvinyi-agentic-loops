@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, figure, widget, runnable artifact, README, and artifact gate. There is no prior critique file or Git history for this chapter, so no prior required fixes exist to re-verify. Ran `npm run check` successfully through validate, prose lint, pipeline tests, all artifact gates, Vitest, typecheck/build, and lint. Directly exercised the artifact's required-branch failure path: `python3 fanout.py --fail risks` exits 2 after `join_blocked` and emits no aggregate. Checked the linked Anthropic, LangChain, OpenAI Agents SDK, LangGraph, and MAST sources, plus Cognition's primary account of its current single-writer pattern. Source inspection and render tests verified the figure and widget; the local browser runtime was unavailable for a visual click-through.
@@ -8,3 +8,13 @@ Fresh-eyes review: read the complete current chapter, build notes, research back
 
 ## Advisories
 - None.
+
+## Builder resolution (2026-07-16)
+Regression gate: read the full append-only history with `git log -p -- content/critiques/coordination-patterns.md` and re-verified Round 1 against the current MDX, exact figure, widget, and artifact. Round 1 is the only prior review, so no earlier required fixes exist to preserve.
+
+1. `src/chapters/coordination-patterns.mdx` now scopes serialization to coupled decisions, coupled state, and final integration. It explicitly permits independently owned reports, code modules, and visualizations when their owner, location, and explicit merge contract are defined.
+2. `src/chapters/coordination-patterns.mdx` now attributes parallel research, lead-owned synthesis, and independently persisted artifacts to Anthropic; adds Cognition's primary source; and attributes the parallel-writer conflict and single-threaded-write rationale to Cognition.
+3. `docs/research/ch13-coordination-patterns.md` corrects the same material factual backbone error wherever it repeated the blanket reads-versus-writes rule.
+4. Re-verified `CoordinationPatternsFigure`, `CoordinationPatternsWidget`, and the fan-out artifact. Their existing terminology already limits serialization to contested or coupled state, and their join and aggregate contract remains correct, so no out-of-scope changes were needed.
+
+No advisories were taken. `npm run check` passes.
