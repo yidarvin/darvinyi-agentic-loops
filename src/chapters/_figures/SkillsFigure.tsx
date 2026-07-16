@@ -1,25 +1,20 @@
 // SkillsFigure: the figure for "Skills".
 // The structure it encodes: progressive disclosure as a three-level loading ladder.
-// A Skill is not one thing that loads; it is three tiers that load at different times
-// and cost the context window very different amounts. Level 1 (metadata: name +
-// description) is always resident, and it is paid once per installed skill, so it scales
-// with how many skills you have. Level 2 (the SKILL.md body) loads after a harness selects
-// a skill for the task. Level 3+ (bundled scripts and reference docs) is read or executed
-// from disk on demand. A harness can return a script's output without first loading its
-// source, so the bundle is effectively unbounded. The right panel is the context window itself, showing what
-// actually lands in it. The lesson band states why 100 skills cost kilotokens at startup
-// rather than hundreds of thousands. Inline SVG, themed with the CSS variables, mono labels.
+// Listed, model-invocable skills contribute metadata at startup. Each activated skill can
+// contribute a body, so activations stack. At level 3, read reference text enters context;
+// executed script output enters context while unread resources and uninspected script source
+// remain on disk. A user-only skill is absent from startup context until manual invocation.
 
 export function SkillsFigure() {
   return (
     <svg
-      viewBox="0 0 900 500"
+      viewBox="0 0 900 570"
       className="w-full min-w-[860px]"
       role="img"
-      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding one context window in an Agent Skills-style harness. Metadata loads at startup for each installed skill. The SKILL.md body loads after a harness selects a skill. Bundled references and scripts stay on disk until the agent reads or executes them. A script run can return output without first loading source into the context window. The payoff is low startup context at the cost of filesystem round trips when work activates."
+      aria-label="Progressive disclosure drawn as a three-level loading ladder feeding a context window in an Agent Skills-style harness. Metadata for listed model-invocable skills loads at startup; user-only skills do not. Each activated SKILL.md body enters context, so activations can stack. A reference file enters context when read. A script can execute and return output without loading its source."
       fill="none"
     >
-      <rect x="1" y="1" width="898" height="498" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
+      <rect x="1" y="1" width="898" height="568" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
 
       <defs>
         <marker id="sk10-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -31,70 +26,78 @@ export function SkillsFigure() {
       </defs>
 
       <text x="22" y="20" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
-        {"// progressive disclosure: three tiers, loaded at different times, costing the window very differently"}
+        {"// progressive disclosure: each path enters context at a different moment"}
       </text>
 
-      {/* level 1: metadata, always resident, paid per skill */}
-      <rect x="28" y="46" width="440" height="96" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.6" />
+      {/* level 1: metadata, listed/model-invocable only */}
+      <rect x="28" y="46" width="440" height="100" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.6" />
       <text x="44" y="70" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)">level 1 · metadata</text>
-      <text x="44" y="90" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: always, at startup</text>
-      <text x="44" y="107" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">~100 tokens</text>
-      <text x="150" y="107" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">× every skill installed</text>
-      <text x="44" y="128" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">name + description</text>
+      <text x="44" y="91" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">loaded: startup, for listed model-invocable skills</text>
+      <text x="44" y="110" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">~100 tokens</text>
+      <text x="150" y="110" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">× listed skills</text>
+      <text x="44" y="131" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">name + description</text>
 
-      {/* level 2: the body, on trigger, one skill */}
-      <rect x="28" y="166" width="440" height="96" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.35" strokeDasharray="5 4" />
+      {/* level 2: all activated bodies, not one selected body */}
+      <rect x="28" y="166" width="440" height="100" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.35" strokeDasharray="5 4" />
       <text x="44" y="190" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">level 2 · instructions</text>
-      <text x="44" y="210" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: after the harness selects the skill</text>
-      <text x="44" y="227" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">&lt; 5k tokens</text>
-      <text x="150" y="227" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">× one selected skill</text>
-      <text x="44" y="248" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">the SKILL.md body</text>
+      <text x="44" y="211" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">loaded: whenever a skill is activated</text>
+      <text x="44" y="230" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">&lt; 5k tokens recommended</text>
+      <text x="205" y="230" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">× every activation</text>
+      <text x="44" y="251" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">each activated SKILL.md body</text>
 
-      {/* level 3+: resources, read or run from disk, source stays off-window */}
-      <rect x="28" y="286" width="440" height="112" rx="8" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.6" strokeDasharray="2 3" />
+      {/* level 3+: read and execute are intentionally separate paths */}
+      <rect x="28" y="286" width="440" height="132" rx="8" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.6" strokeDasharray="2 3" />
       <text x="44" y="310" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">level 3+ · resources</text>
-      <text x="44" y="330" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">loaded: on demand, via agent tools</text>
-      <text x="44" y="347" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">effectively unbounded</text>
-      <text x="200" y="347" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">source need not enter context</text>
-      <text x="44" y="368" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--fg)">bundled scripts + reference docs</text>
-      <text x="44" y="386" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">read a doc one hop away; run a script, return its output</text>
+      <text x="44" y="331" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">loaded: on demand, via agent tools</text>
+      <text x="44" y="350" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">reference read → its text enters context</text>
+      <text x="44" y="370" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">script run → output enters; source can remain on disk</text>
+      <text x="44" y="396" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">unread resources and uninspected script source cost zero tokens</text>
 
       {/* arrows into the context window */}
-      <line x1="468" y1="94" x2="606" y2="118" stroke="var(--accent)" strokeWidth="1.6" markerEnd="url(#sk10-arrow)" />
-      <line x1="468" y1="214" x2="606" y2="198" stroke="var(--accent)" strokeWidth="1.4" strokeDasharray="5 4" markerEnd="url(#sk10-arrow)" />
-      <line x1="468" y1="342" x2="606" y2="278" stroke="var(--comment)" strokeWidth="1.4" strokeDasharray="2 3" markerEnd="url(#sk10-arrow-dim)" />
-      <text x="500" y="286" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">run output</text>
+      <line x1="468" y1="96" x2="606" y2="123" stroke="var(--accent)" strokeWidth="1.6" markerEnd="url(#sk10-arrow)" />
+      <line x1="468" y1="215" x2="606" y2="189" stroke="var(--accent)" strokeWidth="1.4" strokeDasharray="5 4" markerEnd="url(#sk10-arrow)" />
+      <line x1="468" y1="345" x2="606" y2="255" stroke="var(--comment)" strokeWidth="1.4" strokeDasharray="2 3" markerEnd="url(#sk10-arrow-dim)" />
+      <line x1="468" y1="371" x2="606" y2="321" stroke="var(--comment)" strokeWidth="1.4" strokeDasharray="2 3" markerEnd="url(#sk10-arrow-dim)" />
+      <text x="505" y="280" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">reference read</text>
+      <text x="510" y="338" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">script output</text>
 
-      {/* the context window: what actually lands in it */}
-      <rect x="612" y="46" width="256" height="352" rx="9" fill="var(--accent)" fillOpacity="0.06" stroke="var(--accent)" strokeOpacity="0.7" />
+      {/* the context window: every route that actually lands in it */}
+      <rect x="612" y="46" width="256" height="372" rx="9" fill="var(--accent)" fillOpacity="0.06" stroke="var(--accent)" strokeOpacity="0.7" />
       <text x="740" y="72" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)">context window</text>
-      <text x="740" y="88" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">what actually lands here</text>
+      <text x="740" y="90" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">what actually lands here</text>
 
-      <rect x="632" y="104" width="216" height="52" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.55" />
-      <text x="646" y="124" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">all skills&#39; metadata</text>
-      <text x="646" y="140" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">always · scales with skill count</text>
+      <rect x="632" y="106" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.55" />
+      <text x="646" y="126" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">listed skills&#39; metadata</text>
+      <text x="646" y="142" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">startup · model-invocable only</text>
 
-      <rect x="632" y="172" width="216" height="52" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.3" strokeDasharray="4 3" />
-      <text x="646" y="192" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">one skill&#39;s body</text>
-      <text x="646" y="208" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">only when triggered</text>
+      <rect x="632" y="170" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--accent)" strokeOpacity="0.3" strokeDasharray="4 3" />
+      <text x="646" y="190" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">activated skill bodies</text>
+      <text x="646" y="206" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">one per activation · can stack</text>
 
-      <rect x="632" y="240" width="216" height="52" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
-      <text x="646" y="260" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">script run output</text>
-      <text x="646" y="276" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">source can remain on disk</text>
+      <rect x="632" y="234" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
+      <text x="646" y="254" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">reference text read</text>
+      <text x="646" y="270" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">only after the agent reads it</text>
 
-      <text x="740" y="326" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">the rest stays on disk,</text>
-      <text x="740" y="340" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="8.5" fill="var(--comment)">costing zero tokens until touched</text>
+      <rect x="632" y="298" width="216" height="48" rx="6" fill="var(--surface)" stroke="var(--comment)" strokeOpacity="0.55" strokeDasharray="2 3" />
+      <text x="646" y="318" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">script execution output</text>
+      <text x="646" y="334" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">source stays available on disk</text>
+
+      <text x="740" y="374" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">manual-only user skill: zero at startup;</text>
+      <text x="740" y="390" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">its body joins after manual invocation</text>
 
       {/* lesson band */}
-      <rect x="28" y="418" width="840" height="66" rx="8" fill="var(--surface)" stroke="var(--border)" />
-      <text x="44" y="442" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--accent)">
-        {"// the payoff: pay for what you might need, load what you do need"}
+      <rect x="28" y="438" width="840" height="112" rx="8" fill="var(--surface)" stroke="var(--border)" />
+      <text x="44" y="462" fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--accent)">
+        {"// the payoff: list what might help; load only what the task actually uses"}
       </text>
-      <text x="44" y="462" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--fg)">
-        {"startup pays only for metadata; the body loads just in time; a script can return a result without loading its source."}
+      <text x="44" y="485" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+        {"startup pays for listed metadata; bodies, reference text, and script output arrive only along the path taken."}
       </text>
-      <text x="44" y="478" fontFamily="var(--font-mono)" fontSize="9.5" fill="var(--comment)">
-        {"that is why 100 installed skills cost a few kilotokens at startup, not hundreds of thousands."}
+      <text x="44" y="506" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg)">
+        {"the savings hold even when several skills activate, because unread files and uninspected script source remain off-window."}
+      </text>
+      <text x="44" y="530" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+        {"that is why a hundred listed skills cost a few kilotokens at startup, not every bundled workflow at once."}
       </text>
     </svg>
   );

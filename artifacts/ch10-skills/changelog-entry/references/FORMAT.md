@@ -2,7 +2,7 @@
 
 Read this when an entry needs more than the five steps in `SKILL.md`: the heading
 order, how the Unreleased section is cut into a release, or which type a change
-belongs to. Paraphrased from keepachangelog.com (version 1.1.0).
+belongs to. Paraphrased from [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
 ## The file
 
@@ -41,7 +41,10 @@ their entries as written.
 
 ## Style
 
-- One change per entry, phrased as an imperative summary with no trailing period.
+- One change per entry, phrased as a concise summary for a release-note reader.
 - Write what changed for a reader of the release notes, not the diff.
 - Link versions to their compare view at the bottom of the file if the project
   keeps those links.
+
+Keep a Changelog does not impose a character limit or require a particular terminal
+punctuation. The bundled validator deliberately leaves both choices to the project.

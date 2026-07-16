@@ -1,53 +1,56 @@
 #!/usr/bin/env python3
 """skills_lab.py --- a zero-dependency lab for Agent Skills.
 
-Three things the Skills chapter describes, made executable:
+Three ideas from the Skills chapter, made executable:
 
-  1. Validate a SKILL.md's canonical frontmatter subset against explicit
-     portability and authoring checks (name and description format, the
-     "claude"/"anthropic" ban, no angle brackets, third-person phrasing, an
-     advisory `when` cue, the body-length budget, and dangling reference links).
-  2. Price progressive disclosure: what one skill costs at each of the three
-     loading levels, and what installing N skills costs at startup.
-  3. Simulate discovery: match a request against a description and print the
-     loading sequence that follows a trigger.
+  1. Lint this bundle's supported portable frontmatter subset: the required
+     ASCII name syntax, directory match, and description bounds. It is a
+     teaching lint, not a replacement for ``skills-ref validate`` on arbitrary
+     YAML or the complete Agent Skills schema. The optional ``--surface
+     anthropic`` profile adds Anthropic-only compatibility restrictions;
+     authoring advice stays a warning in either profile.
+  2. Price progressive disclosure: what one listed, model-invocable skill costs
+     at each loading level, and what listing N such skills costs at startup.
+  3. Simulate discovery with an intentionally crude keyword proxy. It illustrates
+     the loading path but cannot establish how a production model will trigger.
 
-No dependencies, no API key, no network. The token counts are estimates
-(~4 characters per token) and the discovery match is a crude keyword proxy, not
-the real model; both are here to make the shape of the mechanism visible, not to
-reproduce a production harness. The tiny parser handles the simple mappings and
-folded or literal block scalars used by portable SKILL.md frontmatter; it is not a
-general YAML implementation.
+No dependencies, no API key, no network. Token counts are estimates (~4 characters per
+token), and the discovery match is a two-keyword proxy rather than a production harness.
+The parser handles plain or basic quoted mappings and folded or literal block scalars used
+by this artifact. It is not a general YAML implementation.
 
 Usage:
-    python3 skills_lab.py                     # overview of the bundled skill
-    python3 skills_lab.py --validate DIR      # validate a skill directory
-    python3 skills_lab.py --budget 100        # startup cost of 100 skills
-    python3 skills_lab.py --simulate "..."    # simulate discovery for a request
-    python3 skills_lab.py --entry "Added: X"  # run the skill's bundled validator
-    python3 skills_lab.py --test              # assertions; exit non-zero on failure
+    python3 skills_lab.py                              # overview of the bundled skill
+    python3 skills_lab.py --validate DIR               # supported portable-subset lint
+    python3 skills_lab.py --validate DIR --surface anthropic
+    python3 skills_lab.py --budget 100                 # listed-skill startup cost
+    python3 skills_lab.py --simulate "..."              # illustrative discovery path
+    python3 skills_lab.py --entry "Added: X"            # run the bundled validator
+    python3 skills_lab.py --test                        # assertions; non-zero on failure
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
 import sys
+from typing import Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SKILL = os.path.join(HERE, "changelog-entry")
 
-# A big MCP server loads all its tool definitions upfront. GitHub's official
-# server is the standing example of tens of thousands of tokens before the agent
-# does anything; we use a round figure for contrast, not a measurement.
-MCP_SERVER_BASELINE = 25_000
+# A deliberately illustrative eager tool catalog. Many current MCP hosts defer schemas,
+# so this is a contrast configuration, not a claim about every server or host.
+EAGER_TOOL_CATALOG_EXAMPLE = 25_000
 
-VALID_NAME = re.compile(r"[a-z0-9-]+")
+# The teaching lint deliberately supports the artifact's ASCII name subset: one to 64
+# lowercase alphanumeric segments joined by single hyphens. The directory must match.
+# The full Agent Skills specification permits more YAML and Unicode lowercase names;
+# use its reference validator for universal validation.
+VALID_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 KEY_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$")
-# Descriptions enter the harness prompt as statements about available capabilities,
-# so the authoring guidance calls for third person. This remains a heuristic, not a
-# parser for English: it catches ordinary first- and second-person pronouns.
 PERSON = re.compile(
     r"\b(?:i(?!/)(?:'m|'ve|'ll|'d)?|me|my|mine|you(?:'re|'ve|'ll|'d)?|your|yours|yourself)\b",
     re.IGNORECASE,
@@ -59,34 +62,56 @@ REF_PATH = re.compile(r"(?:references|scripts|assets)/[A-Za-z0-9_./-]+")
 # --------------------------------------------------------------------------- #
 # parsing
 # --------------------------------------------------------------------------- #
+def parse_scalar(value: str, key: str, errors: list[str]) -> str:
+    """Parse the teaching subset's plain and basic quoted scalar values."""
+    if not value.startswith(("'", '"')):
+        return value
+    if value[0] == "'":
+        if len(value) < 2 or not value.endswith("'"):
+            errors.append(f"{key} has an unterminated single-quoted scalar")
+            return value
+        return value[1:-1].replace("''", "'")
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        errors.append(f"{key} has unsupported or invalid double-quoted scalar syntax")
+        return value
+    if not isinstance(parsed, str):
+        errors.append(f"{key} must be a string scalar")
+        return value
+    return parsed
+
+
 def parse_frontmatter(text: str):
     """Split a SKILL.md into (meta, body, has_frontmatter).
 
-    A minimal YAML reader: enough for `key: value` pairs, indented continuation
-    lines, and folded (`>`) or literal (`|`) block scalars. Not a general YAML
-    parser: a production harness should use a real YAML implementation.
+    A minimal YAML reader: enough for plain or basic quoted scalar mappings, indented
+    continuation lines, and folded (``>``) or literal (``|``) block scalars used by
+    this bundle. It is deliberately not a general YAML implementation or complete
+    schema parser.
     """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
-        return {}, text, False
+        return {}, text, False, []
     end = None
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
             end = i
             break
     if end is None:
-        return {}, text, False
+        return {}, text, False, []
 
     meta: dict[str, str] = {}
+    parse_errors: list[str] = []
     key = None
     frontmatter = lines[1:end]
     i = 0
     while i < len(frontmatter):
-        ln = frontmatter[i]
-        m = KEY_LINE.match(ln)
-        if m and not ln[:1].isspace():
-            key = m.group(1)
-            value = m.group(2).strip()
+        line = frontmatter[i]
+        match = KEY_LINE.match(line)
+        if match and not line[:1].isspace():
+            key = match.group(1)
+            value = match.group(2).strip()
             if re.fullmatch(r"[>|][1-9]?[+-]?|[>|][+-]?[1-9]?", value):
                 style = value[0]
                 block: list[str] = []
@@ -101,12 +126,12 @@ def parse_frontmatter(text: str):
                 else:
                     meta[key] = "\n".join(block).strip()
                 continue
-            meta[key] = value
-        elif key is not None and ln[:1].isspace():
-            meta[key] = (meta[key] + " " + ln.strip()).strip()
+            meta[key] = parse_scalar(value, key, parse_errors)
+        elif key is not None and line[:1].isspace():
+            meta[key] = (meta[key] + " " + line.strip()).strip()
         i += 1
     body = "\n".join(lines[end + 1:]).strip("\n")
-    return meta, body, True
+    return meta, body, True, parse_errors
 
 
 def load_skill(skill_dir: str):
@@ -115,83 +140,104 @@ def load_skill(skill_dir: str):
         return None, f"no SKILL.md in {skill_dir}"
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
-    meta, body, has_fm = parse_frontmatter(text)
-    return {"meta": meta, "body": body, "has_fm": has_fm, "dir": skill_dir}, None
+    meta, body, has_frontmatter, parse_errors = parse_frontmatter(text)
+    return {
+        "meta": meta,
+        "body": body,
+        "has_fm": has_frontmatter,
+        "parse_errors": parse_errors,
+        "dir": skill_dir,
+    }, None
 
 
 # --------------------------------------------------------------------------- #
 # validation
 # --------------------------------------------------------------------------- #
-def validate_skill(skill) -> tuple[list, list]:
-    """Return (errors, warnings), each a list of (code, message)."""
+def validate_skill(skill, surface: str = "portable") -> tuple[list, list]:
+    """Return (errors, warnings) for the lab's named teaching-lint profile.
+
+    P findings are portable rules checked by this supported subset, not a complete
+    Agent Skills validation result. A errors are additional Anthropic-surface
+    restrictions. W findings are authoring advice.
+    """
     errors: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []
     meta, body = skill["meta"], skill["body"]
 
     if not skill["has_fm"]:
-        errors.append(("E0", "no YAML frontmatter (the file must open with a --- fence)"))
+        errors.append(("P1", "no YAML frontmatter (the file must open with a --- fence)"))
         return errors, warnings
 
-    name = meta.get("name", "")
-    desc = meta.get("description", "")
+    for detail in skill.get("parse_errors", []):
+        errors.append(("P0", detail))
 
-    # name -----------------------------------------------------------------
+    name = meta.get("name", "")
+    description = meta.get("description", "")
+
+    # portable name --------------------------------------------------------
     if not name:
-        errors.append(("E1", "name is missing or empty"))
+        errors.append(("P2", "name is missing or empty"))
     else:
         if len(name) > 64:
-            errors.append(("E2", f"name is {len(name)} chars; the max is 64"))
+            errors.append(("P3", f"name is {len(name)} chars; the portable max is 64"))
         if not VALID_NAME.fullmatch(name):
-            errors.append(("E3", "name must be lowercase letters, digits, and hyphens only"))
-        low = name.lower()
-        if "claude" in low or "anthropic" in low:
-            errors.append(("E4", "name may not contain 'claude' or 'anthropic'"))
+            errors.append((
+                "P4",
+                "name must use lowercase letters or digits joined by single hyphens; no leading, trailing, or consecutive hyphens",
+            ))
+        directory_name = os.path.basename(os.path.normpath(skill["dir"]))
+        if name != directory_name:
+            errors.append(("P5", f"name {name!r} must match parent directory {directory_name!r}"))
 
-    # description ----------------------------------------------------------
-    if not desc:
-        errors.append(("E5", "description is missing or empty"))
-    else:
-        if len(desc) > 1024:
-            errors.append(("E6", f"description is {len(desc)} chars; the max is 1024"))
-        person = PERSON.search(desc.lower())
-        if person:
-            errors.append(("E9", f"description reads first/second person ('{person.group(0)}'); write it in the third person"))
-        if not WHEN_CUE.search(desc.lower()):
-            warnings.append(("W1", "description does not say when to use the skill (add a 'Use when ...' clause)"))
+    # portable description -------------------------------------------------
+    if not description:
+        errors.append(("P6", "description is missing or empty"))
+    elif len(description) > 1024:
+        errors.append(("P7", f"description is {len(description)} chars; the portable max is 1024"))
 
-    # angle brackets are an injection surface in the system prompt ----------
-    if any(c in (name + desc) for c in "<>"):
-        errors.append(("E7", "angle brackets are not allowed in frontmatter (they are a prompt-injection surface)"))
+    # Anthropic profile ----------------------------------------------------
+    if surface == "anthropic":
+        lowered = name.lower()
+        if "claude" in lowered or "anthropic" in lowered:
+            errors.append(("A1", "Anthropic profile: name may not contain 'claude' or 'anthropic'"))
+        if any(char in (name + description) for char in "<>"):
+            errors.append(("A2", "Anthropic profile: angle brackets are not allowed in frontmatter"))
 
-    # body -----------------------------------------------------------------
+    # authoring guidance ---------------------------------------------------
+    person = PERSON.search(description)
+    if person:
+        warnings.append(("W1", f"description reads first/second person ({person.group(0)!r}); third person improves discovery"))
+    if description and not WHEN_CUE.search(description):
+        warnings.append(("W2", "description does not say when to use the skill (add a concrete trigger cue)"))
+
     line_count = len(body.splitlines())
     if line_count > 500:
-        errors.append(("E8", f"body is {line_count} lines; keep it under 500 and split the rest into references/"))
+        warnings.append(("W3", f"body is {line_count} lines; split detail into references to protect activation context"))
     if not body.strip():
-        warnings.append(("W2", "body is empty; the skill has nothing to instruct once it triggers"))
+        warnings.append(("W4", "body is empty; the skill has nothing to instruct once it triggers"))
     if "\\" in body:
-        warnings.append(("W4", "body contains a backslash path; use forward slashes so the skill is portable"))
+        warnings.append(("W5", "body contains a backslash path; use forward slashes for portability"))
 
-    # dangling one-hop links -----------------------------------------------
     for rel in sorted(set(REF_PATH.findall(body))):
         if not os.path.exists(os.path.join(skill["dir"], rel)):
-            warnings.append(("W3", f"body references '{rel}', which is not present in the skill folder"))
+            warnings.append(("W6", f"body references {rel!r}, which is not present in the skill folder"))
 
     return errors, warnings
 
 
-def print_validation(skill) -> tuple[list, list]:
-    errors, warnings = validate_skill(skill)
+def print_validation(skill, surface: str = "portable") -> tuple[list, list]:
+    errors, warnings = validate_skill(skill, surface)
     name = skill["meta"].get("name", "(no name)")
-    print(f"// validate: {os.path.relpath(skill['dir'], HERE)}  (name: {name})")
-    for code, msg in warnings:
-        print(f"  warn  {code}  {msg}")
-    for code, msg in errors:
-        print(f"  ERROR {code}  {msg}")
+    profile = "portable teaching subset" if surface == "portable" else "portable teaching subset + Anthropic surface"
+    print(f"// lint: {os.path.relpath(skill['dir'], HERE)}  (name: {name}; profile: {profile})")
+    for code, message in warnings:
+        print(f"  warn  {code}  {message}")
+    for code, message in errors:
+        print(f"  ERROR {code}  {message}")
     if not errors and not warnings:
-        print("  clean: frontmatter passes every implemented rule")
+        print("  clean: passes this lab's checked subset; run skills-ref validate for the full Agent Skills schema")
     elif not errors:
-        print(f"  ok with {len(warnings)} warning(s); no hard errors")
+        print(f"  valid with {len(warnings)} authoring warning(s)")
     else:
         print(f"  FAIL: {len(errors)} error(s), {len(warnings)} warning(s)")
     return errors, warnings
@@ -200,8 +246,8 @@ def print_validation(skill) -> tuple[list, list]:
 # --------------------------------------------------------------------------- #
 # progressive-disclosure cost model
 # --------------------------------------------------------------------------- #
-def est_tokens(s: str) -> int:
-    return 0 if not s else max(1, round(len(s) / 4))
+def est_tokens(text: str) -> int:
+    return 0 if not text else max(1, round(len(text) / 4))
 
 
 def cost_model(skill) -> dict:
@@ -209,41 +255,46 @@ def cost_model(skill) -> dict:
     level1 = est_tokens(meta.get("name", "")) + est_tokens(meta.get("description", ""))
     level2 = est_tokens(body)
     resources = []
-    for sub in ("references", "scripts", "assets"):
-        d = os.path.join(skill["dir"], sub)
-        if os.path.isdir(d):
-            for fn in sorted(os.listdir(d)):
-                fp = os.path.join(d, fn)
-                if os.path.isfile(fp):
-                    resources.append((f"{sub}/{fn}", os.path.getsize(fp)))
+    for subdirectory in ("references", "scripts", "assets"):
+        directory = os.path.join(skill["dir"], subdirectory)
+        if os.path.isdir(directory):
+            for filename in sorted(os.listdir(directory)):
+                path = os.path.join(directory, filename)
+                if os.path.isfile(path):
+                    resources.append((f"{subdirectory}/{filename}", os.path.getsize(path)))
     return {"level1": level1, "level2": level2, "resources": resources}
 
 
 def print_cost(skill) -> None:
-    c = cost_model(skill)
+    cost = cost_model(skill)
     print("// progressive-disclosure cost (token estimates, ~4 chars/token)")
-    print(f"  level 1  metadata (name + description)  ~{c['level1']:>5} tokens   always resident, per skill")
-    print(f"  level 2  SKILL.md body                  ~{c['level2']:>5} tokens   loads only on a trigger")
-    if c["resources"]:
-        print("  level 3+ bundled resources                            read/executed from disk on demand:")
-        for rel, size in c["resources"]:
-            kind = "executed, output only" if rel.startswith("scripts/") else "read when the body says so"
-            print(f"             {rel:<34} {size:>6} bytes   {kind}")
+    print(f"  level 1  metadata (name + description)  ~{cost['level1']:>5} tokens   listed, model-invocable")
+    print(f"  level 2  SKILL.md body                  ~{cost['level2']:>5} tokens   each activation; bodies can stack")
+    if cost["resources"]:
+        print("  level 3+ bundled resources                            accessed on demand:")
+        for rel, size in cost["resources"]:
+            if rel.startswith("scripts/"):
+                behavior = "executed; output enters, source need not"
+            else:
+                behavior = "read; contents enter when read"
+            print(f"             {rel:<34} {size:>6} bytes   {behavior}")
     else:
         print("  level 3+ (none bundled)")
+    print("  note     user-only manual skills are absent from startup context")
 
 
-def print_budget(skill, n: int) -> None:
-    c = cost_model(skill)
-    level1 = c["level1"]
-    startup = level1 * n
-    naive = c["level2"] * n
-    print(f"// startup budget for {n} installed skills like this one")
-    print(f"  progressive disclosure: ~{startup:,} tokens  ({level1} of metadata each, bodies stay on disk)")
-    print(f"  if every body loaded up front instead: ~{naive:,} tokens")
-    print(f"  one large MCP server, for contrast, loads ~{MCP_SERVER_BASELINE:,} tokens before doing anything")
+def print_budget(skill, count: int) -> None:
+    cost = cost_model(skill)
+    level1 = cost["level1"]
+    startup = level1 * count
+    eager_bodies = cost["level2"] * count
+    print(f"// startup budget for {count} listed, model-invocable skills like this one")
+    print(f"  progressive disclosure: ~{startup:,} tokens  ({level1} metadata tokens each; bodies stay on disk)")
+    print(f"  if every body loaded up front instead: ~{eager_bodies:,} tokens")
+    print(f"  illustrative eager tool catalog:        ~{EAGER_TOOL_CATALOG_EXAMPLE:,} tokens before work")
+    print("  user-only manual skills are omitted until a user invokes them")
     if startup:
-        print(f"  => {n} skills cost about {startup / MCP_SERVER_BASELINE:.2f}x a single big server at startup")
+        print(f"  => {count} listed skills cost about {startup / EAGER_TOOL_CATALOG_EXAMPLE:.2f}x that eager-catalog example at startup")
 
 
 # --------------------------------------------------------------------------- #
@@ -253,46 +304,49 @@ STOP = set("a an the to for of and or with this that add adds new your you it is
            "on in at as by from into out do does can will use uses using".split())
 
 
-def keywords(s: str) -> list[str]:
-    return [w for w in re.findall(r"[a-z0-9]+", s.lower()) if w not in STOP and len(w) > 1]
+def keywords(text: str) -> list[str]:
+    return [word for word in re.findall(r"[a-z0-9]+", text.lower()) if word not in STOP and len(word) > 1]
 
 
 def simulate(skill, request: str) -> bool:
     meta, body = skill["meta"], skill["body"]
-    desc = meta.get("description", "")
-    dt = set(keywords(desc))
-    overlap = sorted({w for w in keywords(request) if w in dt})
+    description = meta.get("description", "")
+    description_terms = set(keywords(description))
+    overlap = sorted({word for word in keywords(request) if word in description_terms})
     triggered = len(overlap) >= 2
 
-    print(f"// simulate discovery for: {request!r}")
+    print(f"// illustrative discovery proxy for: {request!r}")
     print(f"  request keywords overlap description on: {overlap or '(none)'}")
     if not triggered:
-        print("  => below the trigger threshold; the SKILL.md body never loads (level 1 only)")
-        print("     (a real model also weighs task difficulty, not just keywords)")
+        print("  => below this proxy's threshold; only listed metadata is modeled as loaded")
+        print("     (a real model also weighs task difficulty, wording, and its target harness)")
         return False
-    print("  => triggered. loading sequence:")
-    print(f"     level 1  already resident: name + description (~{est_tokens(desc)} tokens for the description)")
-    print(f"     level 2  bash reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens)")
+    print("  => this proxy triggers. possible loading sequence:")
+    print(f"     level 1  already listed: name + description (~{est_tokens(description)} description tokens)")
+    print(f"     level 2  reads {os.path.basename(skill['dir'])}/SKILL.md (~{est_tokens(body)} tokens); other activated bodies can stack")
     for rel in sorted(set(REF_PATH.findall(body))):
         if rel.startswith("scripts/"):
-            print(f"     level 3  bash executes {rel} when instructed; only its output enters context")
+            print(f"     level 3  executes {rel}; output enters context while source can stay on disk")
         else:
-            print(f"     level 3  bash reads {rel} on demand; costs nothing until this point")
+            print(f"     level 3  reads {rel}; its contents enter context at that point")
     return True
 
 
+def validator_path(skill) -> str:
+    return os.path.join(skill["dir"], "scripts", "validate_entry.py")
+
+
 def run_entry(skill, entry: str) -> int:
-    """Run the skill's bundled validator on an entry, showing level-3 execution:
-    the harness can return output without first loading script source into context."""
-    script = os.path.join(skill["dir"], "scripts", "validate_entry.py")
+    """Run the bundled validator with the documented Python invocation."""
+    script = validator_path(skill)
     if not os.path.isfile(script):
         print(f"no bundled validator at {script}")
         return 1
-    print(f"// bash executes scripts/validate_entry.py {entry!r}")
-    proc = subprocess.run([sys.executable, script, entry], capture_output=True, text=True)
-    out = (proc.stdout + proc.stderr).strip()
-    print(f"  output: {out}")
-    print(f"  exit:   {proc.returncode}   (this is all that enters the model's context)")
+    print(f"// bash executes python3 {script!r} {entry!r}")
+    proc = subprocess.run(["python3", script, entry], capture_output=True, text=True)
+    output = (proc.stdout + proc.stderr).strip()
+    print(f"  output: {output}")
+    print(f"  exit:   {proc.returncode}   (output, not source, enters the model context)")
     return proc.returncode
 
 
@@ -303,90 +357,167 @@ def run_tests() -> int:
     passed = 0
     failed = 0
 
-    def check(desc, cond):
+    def check(description: str, condition: bool) -> None:
         nonlocal passed, failed
-        if cond:
+        if condition:
             passed += 1
-            print(f"  PASS  {desc}")
+            print(f"  PASS  {description}")
         else:
             failed += 1
-            print(f"  FAIL  {desc}")
+            print(f"  FAIL  {description}")
+
+    def codes(items) -> set[str]:
+        return {code for code, _ in items}
 
     print("// tests")
 
-    good, err = load_skill(DEFAULT_SKILL)
-    check("changelog-entry loads", good is not None and err is None)
+    good, error = load_skill(DEFAULT_SKILL)
+    check("changelog-entry loads", good is not None and error is None)
     if good:
-        e, w = validate_skill(good)
-        check("changelog-entry has no errors", e == [])
-        check("changelog-entry has no warnings", w == [])
+        portable_errors, portable_warnings = validate_skill(good)
+        anthropic_errors, anthropic_warnings = validate_skill(good, "anthropic")
+        check("changelog-entry passes the portable teaching subset", portable_errors == [])
+        check("changelog-entry has no portable authoring warnings", portable_warnings == [])
+        check("changelog-entry passes the Anthropic profile", anthropic_errors == [])
+        check("changelog-entry has no Anthropic-profile warnings", anthropic_warnings == [])
 
-    bad, err = load_skill(os.path.join(HERE, "bad-skill"))
-    check("bad-skill loads", bad is not None and err is None)
+    bad, error = load_skill(os.path.join(HERE, "bad-skill"))
+    check("bad-skill loads", bad is not None and error is None)
     if bad:
-        e, w = validate_skill(bad)
-        codes = {c for c, _ in e}
-        check("bad-skill trips E4 (forbidden word in name)", "E4" in codes)
-        check("bad-skill trips E7 (angle brackets)", "E7" in codes)
-        check("bad-skill trips E9 (first person)", "E9" in codes)
-        check("bad-skill warns W1 (no 'when' cue)", "W1" in {c for c, _ in w})
+        portable_errors, portable_warnings = validate_skill(bad)
+        anthropic_errors, anthropic_warnings = validate_skill(bad, "anthropic")
+        check("bad-skill trips P4 (portable hyphen syntax)", "P4" in codes(portable_errors))
+        check("bad-skill trips P5 (directory mismatch)", "P5" in codes(portable_errors))
+        check("bad-skill trips A1 (reserved vendor word) only in Anthropic profile", "A1" in codes(anthropic_errors))
+        check("bad-skill trips A2 (angle brackets) only in Anthropic profile", "A2" in codes(anthropic_errors))
+        check("bad-skill warns W1 (first person)", "W1" in codes(portable_warnings))
+        check("bad-skill warns W2 (no trigger cue)", "W2" in codes(anthropic_warnings))
 
-    # synthetic frontmatter, exercising the numeric rules without a file per case
-    def synth(name="ok-name", desc="Does a thing. Use when a thing is needed.", body="# x\nbody"):
-        return {"meta": {"name": name, "description": desc}, "body": body,
-                "has_fm": True, "dir": HERE}
+    # Synthetic frontmatter exercises portable boundaries without a file per case.
+    def synth(
+        name: str = "ok-name",
+        description: str = "Formats a thing. Use when a thing is needed.",
+        body: str = "# x\nbody",
+        directory: Optional[str] = None,
+    ):
+        return {
+            "meta": {"name": name, "description": description},
+            "body": body,
+            "has_fm": True,
+            "dir": os.path.join(HERE, directory if directory is not None else name),
+        }
 
-    check("E1 empty name", "E1" in {c for c, _ in validate_skill(synth(name=""))[0]})
-    check("E2 over-long name", "E2" in {c for c, _ in validate_skill(synth(name="x" * 65))[0]})
-    check("E3 bad name chars", "E3" in {c for c, _ in validate_skill(synth(name="Bad_Name"))[0]})
-    check("E5 empty description", "E5" in {c for c, _ in validate_skill(synth(desc=""))[0]})
-    check("E6 over-long description", "E6" in {c for c, _ in validate_skill(synth(desc="d" * 1025))[0]})
-    check("E8 over-long body", "E8" in {c for c, _ in validate_skill(synth(body="\n".join(["x"] * 501)))[0]})
+    check("P2 empty name", "P2" in codes(validate_skill(synth(name=""))[0]))
+    check("P3 over-long name", "P3" in codes(validate_skill(synth(name="x" * 65))[0]))
+    check("P4 uppercase name", "P4" in codes(validate_skill(synth(name="Bad-Name"))[0]))
+    check("P4 leading hyphen", "P4" in codes(validate_skill(synth(name="-bad-name"))[0]))
+    check("P4 trailing hyphen", "P4" in codes(validate_skill(synth(name="bad-name-"))[0]))
+    check("P4 consecutive hyphens", "P4" in codes(validate_skill(synth(name="bad--name"))[0]))
+    check("P5 mismatched directory", "P5" in codes(validate_skill(synth(directory="other-name"))[0]))
+    check("P6 empty description", "P6" in codes(validate_skill(synth(description=""))[0]))
+    check("P7 over-long description", "P7" in codes(validate_skill(synth(description="d" * 1025))[0]))
+    check("W3 over-long body is advisory", "W3" in codes(validate_skill(synth(body="\n".join(["x"] * 501)))[1]))
     check(
-        "E9 ordinary first-person wording",
-        "E9" in {c for c, _ in validate_skill(synth(desc="I format changelog entries. Use when one is needed."))[0]},
+        "W1 first-person wording is advisory",
+        "W1" in codes(validate_skill(synth(description="I format changelog entries. Use when one is needed."))[1]),
+    )
+    check(
+        "A1 vendor word is Anthropic-only",
+        "A1" in codes(validate_skill(synth(name="claude-helper"), "anthropic")[0]),
+    )
+    check(
+        "A2 angle brackets are Anthropic-only",
+        "A2" in codes(validate_skill(synth(description="Formats <things>. Use when needed."), "anthropic")[0]),
+    )
+    check(
+        "portable profile accepts angle brackets structurally",
+        "A2" not in codes(validate_skill(synth(description="Formats <things>. Use when needed."))[0]),
     )
 
-    folded_meta, folded_body, folded_frontmatter = parse_frontmatter(
+    folded_meta, folded_body, folded_frontmatter, folded_parse_errors = parse_frontmatter(
         "---\nname: folded-description\ndescription: >\n  Formats changelog entries.\n  Use when one is needed.\n---\n# Body"
     )
     folded_skill = {
         "meta": folded_meta,
         "body": folded_body,
         "has_fm": folded_frontmatter,
-        "dir": HERE,
+        "parse_errors": folded_parse_errors,
+        "dir": os.path.join(HERE, "folded-description"),
     }
     folded_errors, _ = validate_skill(folded_skill)
     check(
         "folded YAML description parses",
         folded_meta.get("description") == "Formats changelog entries. Use when one is needed.",
     )
-    check("folded YAML description avoids E7", "E7" not in {c for c, _ in folded_errors})
+    check("folded YAML description passes the portable teaching subset", folded_errors == [])
 
-    # discovery threshold
-    if good:
-        check("relevant request triggers", simulate_quiet(good, "add a changelog entry for the export flag"))
-        check("irrelevant request does not trigger", not simulate_quiet(good, "reboot the database server"))
+    quoted_meta, quoted_body, quoted_frontmatter, quoted_parse_errors = parse_frontmatter(
+        '---\nname: quoted-description\ndescription: ""\n---\n# Body'
+    )
+    quoted_skill = {
+        "meta": quoted_meta,
+        "body": quoted_body,
+        "has_fm": quoted_frontmatter,
+        "parse_errors": quoted_parse_errors,
+        "dir": os.path.join(HERE, "quoted-description"),
+    }
+    quoted_errors, _ = validate_skill(quoted_skill)
+    check("quoted empty description parses as empty", quoted_meta.get("description") == "")
+    check("quoted empty description trips P6", "P6" in codes(quoted_errors))
 
-    # the bundled validator itself
     if good:
+        check("relevant request triggers this proxy", simulate_quiet(good, "add a changelog entry for the export flag"))
+        check("irrelevant request does not trigger this proxy", not simulate_quiet(good, "reboot the database server"))
+
+        # The bundled validator aligns with Keep a Changelog's unprescribed punctuation
+        # and length while retaining deterministic structural checks.
         check("validator accepts a good entry", run_entry_quiet(good, "Added: --export flag to the CLI") == 0)
         check("validator rejects an unknown type", run_entry_quiet(good, "Nope: something") == 1)
-        check("validator rejects a trailing period", run_entry_quiet(good, "Fixed: crash on startup.") == 1)
+        check("validator accepts a terminal period", run_entry_quiet(good, "Fixed: crash on startup.") == 0)
+        check("validator has no arbitrary 120-char cap", run_entry_quiet(good, "Added: " + ("x" * 200)) == 0)
+        check("validator rejects leading stdin whitespace", run_entry_stdin_quiet(good, " Added: trimmed?\n") == 1)
+        check("validator rejects trailing stdin whitespace", run_entry_stdin_quiet(good, "Added: trimmed? \n") == 1)
+        check("root-aware installed command works outside the skill directory", run_installed_workflow_quiet(good, "Added: root-aware path") == 0)
 
     print(f"\n{passed} passed, {failed} failed")
     return 0 if failed == 0 else 1
 
 
 def simulate_quiet(skill, request: str) -> bool:
-    desc = skill["meta"].get("description", "")
-    dt = set(keywords(desc))
-    return len({w for w in keywords(request) if w in dt}) >= 2
+    description = skill["meta"].get("description", "")
+    description_terms = set(keywords(description))
+    return len({word for word in keywords(request) if word in description_terms}) >= 2
 
 
 def run_entry_quiet(skill, entry: str) -> int:
-    script = os.path.join(skill["dir"], "scripts", "validate_entry.py")
-    proc = subprocess.run([sys.executable, script, entry], capture_output=True, text=True)
+    proc = subprocess.run(["python3", validator_path(skill), entry], capture_output=True, text=True)
+    return proc.returncode
+
+
+def run_entry_stdin_quiet(skill, entry: str) -> int:
+    proc = subprocess.run(
+        ["python3", validator_path(skill)], input=entry, capture_output=True, text=True
+    )
+    return proc.returncode
+
+
+def run_installed_workflow_quiet(skill, entry: str) -> int:
+    """Exercise the literal Claude Code path from a directory outside the skill."""
+    env = os.environ.copy()
+    env["CLAUDE_SKILL_DIR"] = skill["dir"]
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'python3 "$CLAUDE_SKILL_DIR/scripts/validate_entry.py" "$1"',
+            "skills-lab",
+            entry,
+        ],
+        cwd=os.path.dirname(HERE),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     return proc.returncode
 
 
@@ -394,30 +525,36 @@ def run_entry_quiet(skill, entry: str) -> int:
 # cli
 # --------------------------------------------------------------------------- #
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="A zero-dependency lab for Agent Skills.")
-    ap.add_argument("--validate", metavar="DIR", help="validate a skill directory")
-    ap.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget/--simulate/--entry")
-    ap.add_argument("--budget", metavar="N", type=int, help="print the startup cost of N installed skills")
-    ap.add_argument("--simulate", metavar="REQUEST", help="simulate discovery for a request string")
-    ap.add_argument("--entry", metavar="LINE", help="run the skill's bundled validator on a changelog entry")
-    ap.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
-    args = ap.parse_args(argv[1:])
+    parser = argparse.ArgumentParser(description="A zero-dependency lab for Agent Skills.")
+    parser.add_argument("--validate", metavar="DIR", help="lint this bundle's supported frontmatter subset")
+    parser.add_argument(
+        "--surface",
+        choices=("portable", "anthropic"),
+        default="portable",
+        help="compatibility profile for validation (default: portable)",
+    )
+    parser.add_argument("--skill", metavar="DIR", default=DEFAULT_SKILL, help="skill used by --budget/--simulate/--entry")
+    parser.add_argument("--budget", metavar="N", type=int, help="print the startup cost of N listed skills")
+    parser.add_argument("--simulate", metavar="REQUEST", help="illustrate discovery for a request string")
+    parser.add_argument("--entry", metavar="LINE", help="run the skill's bundled validator on a changelog entry")
+    parser.add_argument("--test", action="store_true", help="run assertions and exit non-zero on failure")
+    args = parser.parse_args(argv[1:])
 
     if args.test:
         return run_tests()
 
     if args.validate:
-        skill, err = load_skill(args.validate if os.path.isabs(args.validate)
-                                else os.path.join(HERE, args.validate))
-        if err:
-            print(err)
+        skill, error = load_skill(args.validate if os.path.isabs(args.validate)
+                                  else os.path.join(HERE, args.validate))
+        if error:
+            print(error)
             return 1
-        errors, _ = print_validation(skill)
+        errors, _ = print_validation(skill, args.surface)
         return 0 if not errors else 1
 
-    skill, err = load_skill(args.skill if os.path.isabs(args.skill) else os.path.join(HERE, args.skill))
-    if err:
-        print(err)
+    skill, error = load_skill(args.skill if os.path.isabs(args.skill) else os.path.join(HERE, args.skill))
+    if error:
+        print(error)
         return 1
 
     if args.budget is not None:
@@ -429,16 +566,16 @@ def main(argv: list[str]) -> int:
     if args.entry is not None:
         return 0 if run_entry(skill, args.entry) == 0 else 1
 
-    # default: an overview of the bundled skill
-    print("=== a real skill, validated, priced, and discovered ===\n")
-    print_validation(skill)
+    print("=== a skills lab: linted, priced, and simulated ===\n")
+    print_validation(skill, args.surface)
     print()
     print_cost(skill)
     print()
     simulate(skill, "add a changelog entry for the new export flag")
     print()
-    print("run --test for assertions, --validate bad-skill to watch the rules fail,")
-    print("--budget 100 to price a library, or --entry \"Added: X\" to run the bundled validator.")
+    print("run --test for assertions, --validate bad-skill for portable failures,")
+    print("--surface anthropic for that profile, --budget 100 to price a listing, or")
+    print("--entry \"Added: X\" to run the bundled validator.")
     return 0
 
 

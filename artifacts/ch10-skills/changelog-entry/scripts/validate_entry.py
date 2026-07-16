@@ -6,8 +6,8 @@ Because it is a script, the check is identical every time, and a harness can ret
 output without first loading this source into the model's context window.
 
 Usage:
-    validate_entry.py "Added: --export flag to the CLI"
-    echo "Fixed: crash on startup" | validate_entry.py
+    python3 validate_entry.py "Added: --export flag to the CLI"
+    echo "Fixed: crash on startup" | python3 validate_entry.py
 
 Exit 0 and print OK when the entry is well formed; exit 1 and print a specific
 reason when it is not.
@@ -15,12 +15,12 @@ reason when it is not.
 from __future__ import annotations
 
 import sys
+from typing import Optional
 
 TYPES = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
-MAX_LEN = 120
 
 
-def validate(entry: str) -> str | None:
+def validate(entry: str) -> Optional[str]:
     """Return None if the entry is well formed, else a one-line reason."""
     if entry != entry.strip():
         return "entry has leading or trailing whitespace"
@@ -37,15 +37,21 @@ def validate(entry: str) -> str | None:
     summary = summary.strip()
     if not summary:
         return "entry has a type but no summary"
-    if len(entry) > MAX_LEN:
-        return f"entry is {len(entry)} chars; keep it under {MAX_LEN}"
-    if summary.endswith("."):
-        return "drop the trailing period from the summary"
     return None
 
 
+def read_stdin_entry() -> str:
+    """Preserve whitespace while accepting the shell's one terminal newline."""
+    raw = sys.stdin.read()
+    if raw.endswith("\r\n"):
+        return raw[:-2]
+    if raw.endswith("\n"):
+        return raw[:-1]
+    return raw
+
+
 def main(argv: list[str]) -> int:
-    entry = " ".join(argv[1:]) if len(argv) > 1 else sys.stdin.read().strip()
+    entry = " ".join(argv[1:]) if len(argv) > 1 else read_stdin_entry()
     problem = validate(entry)
     if problem:
         print(f"FAIL: {problem}")

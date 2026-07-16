@@ -4,7 +4,10 @@ Research reference for *Agentic Loops*, Chapter 10 (pairs with the MCP arc as th
 
 ## TL;DR
 - An Agent Skill is a folder containing a `SKILL.md` (YAML frontmatter + Markdown instructions) plus optional bundled scripts, reference docs, and assets; it packages procedural knowledge that an agent loads on demand via **progressive disclosure**, complementing rather than competing with MCP.
-- The core innovation is context economy: only ~100 tokens of metadata per Skill load at startup, the full `SKILL.md` body (target <5k tokens / <500 lines) loads only when the model judges the Skill relevant, and bundled scripts execute in a code-execution sandbox without their source ever entering the context window.
+- The core innovation is context economy: only ~100 tokens of metadata per listed,
+  model-invocable Skill load at startup, each activated `SKILL.md` body (target <5k
+  tokens / <500 lines) loads when needed, reference text enters only when read, and
+  bundled scripts can execute without their source entering the context window.
 - Launched October 16 2025 and published as an open standard December 18 2025 (agentskills.io, with a spec and reference SDK), Skills run across Claude.ai, Claude Code, the Claude Developer Platform/API, and Claude Cowork; the SKILL.md format has been adopted by OpenAI (Codex, ChatGPT), Microsoft, Cursor, and others — making it, per Simon Willison, "maybe a bigger deal than MCP."
 
 ## What Agent Skills are
@@ -13,7 +16,19 @@ Introduced October 16 2025 (product post "Introducing Agent Skills" + engineerin
 Definition (deliberately minimal): **a Skill is a directory containing a `SKILL.md` file** — YAML frontmatter + Markdown instructions — optionally with bundled scripts, reference docs, and assets. It "package[s] your expertise into composable resources for Claude, transforming general-purpose agents into specialized agents." Recurring analogy: a new-hire onboarding guide. Conceptual bet (Barry Zhang): "The agent underneath is actually more universal than we thought" — one universal agent + a library of capability packages, rather than separate architectures per domain. Skills embody progressive disclosure from the start: at startup the agent sees only each Skill's name/description and pulls in more only as needed — distinguishing a Skill from pasting a large prompt or stuffing `CLAUDE.md`.
 
 ## Architecture of a Skill
-**`SKILL.md`.** Begins with YAML frontmatter (`---` delimited). Two required fields (Claude platform): `name` (max 64 chars; lowercase, numbers, hyphens; no XML tags; can't contain "anthropic"/"claude") and `description` (non-empty, max 1024 chars; no XML tags; must state both *what* it does and *when* to use it). Below is a Markdown body of instructions/workflows/examples. Optional metadata (`license`, `version`, `compatibility`) is recognized but rarely needed. Claude Code extends the frontmatter substantially (see plugins section): `allowed-tools`, `disable-model-invocation`, `user-invocable`, `context: fork`, `model`, `effort`, `paths`, `hooks`.
+**`SKILL.md`.** Begins with YAML frontmatter (`---` delimited). The portable Agent
+Skills contract requires `name` (one to 64 Unicode lowercase alphanumeric characters and
+single hyphen-separated words; it must match the directory) and `description`
+(non-empty, at most 1,024 characters). The specification says the description
+should state both *what* it does and *when* to use it. Anthropic's platform adds
+surface-specific reserved-vendor and XML-like-angle-bracket restrictions, plus
+third-person authoring guidance. Below is a Markdown body of
+instructions/workflows/examples. Optional top-level fields (`license`, `compatibility`,
+and the free-form `metadata` map) are recognized but rarely needed. Put a version in
+`metadata` when you need one. Claude Code extends the
+frontmatter substantially (see plugins section): `allowed-tools`,
+`disable-model-invocation`, `user-invocable`, `context: fork`, `model`,
+`effort`, `paths`, `hooks`.
 
 **Folder structure:**
 ```
@@ -37,24 +52,45 @@ Roles (skill-creator): `scripts/` = "executable code for deterministic/repetitiv
 
 | Level | When loaded | Token cost | Content |
 |---|---|---|---|
-| 1: Metadata | Always (startup) | ~100 tokens/Skill | name + description |
-| 2: Instructions | When triggered | <5k tokens | SKILL.md body |
-| 3+: Resources | As needed | Effectively unlimited | Bundled files read/executed via bash without loading contents |
+| 1: Metadata | Startup for listed, model-invocable Skills | ~100 tokens/Skill | name + description |
+| 2: Instructions | On each activation | <5k tokens recommended | SKILL.md body; activations can stack |
+| 3+: Resources | As needed | Effectively unlimited | Reference text enters when read; script output enters after execution while source can remain on disk |
 
-Sequence when a Skill triggers: (1) context = system prompt + all installed Skills' metadata + user message; (2) Claude bashes to read `pdf/SKILL.md`; (3) optionally reads a bundled file (`forms.md`); (4) proceeds. Because agents with filesystem + code execution "don't need to read the entirety of a skill into their context window," bundled context is "effectively unbounded."
+Sequence when a Skill triggers: (1) context = system prompt + the metadata of listed,
+model-invocable Skills + user message; (2) Claude bashes to read `pdf/SKILL.md`; (3)
+optionally reads `forms.md`, bringing that document's text into context, or executes a
+script and receives its output; (4) proceeds. Because agents with filesystem + code
+execution do not need to read every bundled file, the unused bundle is effectively
+unbounded. In Claude Code, `disable-model-invocation: true` removes a user-only Skill
+from the startup listing until manual invocation.
 
-**Token economics vs MCP (crux of the debate).** MCP typically loads all tool definitions upfront; a single large server is costly — "GitHub's official MCP alone consumes tens of thousands of tokens at startup" vs a Skill's ~50 tokens. Firecrawl: "each skill costs roughly 30-50 tokens at startup... An agent with 100 skills installed uses approximately 3,000-5,000 tokens at session start for skill metadata. The full instructions only load for the skill that activates." One measurement of Anthropic's official Skills: median discovery cost ~80 tokens/Skill (~55 webapp-testing to ~235 xlsx). Mahesh Murag (VentureBeat): each skill "takes only a few dozen tokens when summarized... with full details loading only when the task requires them." Principle: "the context window is a public good."
+**Token economics vs MCP (crux of the debate).** Context cost is a host and
+configuration property, not a universal Skills-versus-MCP distinction. Claude Code now
+loads MCP tool names at startup and defers schemas until use. GitHub's MCP server can
+also narrow the exposed surface with `--toolsets` or `--tools`. An eagerly injected,
+large tool catalog is still expensive, but it is a configuration to measure rather than
+a default architecture to assume. Firecrawl: "each skill costs roughly 30-50 tokens at
+startup... An agent with 100 skills installed uses approximately 3,000-5,000 tokens at
+session start for skill metadata." Scope that arithmetic to listed, model-invocable
+Skills. One measurement of Anthropic's official Skills: median discovery cost ~80
+tokens/Skill (~55 webapp-testing to ~235 xlsx). Mahesh Murag (VentureBeat): each skill
+"takes only a few dozen tokens when summarized... with full details loading only when
+the task requires them." Principle: "the context window is a public good."
 
-**Caveat:** MCP's upfront loading buys *runtime latency* — the model reasons immediately about which tool to call, whereas progressive disclosure requires filesystem round-trips (bash reads). Independent analysis (MCPJam) notes progressive disclosure may use "3 to 4 times" as many filesystem tool calls. The optimal design may be hybrid (e.g. Klavis Strata uses MCP as delivery with progressive-disclosure-style discovery on top).
+**Caveat:** In an eager-schema MCP host or configuration, up-front loading buys *runtime latency*: the model reasons immediately about which tool to call, whereas progressive disclosure requires filesystem round-trips (bash reads). Independent analysis (MCPJam) notes progressive disclosure may use "3 to 4 times" as many filesystem tool calls. The optimal design may be hybrid (e.g. Klavis Strata uses MCP as delivery with progressive-disclosure-style discovery on top).
 
 ## Discovery and invocation
-Skills are **model-invoked** — Claude decides autonomously, like a tool. At startup the harness injects each Skill's name + description into the system prompt (Claude Code's Skill tool "constructs its description at runtime by aggregating the names and descriptions of all available skills"). When the task matches a description, Claude reads the full `SKILL.md`.
+Skills are **model-invoked** — Claude decides autonomously, like a tool. At startup the
+harness injects each listed, model-invocable Skill's name + description into the system
+prompt (Claude Code's Skill tool constructs its description at runtime by aggregating
+available names and descriptions). When the task matches a description, Claude reads the
+full `SKILL.md`. User-only skills are an explicit exception on surfaces that support them.
 
-The `description` is the primary discovery mechanism and the highest-leverage authoring decision. Rules: write in the **third person** ("Processes Excel files and generates reports," never "I can help..." or "You can use..."), because it's injected into the system prompt; include **both** what it does and specific trigger terms. The PDF Skill's description is deliberately "pushy": "Use this skill whenever the user wants to do anything with PDF files... If the user mentions a .pdf file or asks to produce one, use this skill."
+The `description` is the primary discovery mechanism and the highest-leverage authoring decision. The portable specification says it should explain both what it does and when to use it, including specific trigger terms. Anthropic authoring guidance additionally prefers the **third person** ("Processes Excel files and generates reports," never "I can help..." or "You can use..."), because its description is injected into the system prompt. The PDF Skill's description is deliberately "pushy": "Use this skill whenever the user wants to do anything with PDF files... If the user mentions a .pdf file or asks to produce one, use this skill."
 
 Subtlety: Claude only consults Skills for tasks it can't trivially handle — "simple, one-step queries like 'read this PDF' may not trigger a skill even if the description matches perfectly, because Claude can handle them directly... Complex, multi-step, or specialized queries reliably trigger skills."
 
-**Explicit invocation** also exists: in Claude Code any Skill is a slash command (`/skill-name`); on API/Claude.ai the model decides. Claude Code switches: `disable-model-invocation: true` (user-only, e.g. `/deploy`) and `user-invocable: false` (Claude-only, e.g. background knowledge).
+**Explicit invocation** also exists: in Claude Code any Skill is a slash command (`/skill-name`); on API/Claude.ai the model decides. Claude Code switches: `disable-model-invocation: true` (user-only, e.g. `/deploy`, with no startup description cost) and `user-invocable: false` (Claude-only, e.g. background knowledge).
 
 ## Code execution environment
 Skills "run in a code execution environment where Claude has filesystem access, bash commands, and code execution capabilities." Skills are directories on a VM (API: copied to `/skills/{directory}/`); Claude uses ordinary bash to navigate.
@@ -116,7 +152,15 @@ Complementary: a Skill can invoke MCP tools (Claude Code best practice: fully-qu
 ## Security considerations
 Because Skills execute arbitrary code, a malicious/compromised Skill is a real threat. Anthropic: "Use Skills only from trusted sources: those you created yourself or obtained from Anthropic... a malicious Skill can direct Claude to invoke tools or execute code in ways that don't match the Skill's stated purpose." Risk categories: **audit thoroughly** (review every bundled file for unexpected network/file access); **external sources are risky** (Skills fetching external URLs may pull in malicious instructions — indirect injection; "even trustworthy Skills can be compromised if their external dependencies change"); **tool misuse** and **data exposure**; **"treat like installing software."**
 
-Independent research: the SKILL.md frontmatter is injected into the system prompt, so XML/angle-bracket content is disallowed (injection risk). Oasis Security demonstrated a claude.ai injection chain exfiltrating data via the Anthropic Files API — notable because the sandbox restricts outbound network but allows `api.anthropic.com` by default. Microsoft found a (patched) Claude Code GitHub Action flaw where the Read tool bypassed the Bubblewrap sandbox isolating Bash. Lesson: sandboxing, least-privilege permissions, deny rules, and human review are complements, not substitutes — "code execution sandboxes are designed for user convenience and flexibility, not as security boundaries."
+Independent research: Anthropic's frontmatter reaches its system prompt, so that surface
+disallows XML-like angle brackets as an injection defense. Oasis Security demonstrated a
+Claude.ai chain with invisible URL prompt injection and exfiltration through intentionally
+permitted Anthropic Files API egress. It used no skill, integration, tool, or MCP server.
+That does not establish a sandbox escape. It shows that a sandbox alone cannot stop prompt
+injection or egress a system explicitly permits. Microsoft found a (patched) Claude Code
+GitHub Action flaw where the Read tool bypassed the Bubblewrap sandbox isolating Bash.
+Lesson: sandboxing, least-privilege permissions, explicit egress and filesystem controls,
+deny rules, and human review are complements, not substitutes.
 
 Relative to MCP: both share the "untrusted content in the loop" problem, but MCP's trust boundary is the server (authenticated, remote, auditable protocol), whereas a Skill's trust boundary is the code you place on the agent's own machine — hence "install only from trusted sources." Enterprise governance: Team/Enterprise admins can centrally provision approved Skills; code execution / network egress are admin-gated.
 

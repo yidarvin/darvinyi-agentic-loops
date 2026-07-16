@@ -31,15 +31,19 @@ description: Formats and validates a Keep a Changelog entry. Use when adding a
 # Changelog entry
 
 Add a single line under the Unreleased section. Pick a type, write one
-imperative line, then run scripts/validate_entry.py before you write it.
+imperative line, then run the bundled validator before you write it.
 ```
 
 At the portable core, `name` is the identifier and `description` is the routing contract.
-The Agent Skills reference implementation restricts names to lowercase letters, digits,
-and hyphens, caps them at 64 characters, and forbids certain vendor names. It caps a
-description at 1024 characters and asks it to state both what the skill does and when to
-reach for it. Treat those as compatibility rules for that implementation, not as the
-entire meaning of a skill. A harness may also expose the name as an explicit command.
+The Agent Skills specification requires a one-to-64-character name of Unicode lowercase
+alphanumeric characters and single hyphen-separated words that exactly matches its parent
+directory. A
+name cannot begin or end with a hyphen or contain two consecutive hyphens. It requires a
+nonempty description of at most 1,024 characters, and recommends that the description say
+both what the skill does and when to reach for it. Anthropic adds surface-specific rules:
+it rejects reserved vendor words and XML-like angle brackets in frontmatter, and its
+authoring guidance prefers third-person descriptions. Keep those layers distinct. A
+harness may also expose the name as an explicit command.
 By convention `scripts/` holds executable code for deterministic work, `references/`
 holds documents the agent reads only when it needs them, and `assets/` holds templates or
 fonts used in the skill's output. The recurring analogy is a new-hire onboarding guide:
@@ -53,33 +57,37 @@ The loading model is the design, and it has a name: progressive disclosure. Cont
 reveals itself in three levels, each loaded at a different moment and costing the context
 window a different amount.
 
-<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup and paid once per installed skill. Level 2, the SKILL.md body, loads after the harness selects a skill. Level 3 and beyond, bundled scripts and reference docs stay on disk until the agent reads or executes them. That keeps a large library cheap at startup, while adding filesystem round trips at runtime.">
+<Figure id="10.1" caption="Progressive disclosure as a loading ladder in an Agent Skills-style harness. Level 1, the name and description, is resident at startup for each listed, model-invocable skill. A user-only skill can be absent from that listing until manual invocation. Level 2 loads the body of every activated skill, so activations can stack. At level 3 and beyond, a reference enters context when read, while a script can run and return output without loading its source. That keeps a large library cheap at startup, while adding filesystem round trips at runtime.">
   <SkillsFigure />
 </Figure>
 
-In Anthropic's implementation, level one is metadata: the `name` and `description` of
-every installed skill injected into the system prompt at startup. Its documentation puts
-this near a hundred tokens per skill. Independent measurements land lower, around thirty
-to fifty tokens each by Firecrawl's count, so a hundred installed skills cost roughly
-three to five thousand tokens at session start. Level two is the `SKILL.md` body, loaded
-after the harness chooses the skill, with a target of fewer than five thousand tokens and
-500 lines. Level three is everything bundled: reference docs read on demand and scripts
-executed without needing to first read their source into context. Because an agent with a
-filesystem does not have to read a file to know it exists, the bundle can be effectively
-unbounded. Anthropic's shorthand for the discipline is that "the context window is a
-public good," a principle [Context-Window Economics](/context-window-economics) makes the
-master constraint of the whole book.
+In Anthropic's model-invoked implementation, level one is metadata: the `name` and
+`description` of each listed, model-invocable skill enter the system prompt at startup.
+A Claude Code skill with `disable-model-invocation: true` is user-only, so its description
+does not enter at startup and its full body arrives only when the user invokes it. The
+documentation puts listed metadata near a hundred tokens per skill. Independent
+measurements land lower, around thirty to fifty tokens each by
+[Firecrawl](https://www.firecrawl.dev/blog/agent-skills), so a hundred listed,
+model-invocable skills cost roughly three to five thousand tokens at session start. Level
+two is the `SKILL.md` body of each activated skill. Several activations can stack. The
+under-five-thousand-token and 500-line targets are authoring recommendations, not grammar.
+At level three, a reference document enters context only when the agent reads it; a script
+can execute and return output without first loading its source. Unread resources and
+uninspected script source remain on disk, which makes the bundle effectively unbounded.
+Anthropic's shorthand for the discipline is that "the context window is a public good," a
+principle [Context-Window Economics](/context-window-economics) makes the master
+constraint of the whole book.
 
-Set this against a large MCP server, whose tool definitions typically load in full at
-connection time. GitHub's official server alone consumes tens of thousands of tokens
-before the agent does anything, where a skill announces itself in fifty. The saving is
-real, and it is not free. Progressive disclosure trades startup tokens for runtime
-filesystem round-trips: the model has to `bash` out to read the body and any referenced
-file, which one analysis from MCPJam estimated at three to four times the tool calls of
-loading everything upfront. Upfront loading buys latency and immediate reasoning about
-which tool to call; progressive disclosure buys a clean context window. Which one wins is
-the argument of the next chapter, Skill or Server, and the honest answer there is often
-a hybrid.
+Do not turn that economy into a universal Skills-versus-MCP rule. Context cost depends on
+the host and its configuration. Claude Code now loads MCP tool names at startup and defers
+full schemas until a tool is needed, while GitHub's MCP server lets an operator narrow the
+available surface with `--toolsets` or `--tools`. An eagerly injected, large tool catalog
+is an expensive configuration, not the normal architecture of every MCP host. Progressive
+disclosure still trades startup tokens for filesystem round trips: the model has to `bash`
+out to read a body and any referenced file, which one analysis from MCPJam estimated at
+three to four times the tool calls of loading everything upfront. Which trade wins depends
+on the harness, latency budget, and task. The next chapter, Skill or Server, takes up that
+comparison; hybrids are common.
 
 ## The description does the discovering
 
@@ -90,22 +98,23 @@ the harness loads the full `SKILL.md`; when it does not, the body stays on disk.
 hangs on this small routing contract, which makes it the highest-leverage line in the
 file.
 
-Two rules follow directly. Write it in the third person, because it is injected into the
-system prompt as fact about the world, not addressed to anyone: "Formats and validates a
-changelog entry," never "I can help you format" or "You can use this to." And state both
-halves, what it does and when to use it, with the concrete words a matching task would
-contain. Anthropic's own PDF skill is unashamedly pushy about the second half: use this
-skill whenever the user wants to do anything with PDF files, and if the user mentions a
-`.pdf` file or asks to produce one, use this skill. A description can match perfectly and still not fire. The model only reaches
-for a skill on tasks it cannot already handle in one step. Ask it to read a single
-PDF and it just reads it. Ask for a multi-step, format-sensitive operation and the skill
-reliably triggers. Discovery is a judgment about difficulty, not only about keywords.
+The portable specification says the description should state both what the skill does and
+when to use it, with words a matching task would contain. Anthropic's authoring guidance
+also prefers third person because its description is injected into the system prompt as
+fact about the world: "Formats and validates a changelog entry," not "I can help you
+format." That is strong surface guidance, not portable validity. A description can match
+perfectly and still not fire. The model only reaches for a skill on tasks it cannot already
+handle in one step. Ask it to read a single PDF and it just reads it. Ask for a multi-step,
+format-sensitive operation and the skill reliably triggers. Discovery is a judgment about
+difficulty, not only about keywords.
 
 Model invocation is not the only door. Some surfaces offer an explicit command, and some
 offer controls that make a skill user-only or model-only. Claude Code's
 `disable-model-invocation` and `user-invocable` frontmatter fields are useful examples.
-They are surface extensions, not portable assumptions. Design the body so either route
-leads to the same workflow, then test both routes where the target harness supports them.
+The first hides a user-only skill from the model's startup listing, which removes its
+startup context cost until a user invokes it. They are surface extensions, not portable
+assumptions. Design the body so either route leads to the same workflow, then test both
+routes where the target harness supports them.
 
 ## Code that can stay out of the window
 
@@ -142,11 +151,12 @@ on a narrow bridge. Make the intent unmistakable in the wording, too: "Run
 and confusing the two wastes a turn.
 
 The widget below is one small, correct `SKILL.md`, the changelog skill from the artifact.
-Select any part and watch where and when it loads. The description sits at level one,
-always resident, doing the discovering. The body waits at level two for a trigger. The
-reference and the script live at level three, one read on demand and one executed so the
-harness can return its output without loading source first. It is the same file in five
-different relationships with the context window.
+Select any part and watch where and when it loads. Its description sits at level one when
+the skill is listed for model invocation. Its body waits at level two for an activation,
+alongside the body of any other activated skill. The reference and the script live at level
+three: reading the reference brings its text into context, while executing the script can
+return output without loading source first. It is the same file in five different
+relationships with the context window.
 
 <Widget name="skill_anatomy" hint="Hover or select a part of the SKILL.md, or a highlighted line, to see which level of progressive disclosure it lives at, when it loads, and what it costs the context window.">
   <SkillsWidget />
@@ -169,11 +179,13 @@ or obtained from a party you trust, and audit every bundled file for network cal
 access that does not match the stated purpose. A skill that fetches an external URL can pull
 fresh instructions into the loop on every run, which is the [indirect injection](/mcp-security-surface)
 problem wearing a new coat, and a trusted skill can be compromised when its dependencies
-change under it. This is why the frontmatter forbids angle-bracket content in the
-description: because that string is injected straight into the system prompt, an XML tag
-there is an injection surface, and researchers at Oasis Security demonstrated a claude.ai
-chain that used a skill to exfiltrate data through the one network endpoint the sandbox left
-open. The sandbox is a convenience boundary, not a security one.
+change under it. Anthropic rejects XML-like angle brackets in frontmatter because that
+surface injects the metadata into the system prompt. That is not a portable Agent Skills
+rule. Separately, Oasis Security demonstrated a Claude.ai chain that hid an injection in a
+URL parameter, then used intentionally permitted Files API egress to exfiltrate data. It
+involved no skill, integration, tool, or MCP server. The lesson is narrower and stronger:
+a sandbox alone cannot stop prompt injection or egress it deliberately permits. Control
+egress, filesystem access, and permissions explicitly.
 
 <Callout kind="danger">
 Treat installing a skill like installing a dependency, because it is one. Read every file
@@ -199,64 +211,66 @@ The artifact is a skills lab with no dependencies, no API key, and no network. I
 real, correct skill, `changelog-entry/`, that a compatible local skill directory can
 discover and trigger, complete with a `references/FORMAT.md` read one hop away and a
 `scripts/` validator the skill runs in a feedback loop. Alongside it, `skills_lab.py` does
-three things the chapter describes. It validates a portable frontmatter subset: scalar
-metadata, including folded or literal descriptions, against the implemented compatibility
-rules for name length and character set, the "claude"/"anthropic" ban, angle brackets,
-and the 500-line body budget. It also applies explicit authoring heuristics for
-third-person phrasing and a concrete `when` cue. The latter is advisory, because it
-improves discovery rather than deciding whether the file is structurally valid. It
-computes the progressive-disclosure cost, showing what a single skill spends at each level
-and what a hundred of them cost at startup. And it simulates discovery, matching a request
-against the description and printing the loading sequence that follows. A deliberately
-broken `bad-skill/` is included so you can watch representative violations fail, and
-`--test` asserts that the good skill passes, the broken skill fails its stated rules, and
-synthetic cases cover the numeric boundaries, a folded description, and ordinary
-first-person wording.
+three things the chapter describes. Its default teaching lint checks the bundle's supported
+portable subset: ASCII name syntax, directory matching, and description bounds. It is not a
+general YAML or full-schema validator; use `skills-ref validate` for production validation.
+An explicit Anthropic profile adds that surface's reserved-word and angle-bracket checks.
+Third-person phrasing, what-and-when coverage, and the 500-line budget remain labelled
+authoring warnings, not portable failures. The lab prices listed, model-invocable skills at startup and makes the
+user-only exception visible. Its discovery simulator is deliberately illustrative: it uses
+a two-keyword proxy and prints a possible loading sequence, not evidence that a production
+model would trigger. A deliberately broken `bad-skill/` is included so you can watch the
+layers fail, and `--test` exercises the portable boundary cases, the surface profile, raw
+stdin validation, and the installed-validator path.
 
 <RunnableArtifact
   name="skills_lab"
   path="artifacts/ch10-skills/"
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch10-skills"
   runtime="python 3.9+"
-  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"", "python3 skills_lab.py --test"]}>
-One real skill you can install and trigger, plus a validator that checks a `SKILL.md`
-against the implemented frontmatter rules, a progressive-disclosure cost model that prices
-out one skill and a hundred, and a discovery simulator. A broken skill demonstrates
-representative validation failures, while test mode covers the remaining boundaries. Zero
-dependencies, no key, no network.
+  run={["cd artifacts/ch10-skills", "python3 skills_lab.py", "python3 skills_lab.py --validate bad-skill --surface anthropic  # expected: reports violations and exits 1", "python3 skills_lab.py --budget 100", "python3 skills_lab.py --simulate \"add a changelog entry for the new export flag\"  # illustrative proxy", "python3 skills_lab.py --test"]}>
+One real skill you can install and trigger, plus a teaching lint that checks its supported
+portable subset and an optional Anthropic profile, a progressive-disclosure cost model that
+prices listed skills, and an illustrative discovery simulator. A broken skill demonstrates
+the boundary between portable rules and surface-specific checks, while test mode covers the
+remaining boundaries. Zero dependencies, no key, no network.
 </RunnableArtifact>
 
 ## Exercises
 
 <ExerciseCard n="01" title="Write the description first">
 Take a workflow you repeat, a release note, a code review checklist, a data export, and
-write only the `description` field for a skill that would do it. Third person, one to two
-sentences, both what it does and the exact words a task needing it would contain. Then run
-`python3 skills_lab.py --simulate "<a request in those words>"` and see whether your
-description would have been discovered. Tune the words, not the body.
+write only the `description` field for a skill that would do it. One to two sentences,
+both what it does and the exact words a task needing it would contain. Third person is good
+Anthropic authoring guidance, not a portable validity rule. Then run `python3 skills_lab.py --simulate "<a request in those words>"` as an illustrative keyword proxy.
+For evidence, use a fresh model in the target harness with realistic positive prompts and
+near-miss negatives. Tune the words, then measure the actual trigger behavior.
 </ExerciseCard>
 
 <ExerciseCard n="02" title="Price the context">
-Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred skills against
-the cost of one activated skill's body. Now state, in one sentence, why installing a large
-skill library is cheap but triggering the wrong heavy skill on every turn is not. This is
-the difference between level one and level two.
+Run `python3 skills_lab.py --budget 100`. Read the startup cost of a hundred listed,
+model-invocable skills against the cost of one activated skill's body. Now state, in one
+sentence, why a large listed skill library can stay cheap while triggering the wrong heavy
+skill consumes its full body budget. Then name the exception: a Claude Code user-only skill with
+`disable-model-invocation: true` is absent from startup context until manual invocation.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Break a rule and watch it fail">
-Open `bad-skill/SKILL.md` and read why it is broken: a name with a forbidden word, an
-angle bracket in the description, a first-person voice, and no useful `when` clause. Run
-`python3 skills_lab.py --validate bad-skill`, then fix one violation and re-run. Each fix
-should silence exactly one finding. The test mode covers the length boundaries separately,
-which is what a frontmatter validator buys you before a skill ever reaches a model.
+Open `bad-skill/SKILL.md` and read why it is broken. Its name violates the portable syntax
+and does not match its directory. Its description also carries an Anthropic-only
+angle-bracket restriction and weak authoring guidance. Run `python3 skills_lab.py --validate bad-skill`, then add `--surface anthropic` to see the surface profile. Fix the
+portable name and directory together first; then decide which harness-specific guidance you
+need. The test mode covers the boundary cases a validator buys you before a skill reaches a
+model.
 </ExerciseCard>
 
 <ExerciseCard n="04" title="Draw the trust boundary">
-Look at the `changelog-entry` skill's `scripts/validate_entry.py`. It touches no network
-and no files outside its input. Now imagine a version that fetched the format spec from a
-URL at runtime. Write down what an attacker who controlled that URL could make the skill
-do, and which of the defenses from [The MCP Security Surface](/mcp-security-surface) would
-have to be in place before you would run it.
+Look at the `changelog-entry` skill's `scripts/validate_entry.py`. The validator touches no
+network and does not write project files. The broader skill intentionally writes
+`CHANGELOG.md` after validation, so it needs that project-write permission. Now imagine a
+version that fetched the format spec from a URL at runtime. Write down what an attacker who
+controlled that URL could make the skill do, and which of the defenses from [The MCP
+Security Surface](/mcp-security-surface) would have to be in place before you would run it.
 </ExerciseCard>
 
 ## Sources
@@ -276,6 +290,14 @@ have to be in place before you would run it.
 - [Anthropic's skill-authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices),
   for the under-500-line body budget, degrees-of-freedom heuristic, execute-versus-read
   wording, feedback loops, and evaluation-first development.
+- [Firecrawl, "Agent Skills Explained"](https://www.firecrawl.dev/blog/agent-skills), for
+  the 30-to-50-token metadata estimate and its 100-skill arithmetic. This is an external
+  measurement, not a platform guarantee.
+- [Claude Code's Skills documentation](https://code.claude.com/docs/en/skills) and its
+  [feature-loading overview](https://code.claude.com/docs/en/features-overview), for
+  user-only invocation, stacked skills, bundled-script paths, and deferred MCP schemas.
+- [GitHub's MCP server documentation](https://github.com/github/github-mcp-server), for
+  the `--toolsets` and `--tools` controls that narrow the available tool surface.
 - [Simon Willison, "Claude Skills are awesome, maybe a bigger deal than MCP"](https://simonwillison.net/2025/Oct/16/claude-skills/),
   for the launch-day assessment and the `slack-gif-creator` run-validate-retry example.
 - [MCPJam, "Progressive disclosure might replace MCP"](https://www.mcpjam.com/blog/claude-agent-skills),

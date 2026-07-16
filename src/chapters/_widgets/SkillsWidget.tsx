@@ -3,10 +3,11 @@ import { useState } from "react";
 // SkillsWidget: the signature widget for "Skills". One focused move: select a part of a
 // real SKILL.md and watch its load profile appear. The reader should feel that the parts
 // of one small file live at different levels of progressive disclosure and cost the
-// context window very differently. The description is always resident and does the
-// discovering; the body loads after selection; a referenced doc is read on demand; a
-// bundled script can return output without first loading its source. Selecting a part in
-// the source highlights every line that belongs to it and shows where and when it loads.
+// context window very differently. The description is resident only when the skill is
+// listed for model invocation; each activated body loads alongside other activated skills;
+// a referenced doc enters context when read; a bundled script can return output without
+// first loading its source. Selecting a part in the source highlights every line that
+// belongs to it and shows where and when it loads.
 // React state only, no persistence. Profiles distinguish portable design from Agent
 // Skills-specific limits where those limits are useful examples.
 
@@ -32,30 +33,30 @@ const PROFILES: Record<PartKey, Profile> = {
     label: "name",
     level: "level 1 · metadata",
     hot: true,
-    when: "always, at startup",
-    cost: "part of the ~100-token metadata budget",
-    enters: "yes, always resident",
-    role: "The portable identifier. A harness may also expose it as an explicit command. The Agent Skills reference implementation adds lowercase-hyphen naming, a 64-character limit, and a ban on certain vendor names. It is loaded for every installed skill, so it is paid once per skill on every session.",
+    when: "at startup, when listed for model invocation",
+    cost: "part of the ~100-token budget for a listed skill",
+    enters: "yes when listed; no for a Claude Code user-only skill",
+    role: "The portable identifier. It must be one to 64 Unicode lowercase alphanumeric characters in single hyphen-separated words, and it must match the skill directory. A harness may also expose it as an explicit command. Anthropic adds reserved-vendor-name restrictions as a surface rule. In a model-invoked listing, this is paid once per session; a Claude Code user-only skill is absent until manual invocation.",
   },
   description: {
     key: "description",
     label: "description",
     level: "level 1 · metadata",
     hot: true,
-    when: "always, at startup",
-    cost: "the bulk of the metadata budget (up to 1024 chars)",
-    enters: "yes, always resident",
-    role: "In a model-invoked harness, this is the part the agent reads to decide whether to open the skill at all. It is the discovery mechanism, so Agent Skills guidance uses third person and states both what the skill does and when to use it, with the trigger words a matching task would contain. Get this wrong and the skill may not fire.",
+    when: "at startup, when listed for model invocation",
+    cost: "the bulk of a listed skill's metadata budget (up to 1024 chars)",
+    enters: "yes when listed; user-only skills omit it until manual invocation",
+    role: "In a model-invoked harness, this is the part the agent reads to decide whether to open the skill at all. The portable specification says it should state what the skill does and when to use it, with useful trigger words. Anthropic also recommends third person because this text enters its system prompt. Those are discovery and surface rules, not the portable parser's whole contract.",
   },
   body: {
     key: "body",
     label: "SKILL.md body",
     level: "level 2 · instructions",
     hot: false,
-    when: "after the harness selects this skill for the task",
-    cost: "< 5k tokens (target < 500 lines)",
-    enters: "yes after selection; retention depends on the harness",
-    role: "The procedure the model follows once the skill is selected. It is absent from the window until the description earns it a read, which is the whole point: a hundred skills can sit installed and only the one that triggers pays for its body.",
+    when: "after this skill is activated, alongside any other activated skills",
+    cost: "< 5k tokens recommended per activated skill",
+    enters: "yes after activation; multiple skill bodies can stack",
+    role: "The procedure the model follows once the skill is activated. It is absent until that point, which is the whole point: a hundred listed skills can sit available without paying for every body. The 500-line target is authoring guidance, not portable syntax, and several activated bodies may coexist in the window.",
   },
   reference: {
     key: "reference",
@@ -63,10 +64,10 @@ const PROFILES: Record<PartKey, Profile> = {
     level: "level 3+ · resources",
     hot: false,
     when: "on demand, only if the body sends the model to read it",
-    cost: "its own length, and only when actually read",
-    enters: "only the part read, only when read",
-    role: "Detail kept one hop from the body so the body stays lean. \"See references/FORMAT.md\" means read it; the agent pulls it in only when the task reaches that far, and it costs zero tokens until then.",
-    pointer: "The \"See references/FORMAT.md\" line is level-2 body prose. Select the bundled file below to inspect the level-3 resource it points to, whose contents stay off-window until read.",
+    cost: "the text read, and only when actually read",
+    enters: "yes, only after the agent reads the reference",
+    role: "Detail kept one hop from the body so the body stays lean. \"See references/FORMAT.md\" means read it; its text then enters context. It costs zero tokens until that read, as do other unread resources.",
+    pointer: "The \"See references/FORMAT.md\" line is level-2 body prose. Select the bundled file below to inspect the level-3 resource it points to. Its text stays off-window until the agent reads it.",
   },
   script: {
     key: "script",
@@ -76,14 +77,14 @@ const PROFILES: Record<PartKey, Profile> = {
     when: "when the agent executes it; its source need not be opened first",
     cost: "≈ zero source tokens; execution output counts",
     enters: "normally output only; source remains available on disk",
-    role: "Deterministic work the model should run, not regenerate token by token. \"Run scripts/validate_entry.py\" means execute it. A harness can return only its output to the model, which keeps bundled code out of the context budget unless the agent chooses to inspect it.",
-    pointer: "The \"Run scripts/validate_entry.py\" line is level-2 body prose. Select the bundled file below to inspect the level-3 resource it names, whose source normally stays off-window.",
+    role: "Deterministic work the model should run, not regenerate token by token. The Claude Code command uses `${CLAUDE_SKILL_DIR}` so the bundled path resolves from any project directory. A harness can return only output to the model, which keeps bundled code out of the context budget unless the agent chooses to inspect it.",
+    pointer: "The root-aware validator command is level-2 body prose. Select the bundled file below to inspect the level-3 resource it names, whose source normally stays off-window.",
   },
 };
 
 const PART_ORDER: PartKey[] = ["name", "description", "body", "reference", "script"];
 
-// The SKILL.md, line by line, each line tagged with the part it belongs to (or null for
+// Relevant SKILL.md excerpts, each line tagged with the part it belongs to (or null for
 // structural lines like the frontmatter fences and blanks). Resource directives are body
 // prose. The resource paths themselves appear in the bundle strip below.
 interface Line {
@@ -107,10 +108,11 @@ const SOURCE: Line[] = [
   { text: "", part: null },
   { text: "1. Decide the change type. Use exactly one of: Added, Changed, Deprecated,", part: "body" },
   { text: "   Removed, Fixed, Security.", part: "body" },
-  { text: "2. Write a single imperative line summarizing the change, with no trailing", part: "body" },
-  { text: "   period. Compose it as `Type: summary`, for example `Added: --export flag`.", part: "body" },
-  { text: "3. Run `scripts/validate_entry.py \"Type: summary\"` to check the format. It exits", part: "body" },
-  { text: "   0 when the entry is well formed and prints a specific reason when it is not.", part: "body" },
+  { text: "2. Write a single imperative line summarizing the change. Compose it as `Type:", part: "body" },
+  { text: "   summary`, for example `Added: --export flag`.", part: "body" },
+  { text: '3. In Claude Code, run `python3 "${CLAUDE_SKILL_DIR}/scripts/validate_entry.py" "Type: summary"`', part: "body" },
+  { text: "   to check the format. In another harness, substitute its skill root. It exits 0 when", part: "body" },
+  { text: "   the entry is well formed and prints a specific reason when it is not.", part: "body" },
   { text: "4. If it fails, fix the reported problem and run it again. Do not write the entry", part: "body" },
   { text: "   until the validator passes.", part: "body" },
   { text: "5. Place the summary as a `- ` bullet under the matching `### Type` heading in", part: "body" },
@@ -163,7 +165,7 @@ export function SkillsWidget() {
         {/* the file: click any highlighted line to select its part */}
         <div className="overflow-hidden rounded border border-border bg-surface-2">
           <div className="border-b border-border px-3 py-1.5 font-mono text-[0.7rem] text-comment">
-            {"// SKILL.md · changelog-entry/"}
+            {"// SKILL.md excerpts · changelog-entry/"}
           </div>
           <pre className="overflow-x-auto p-2 font-mono text-[0.72rem] leading-relaxed">
             {SOURCE.map((line, i) => {
@@ -260,7 +262,7 @@ export function SkillsWidget() {
 
       <p className="mt-3 font-mono text-[0.7rem] text-comment">
         {p.hot
-          ? "// always in context: this part is paid on every session, for every skill installed."
+          ? "// startup context: listed model-invocable skills only; user-only skills enter after manual invocation."
           : "// off-window until needed: this part costs nothing until the skill actually reaches it."}
       </p>
     </div>

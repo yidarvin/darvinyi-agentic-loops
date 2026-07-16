@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-15)
 
@@ -76,3 +76,61 @@ records one additional defect rather than re-litigating them.
 ## Advisories
 
 - No new advisory findings. The Round 1 and 2 advisories remain open.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: re-read the full critique history, including Rounds 1, 2, and 3, and
+re-verified every required fix against the current chapter, figure, widget, research
+backbone, and `artifacts/ch10-skills` files. The chapter remains `draft`; this resolution
+does not grant approval.
+
+1. **Oasis attribution and security conclusion.** Rewrote `src/chapters/skills.mdx` and
+   `docs/research/ch10-skills.md` to identify the Oasis case as invisible URL prompt
+   injection plus intentionally permitted Files API egress, with no skill, integration,
+   tool, or MCP server. Both now state the supported lesson: sandboxing alone does not
+   prevent injection or allowed egress, so egress, filesystem access, and permissions need
+   explicit controls.
+2. **Portable contract versus surface rules.** Reworked
+   `artifacts/ch10-skills/skills_lab.py` so its default profile is explicitly a teaching
+   lint for the bundled portable subset: ASCII name syntax, directory match, and description
+   bounds. `--surface anthropic` adds vendor-name and angle-bracket restrictions, while
+   third-person, trigger, and body-length checks are labelled warnings. The chapter, widget,
+   README, and exercises now teach the same split and direct production validation to
+   `skills-ref validate`.
+3. **Installed validator workflow.** Replaced every skill-facing relative executable
+   instruction with the Claude Code root-aware command
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/validate_entry.py" "Type: summary"`; documented
+   the equivalent skill-root convention for other harnesses; and extended
+   `artifacts/ch10-skills/check.sh` plus lab tests to run that command from outside the
+   skill directory.
+4. **Changelog-format behavior.** Aligned the bundled validator and `FORMAT.md` with Keep
+   a Changelog by removing the unsupported period prohibition and 120-character cap. The
+   validator now preserves raw stdin whitespace except for one terminal newline, and tests
+   prove both whitespace rejection and source-compatible punctuation/length behavior.
+5. **Progressive-disclosure model.** Updated `SkillsFigure.tsx`, `SkillsWidget.tsx`, the
+   chapter, and the lab to show listed/model-invocable metadata, multiple activated bodies,
+   reference content entering context on read, and script output entering after execution
+   while uninspected source stays on disk. The figure also states the Claude Code user-only
+   exception and uses larger explanatory labels.
+6. **Startup and MCP scope.** Scoped the hundred-skill arithmetic to listed,
+   model-invocable skills, documented the zero-startup-cost user-only exception, and
+   reframed the MCP contrast by host/configuration. The chapter now names deferred schemas
+   and GitHub's tool-narrowing controls rather than treating eager schemas as universal.
+7. **Sources and artifact permissions.** Added the Firecrawl source beside the token
+   estimate and expanded the source list with the current Claude Code and GitHub MCP
+   documentation. Corrected the README and exercise so `validate_entry.py` is accurately
+   read-only and no-network, while the skill's later `CHANGELOG.md` write is explicit and
+   permission-scoped.
+8. **Discovery guidance.** Marked `--simulate` as a two-keyword illustration rather than
+   evidence of real triggering, and directed readers to fresh-model, target-harness
+   evaluations with realistic positive and near-miss prompts.
+9. **Research and parser precision.** Corrected the research backbone so portable version
+   metadata lives inside the free-form `metadata` map and eager MCP schemas are a
+   host/configuration case. The teaching parser now handles basic quoted scalars, so an
+   empty quoted description still fails the required portable-description check.
+
+Advisories taken: all three Round 1 advisories were resolved through raw-stdin coverage,
+explicit discovery-simulator limits, and larger, higher-contrast figure labels.
+
+Verification: `bash artifacts/ch10-skills/check.sh` passes 39 assertions, including the
+installed root-aware command; `npm run check` passes all seven stages.

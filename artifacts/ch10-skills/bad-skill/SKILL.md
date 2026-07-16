@@ -1,5 +1,5 @@
 ---
-name: claude-helper-tool
+name: -claude--helper-
 description: I help you <fix> anything and everything, all the time, for any task you might have.
 ---
 # Helper
