@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -47,3 +47,26 @@ would require a broader benchmark redesign.
 
 Verification: `bash artifacts/ch16-prompt-caching-economics/check.sh`, the offline
 simulation, the missing-key live-mode failure path, and `npm run check` all pass.
+
+## Round 2 review (2026-07-16)
+
+Fresh-eyes review: read the current chapter, `PromptCachingEconomicsFigure`, and
+`PromptCachingEconomicsWidget` in full; read the runnable artifact, its instructions,
+the Chapter 16 research file, build notes, rubric, and the complete critique history
+(`git log -p -- content/critiques/prompt-caching-economics.md`). Ran `npm run check`
+successfully, then ran the artifact's deterministic check, simulation, and expected
+missing-key live-mode failure path. Checked the linked OpenAI, Anthropic, Gemini,
+DeepSeek, Lumer et al., Gu et al., and SGLang primary sources, plus the W3C contrast
+criterion. Re-verified every Round 1 REQUIRED correction: the Lumer attribution and
+reported result match arXiv:2601.06007; the Gu title and timing-side-channel claim match
+arXiv:2502.07776; and the chapter, README, artifact defaults, and current DeepSeek price
+page agree on $0.14/M cache-miss and $0.0028/M cache-hit input.
+
+## Required fixes
+
+1. **`src/chapters/_widgets/PromptCachingEconomicsWidget.tsx:55-66,199-221` --- the displayed cache-aware curve compares a cumulative uncached cost with a one-turn cached cost.** `point.uncached` multiplies by `turn`, but `point.cached` contains only that turn's charge while the widget labels the rows "cost per turn" and renders them as a pair. At the default values, `t_2` displays `$0.048 / $0.010905`, although the corresponding cumulative cache-aware cost is `$0.039405`; in dynamic-boundary mode, the top metric correctly reports `$0.240` cache-aware versus `$0.192` uncached, while `t_8` shows `$0.192 / $0.030`. This makes the signature calculator materially overstate cache savings and contradict its own summary. Make both series cumulative through the named turn, or make both per-turn and relabel the comparison, then keep the bar widths and displayed values on that same basis.
+2. **`src/chapters/_widgets/PromptCachingEconomicsWidget.tsx:85,159,180,201-207,225,262-263,299` --- essential widget labels fail minimum text contrast.** The interactive slider labels, metric names, pricing explanation, and cost-curve legend use `text-comment` (`#55707b`) at 0.7rem/12px against `bg-surface` (`#10171a`, 3.44:1) or `bg-surface-2` (`#141d21`, 3.25:1). These are active teaching controls and result labels, not decorative text; [WCAG 2.2 SC 1.4.3](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) requires 4.5:1 for normal text. Use an AA-passing color such as `text-muted` (`#7d919b`, 5.52:1 / 5.21:1 on those surfaces) for the informative labels, or another verified equivalent.
+
+## Advisories
+
+- No new advisory findings. The Round 1 namespace-layout note remains non-blocking and is not re-litigated here.
