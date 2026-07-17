@@ -517,14 +517,29 @@ function actionInGenericInterrogativeQuestion(tokens) {
   );
   if (auxiliaryIndex !== -1) return firstActionTerm(tokens, auxiliaryIndex + 1);
 
-  const thirdPersonSubjectIndex = tokens.findIndex(
-    (term, index) =>
-      (term === "who" && index === 0) ||
-      (GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
-        ["team", "teams"].includes(term)),
+  const genericSubjectIndex = tokens.findIndex(
+    (term, index) => index === 0 && ["who", "which"].includes(term),
   );
-  if (thirdPersonSubjectIndex === -1) return null;
-  return firstActionTerm(tokens, thirdPersonSubjectIndex + 1);
+  if (genericSubjectIndex === -1) return null;
+  return predicateAfterGenericSubject(tokens, genericSubjectIndex);
+}
+
+function predicateAfterGenericSubject(tokens, genericSubjectIndex) {
+  if (tokens[genericSubjectIndex] === "who") {
+    return normalizeThirdPersonPredicate(firstActionTerm(tokens, genericSubjectIndex + 1));
+  }
+
+  const predicate = tokens.find(
+    (term, index) =>
+      index > genericSubjectIndex + 1 &&
+      (SUPPORTED_ACTION_TERMS.has(term) ||
+        (term.length > 3 && (term.endsWith("s") || term.endsWith("ed")))),
+  );
+  return normalizeThirdPersonPredicate(predicate || null);
+}
+
+function normalizeThirdPersonPredicate(term) {
+  return term && term.length > 3 && term.endsWith("s") ? term.slice(0, -1) : term;
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -1059,6 +1074,36 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       thirdPersonOwnershipDeletion,
       "third-person ownership deletion operation",
+    );
+
+    const thirdPersonDepartmentDeletion = await runAgent({
+      storePath: resolve(directory, "third-person-department-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Which department deletes checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      thirdPersonDepartmentDeletion,
+      "third-person department deletion operation",
+    );
+
+    const thirdPersonDepartmentPastDeletion = await runAgent({
+      storePath: resolve(directory, "third-person-department-past-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Which department deleted checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      thirdPersonDepartmentPastDeletion,
+      "third-person department past-tense deletion operation",
     );
 
     const passiveSafetyDeletion = await runAgent({
