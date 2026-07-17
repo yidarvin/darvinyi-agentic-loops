@@ -9,7 +9,6 @@ const DEFAULT_RRF_K = 60;
 const DEFAULT_BUDGET = 110;
 const DEFAULT_QUESTION = "Can I deploy checkout after ERR-PAY-142?";
 const DEFAULT_AS_OF = "2026-06-15";
-const DENSE_RELEVANCE_FLOOR = 0.2;
 const RELEASE_SCHEDULE_QUESTION = "What day is the checkout release train?";
 const WIDGET_PARAPHRASE_QUESTION = "How do we ship a repair without ignoring a recent payment incident?";
 const QUERY_FUNCTION_WORDS = new Set([
@@ -216,8 +215,7 @@ function retrieve(collection, store, question, filter, rrfK) {
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
       const answerability = answerabilityScore(item.record, answerPlan);
       const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness + 0.6 * answerability;
-      const hasRelevanceSignal =
-        meaningfulOverlap > 0 || item.denseScore >= DENSE_RELEVANCE_FLOOR || answerability > 0;
+      const hasRelevanceSignal = meaningfulOverlap > 0 || answerability > 0;
       return {
         ...item,
         answerability,
@@ -246,11 +244,11 @@ function deriveAnswerPlan(question) {
   const tokens = tokenize(question);
   const terms = new Set(tokens);
   const incidentIdentifiers = [...new Set(tokens.filter(isIncidentIdentifier))];
+  const services = requestedServices(tokens);
   const repairAfterIncident =
     terms.has("ship") && terms.has("repair") && terms.has("incident");
   const mentionsIncident = incidentIdentifiers.length > 0 || repairAfterIncident;
   const asksReleaseSchedule =
-    terms.has("checkout") &&
     terms.has("release") &&
     ["calendar", "day", "schedule", "train", "when"].some((term) => terms.has(term));
   const needsDeploymentDecision =
@@ -262,7 +260,7 @@ function deriveAnswerPlan(question) {
   return {
     requiredRoles,
     scope: {
-      service: requestedService(tokens),
+      services,
       action: needsDeploymentDecision ? "deployment" : null,
       incidentIdentifiers,
     },
@@ -364,29 +362,55 @@ function selectEvidence(candidates, budget, answerPlan) {
   return { candidates: annotated, evidence, usedTokens, answerable };
 }
 
-function requestedService(tokens) {
+function requestedServices(tokens) {
+  const services = new Set();
   const deploymentIndex = tokens.findIndex((term) => term === "deploy" || term === "deployment");
   if (deploymentIndex !== -1) {
-    const afterDeployment = tokens.slice(deploymentIndex + 1).find(isServiceTerm);
-    if (afterDeployment) return afterDeployment;
-    const beforeDeployment = [...tokens.slice(0, deploymentIndex)].reverse().find(isServiceTerm);
-    if (beforeDeployment) return beforeDeployment;
+    addServicesAfter(tokens, deploymentIndex + 1, services);
+    if (!services.size) addServicesBefore(tokens, deploymentIndex, services);
   }
 
-  const forIndex = tokens.lastIndexOf("for");
-  if (forIndex !== -1) {
-    const afterFor = tokens.slice(forIndex + 1).find(isServiceTerm);
-    if (afterFor) return afterFor;
-  }
+  const releaseIndex = tokens.indexOf("release");
+  if (releaseIndex !== -1) addServicesBefore(tokens, releaseIndex, services);
 
-  return tokens.includes("checkout") ? "checkout" : null;
+  if (!services.size && tokens.includes("checkout")) services.add("checkout");
+  return [...services];
+}
+
+function addServicesAfter(tokens, startIndex, services) {
+  for (let index = startIndex; index < tokens.length; index += 1) {
+    const term = tokens[index];
+    if (["after", "before", "with", "for", "on", "in", "at"].includes(term)) break;
+    if (isServiceTerm(term)) services.add(term);
+  }
+}
+
+function addServicesBefore(tokens, endIndex, services) {
+  for (let index = endIndex - 1; index >= 0; index -= 1) {
+    const term = tokens[index];
+    if (["after", "before", "for", "from", "in", "is", "on", "to", "with"].includes(term)) break;
+    if (isServiceTerm(term)) services.add(term);
+  }
 }
 
 function isServiceTerm(term) {
   return ![
     "a",
     "an",
+    "and",
+    "at",
+    "calendar",
+    "day",
+    "deploy",
+    "deployment",
+    "from",
+    "in",
+    "or",
+    "release",
+    "schedule",
     "the",
+    "train",
+    "acme",
     "after",
     "before",
     "can",
@@ -418,7 +442,7 @@ function recordHasIdentifier(record, identifier) {
 
 function recordMatchesPlanScope(record, plan, role) {
   const tags = new Set(record.tags || []);
-  if (plan.scope.service && !tags.has(plan.scope.service)) return false;
+  if (plan.scope.services.some((service) => !tags.has(service))) return false;
   return !(role === "current-policy" && plan.scope.action && !tags.has(plan.scope.action));
 }
 
@@ -715,6 +739,42 @@ async function selfTest() {
     });
     assertUnsupportedServiceAbstains(unsupportedBilling);
 
+    const mixedServiceDeployment = await runAgent({
+      storePath: resolve(directory, "mixed-service-deployment-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout and billing after ERR-PAY-142?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedServiceAbstains(mixedServiceDeployment, "mixed-service deployment query");
+
+    const unsupportedServiceSchedule = await runAgent({
+      storePath: resolve(directory, "unsupported-service-schedule-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What day is the billing release train?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedServiceAbstains(unsupportedServiceSchedule, "unsupported-service release-schedule query");
+
+    const mixedServiceSchedule = await runAgent({
+      storePath: resolve(directory, "mixed-service-schedule-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What day is the checkout and billing release train?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedServiceAbstains(mixedServiceSchedule, "mixed-service release-schedule query");
+
     const unknownIncident = await runAgent({
       storePath: resolve(directory, "unknown-incident-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -795,6 +855,23 @@ async function selfTest() {
     }
     if (ordinaryIrrelevant.decision !== "ask for clarification or retrieve with a new query") {
       throw new Error("ordinary out-of-corpus query did not take the abstention path");
+    }
+
+    const denseOnlyIrrelevant = await runAgent({
+      storePath: resolve(directory, "dense-only-irrelevant-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Explain database replication.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    if (denseOnlyIrrelevant.evidence.length !== 0 || denseOnlyIrrelevant.usedTokens !== 0) {
+      throw new Error("dense-only out-of-corpus query injected evidence from a hash collision");
+    }
+    if (denseOnlyIrrelevant.decision !== "ask for clarification or retrieve with a new query") {
+      throw new Error("dense-only out-of-corpus query did not take the abstention path");
     }
 
     let invalidDateRejected = false;
@@ -914,12 +991,12 @@ function assertCompleteDeploymentPacket(result, label) {
   }
 }
 
-function assertUnsupportedServiceAbstains(result) {
+function assertUnsupportedServiceAbstains(result, label = "unsupported-service deployment query") {
   if (result.evidence.length !== 0 || result.usedTokens !== 0) {
-    throw new Error("unsupported-service deployment query injected checkout-only evidence");
+    throw new Error(label + " injected evidence outside its requested service scope");
   }
   if (result.decision !== "ask for clarification or retrieve with a new query") {
-    throw new Error("unsupported-service deployment query claimed to have answer-bearing evidence");
+    throw new Error(label + " claimed to have answer-bearing evidence");
   }
 }
 

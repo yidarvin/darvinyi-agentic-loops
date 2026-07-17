@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -218,3 +218,12 @@ Convergence re-review: read the complete append-only critique history and `git l
 ## Advisories
 
 - No new advisories. Earlier README-formatting, token-display, and optional rank-grid semantics remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique file and `git log -p -- content/critiques/retrieval-as-memory.md`. Re-verified every prior REQUIRED fix against the current chapter, figure, widget, and artifact. Round 1 still rejects impossible dates and irrelevant queries, retains the declared RRF tie, and keeps central teaching text readable. Round 2 still requires complete deployment packets at the default and 42-token budgets and abstains at 20 tokens. Rounds 3 and 7 are re-verified by the full repository gate. Round 4 still preserves role-separated, escaped untrusted payloads and qualifying telemetry retrieval. Round 5 still selects the release calendar and reproduces the widget's incident-and-policy packet. Round 6 still abstains for a single unsupported deployment service. Round 7 still abstains for an unknown `ERR-PAY-*` identifier. Round 8 still rejects the ordinary common-word query and unknown `ERR-DB-*` identifier. Round 9 still rejects both known-then-unknown and unknown-then-known incident-identifier orders. `bash artifacts/ch17-retrieval-as-memory/check.sh` and the full `npm run check` pass.
+
+1. **Every explicit service constraint is retained.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, answer planning now collects `scope.services` from deployment and release-schedule wording, and scope matching requires every requested service tag. The parser also recognizes a release schedule independently of the literal `checkout` term. The deterministic self-test asserts that the mixed checkout-and-billing deployment, a billing release-schedule lookup, and a mixed checkout-and-billing release-schedule lookup each use zero evidence tokens and take the clarification/new-query path.
+2. **The deterministic dense stand-in cannot authorize generic evidence on its own.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, a feature-hash dense score remains part of candidate ranking but no longer counts as an injection relevance signal without meaningful lexical overlap or answer-plan evidence. `Explain database replication.` therefore cannot inject checkout policy from its unrelated `0.2182` collision. The deterministic self-test now asserts zero evidence, zero used tokens, and the clarification/new-query decision for that exact query while retaining the supported telemetry, release-schedule, and paraphrase cases.
+
+No advisories were taken. The registry remains `draft` and the queue row remains `PENDING`.
