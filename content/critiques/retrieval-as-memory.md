@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -428,3 +428,15 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 2. **Round 19 is deterministic.** The artifact `--self-test` now runs that exact query against a fresh persistent store and requires zero evidence, zero used tokens, and the clarification-or-new-query decision. The existing successful telemetry lookup remains covered by its prior assertion.
 
 No advisories were taken. `node retrieval_memory.mjs --self-test`, `bash artifacts/ch17-retrieval-as-memory/check.sh`, and `npm run check` passed; the full gate completed all seven stages with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 20 review (2026-07-17)
+
+Independent convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history and its git history through Round 19, the current MDX chapter, exact figure and widget, research backbone, fixture, README, checker, and complete runnable artifact. Re-verified every settled REQUIRED result from Rounds 1 through 19 with the current source and deterministic self-test: valid-time rejection; abstention for irrelevant, unsupported, unknown-identifier, and incomplete-scope inputs; complete deployment packets; escaped role-separated native messages; the declared RRF tie; readable teaching text; and the supported telemetry, schedule, and widget-paraphrase reads. Ran `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check`; both pass, with the full seven-stage repository gate ending `CHECK OK`. Opened the linked primary and official sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings; no source blocker emerged. I then ran the fresh-store destructive-action query below.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:447-520` --- a third-person generic interrogative bypasses the positive action grammar and returns unrelated evidence as answer-bearing for a destructive operation.** `node retrieval_memory.mjs --reset --store <fresh-temp>/memory.json --question 'Which team deletes checkout telemetry data?' --json` emits `evidenceCount: 1`, `usedTokens: 22`, and `decision: "answer with bounded evidence packet"`, injecting only `acme_checkout_telemetry`. That record says telemetry is sampled at one or ten percent. It cannot identify a deletion team, authorize deletion, or explain a deletion procedure. `actionInGenericInterrogativeQuestion()` only recognizes `do`/`does`/`did` followed by `i`/`we`/`you`, so this query reaches the `which` generic-lookup fallback at line 472 and generic selection treats its `telemetry` overlap as sufficient. This violates the README's explicit fail-closed contract at lines 66-68 and can give a downstream agent a false affirmative packet for a destructive action. It is distinct from Round 19's settled `Where do I delete ...?` route, which matches the existing auxiliary-plus-pronoun parser. Make action-bearing generic interrogatives fail closed unless the operation is positively supported, and add a deterministic assertion for this exact query requiring zero evidence, zero used tokens, and the clarification-or-new-query decision while preserving the supported telemetry lookup.
+
+## Advisories
+
+- No new advisories. The existing README-fence formatting, illustrative token-display, and optional rank-grid semantics notes remain non-blocking.
