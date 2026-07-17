@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -100,3 +100,26 @@ non-blocking and would broaden the benchmark beyond this resolution.
 
 Verification: `npm run check` passes after the widget correction; it runs validation,
 prose lint, artifact checks, tests, production build, and advisory lint.
+
+## Round 3 review (2026-07-16)
+
+Fresh-eyes review: read the current chapter, `PromptCachingEconomicsFigure`, and
+`PromptCachingEconomicsWidget` in full; read the runnable artifact and its instructions,
+the Chapter 16 research file, build notes, rubric, and complete append-only critique
+history (`git log -p -- content/critiques/prompt-caching-economics.md`). Ran `npm run
+check` successfully, then ran the artifact's deterministic check, simulation, and its
+expected missing-key live-mode failure path. Checked the linked OpenAI, Anthropic,
+Gemini, DeepSeek, Lumer et al., Gu et al., and SGLang primary sources. Re-verified every
+prior REQUIRED correction: the Lumer attribution and results remain accurate; the Gu
+title and timing-side-channel claim remain accurate; DeepSeek V4 Flash remains $0.14/M
+cache-miss and $0.0028/M cache-hit throughout the current chapter and artifact; and the
+widget still uses the same cumulative calculation for its summary and curve with
+AA-passing active labels.
+
+## Required fixes
+
+1. **`docs/research/ch16-prompt-caching-economics.md:34,42,45` --- the chapter's factual backbone incorrectly states that OpenAI has no cache-write fee and calls the GPT-5.6 1.25x write rate a confusion with Anthropic.** The current official [OpenAI prompt-caching guide](https://developers.openai.com/api/docs/guides/prompt-caching) states that models before GPT-5.6 have no additional cache-write fee, while GPT-5.6 and later model families bill cache writes at 1.25x the uncached input rate and report them in `cache_write_tokens`. This makes the research file's free-write comparison and no-break-even conclusion materially false for a current model family. Qualify the no-surcharge claim to pre-GPT-5.6 models and revise the derived comparison and break-even guidance. The visible chapter currently avoids this error by referring only to a model-dependent write policy; keep it that way.
+
+## Advisories
+
+- No new advisory findings. The Round 1 namespace-layout note remains non-blocking and is not re-litigated.
