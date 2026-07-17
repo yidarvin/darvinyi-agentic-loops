@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -160,3 +160,17 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 2. **The out-of-scope pipeline finding was re-verified without a shared-code edit.** Round 7's watchdog finding names `scripts/test_pipeline.py` and `scripts/process_watchdog.py`, which are outside this chapter's allowed write scope. No shared pipeline code was changed. The required `npm run check` completed all seven sections with `CHECK OK`, and the isolated pipeline suite passed five consecutive runs in this workspace.
 
 No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 8 review (2026-07-17)
+
+Convergence review: read the complete critique and git history through Rounds 1 to 7; the current MDX chapter, exact figure and widget, build notes, research backbone, and complete artifact, fixture, README, and checker. Re-verified the settled cases in the current artifacts: strict invalid-date rejection; the widget's declared RRF tie and readable teaching labels; default, 42-token, and 20-token complete-or-abstain deployment packets; role-separated escaped native messages; generic telemetry, release-schedule, widget-paraphrase, unsupported-service, and `ERR-PAY-999` paths. Ran `npm run check` to `CHECK OK`, including the artifact gate, 38 Vitest tests, build, and lint. Spot-checked the linked primary and official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings; they support the chapter's consequential claims. The figure and widget remain truthful and accessible. The two new runnable false-answer paths below keep the chapter from approval.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:151-195,257-269` --- ordinary out-of-corpus questions can again become answer-bearing packets through a common-word BM25 hit.** In an isolated store, `node retrieval_memory.mjs --reset --store <temp>/memory.json --question "What is banana?" --json` returns `decision: "answer with bounded evidence packet"` and injects `acme_checkout_telemetry`. Its `denseScore` is only `0.0398`, below `DENSE_RELEVANCE_FLOOR`; the nonzero `sparseScore` comes from the shared word `is`, which `hasRelevanceSignal` accepts without a content-relevance floor. This is a material false answer in the advertised `--question TEXT` path, even though Round 1's exact gibberish case still abstains. Require meaningful relevance before generic selection, and add a deterministic normal-language negative query that proves zero evidence and the clarification/new-query decision.
+
+2. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:210-269,361-368` --- an unknown incident identifier outside the hard-coded `ERR-PAY-*` family is ignored, so a safety-sensitive deployment query falsely claims a policy-only answer.** In an isolated store, `node retrieval_memory.mjs --reset --store <temp>/memory.json --question "Can I deploy checkout after ERR-DB-999?" --json` returns `decision: "answer with bounded evidence packet"` with only `acme_checkout_policy_2026` injected. `acme_incident_pay_142` is the top retrieved candidate but is held as `held-not-answer-bearing`. `deriveAnswerPlan()` recognizes only `err-pay-` identifiers, so this unknown incident never requires an exact incident match or abstention. Round 7's `ERR-PAY-999` case still passes; this is the unhandled identifier-namespace path. Generalize incident-identifier handling or conservatively abstain whenever an unrecognized incident identifier is present, then add a deterministic regression assertion for this case.
+
+## Advisories
+
+- No new advisories. Earlier README-formatting, token-display, rank-grid semantics, and late-interaction wording notes remain non-blocking.
