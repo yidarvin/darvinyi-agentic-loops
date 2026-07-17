@@ -509,6 +509,9 @@ function actionInSafetyQuestion(tokens) {
 }
 
 function actionInGenericInterrogativeQuestion(tokens) {
+  const passiveGenericOperation = actionInPassiveGenericQuestion(tokens);
+  if (passiveGenericOperation) return passiveGenericOperation;
+
   const auxiliaryIndex = tokens.findIndex(
     (term, index) =>
       GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
@@ -523,6 +526,19 @@ function actionInGenericInterrogativeQuestion(tokens) {
   if (genericSubjectIndex !== -1) return predicateAfterGenericSubject(tokens, genericSubjectIndex);
 
   return actionInWhatSubjectPredicateQuestion(tokens);
+}
+
+function actionInPassiveGenericQuestion(tokens) {
+  if (
+    !["what", "where", "when", "why"].includes(tokens[0]) ||
+    !["is", "are", "was", "were"].includes(tokens[1])
+  ) {
+    return null;
+  }
+  const predicate = tokens.find(
+    (term, index) => index > 1 && isPotentialThirdPersonPredicate(term),
+  );
+  return normalizeThirdPersonPredicate(predicate || null);
 }
 
 function actionInWhatSubjectPredicateQuestion(tokens) {
@@ -1133,6 +1149,18 @@ async function selfTest() {
       whatDepartmentDeletion,
       "what-headed department deletion operation",
     );
+
+    const passiveGenericDeletion = await runAgent({
+      storePath: resolve(directory, "passive-generic-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Where is checkout telemetry deleted?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(passiveGenericDeletion, "passive generic deletion operation");
 
     const passiveSafetyDeletion = await runAgent({
       storePath: resolve(directory, "passive-safety-deletion-memory.json"),
