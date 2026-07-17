@@ -26,7 +26,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 12 | delegation                   | Delegation                                      | DONE    |
 | 13 | coordination-patterns        | Coordination Patterns                           | DONE    |
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | DONE    |
-| 15 | memory-taxonomy              | The Memory Taxonomy                             | PENDING |
+| 15 | memory-taxonomy              | The Memory Taxonomy                             | DONE    |
 | 16 | prompt-caching-economics     | Prompt Caching and the Economics of Remembering | PENDING |
 | 17 | retrieval-as-memory          | Retrieval as Memory                             | PENDING |
 | 18 | self-managed-memory          | Self-Managed Memory                             | PENDING |

@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-16)
 
@@ -106,3 +106,28 @@ high-contrast; and attributes and scopes the MINJA claim. None regressed.
 
 No advisories were taken. The Round 2 LoCoMo-link advisory remains outside this resolve
 scope. `bash artifacts/ch15-memory-taxonomy/check.sh` and `npm run check` pass.
+
+## Round 3 review (2026-07-16)
+
+Independent adversarial re-review: read `prompts/critique-rubric.md`, the complete
+append-only critique history, and `git log -p --follow --
+content/critiques/memory-taxonomy.md`. Read the current chapter, exact figure and widget
+source, every file in `artifacts/ch15-memory-taxonomy/`, and the matching research
+backbone. Ran `npm run check` (passes), `bash artifacts/ch15-memory-taxonomy/check.sh`
+(passes, including the custom trace), and the harness's invalid-regime path (clear usage,
+exit 2). Checked the linked CoALA, Generative Agents, MemGPT, LongMemEval, Mem0, Zep,
+and MINJA primary sources, plus the LoCoMo primary source for the carried advisory.
+Re-verified every Required finding from Rounds 1 and 2: cross-call working state remains
+distinct from each per-call projection; parametric procedural memory keeps its direct path;
+the SVG stays scrollable, legible, and high-contrast; the MINJA claim remains attributed and
+scoped; custom traces change the executable comparison; and widget teaching text uses
+adequate contrast. None regressed.
+
+The chapter is materially truthful, its figure and widget teach the taxonomy accessibly,
+and its runnable artifact behaves deterministically with a meaningful validated failure
+mode.
+
+## Advisories
+
+- The Round 2 advisory to add a direct LoCoMo source link remains non-blocking. Its brief
+  benchmark mention is accurate, and no new material impact justifies escalation.
