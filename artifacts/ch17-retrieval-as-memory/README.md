@@ -5,7 +5,7 @@ connection, or service. It writes deterministic embeddings to a local JSON colle
 the agent calls \`memory.search\` against that persistent vector store during every run. The
 search applies tenant and valid-time filters before ranking, fuses dense cosine and BM25
 ranks with Reciprocal Rank Fusion, applies a transparent offline reranker, and injects only
-a fixed-budget evidence packet at the dynamic end of the prompt.
+a fixed-budget evidence packet in the final, separately labelled user message.
 
 The store is real, persistent vector retrieval with an exact cosine scan. That is the right
 trade for this small, inspectable fixture. It is not an ANN implementation. At a scale where
@@ -21,7 +21,7 @@ node retrieval_memory.mjs --reset
 
 The first run creates \`.memory/memories.json\` from \`fixtures/memories.json\`. It then asks a
 checkout deployment question, prints the \`memory.search\` trace, exposes dense, sparse, RRF,
-and reranker ranks, and shows the exact retrieved packet placed at the end of the prompt.
+and reranker ranks, and shows the exact retrieved packet in the final native API message.
 
 - **Runtime:** Node.js 18 or later.
 - **Dependencies:** none.
@@ -58,8 +58,10 @@ the release policy first. RRF uses ranks rather than incompatible score scales. 
 reranker is deliberately visible so the reader can inspect why a record entered the packet.
 
 The script emits an evidence briefing rather than calling an LLM. That keeps retrieval policy
-separate from generation variance. In a real agent, pass the returned \`prompt\` to the model
-after the stable prefix and retain the trace for evaluation.
+separate from generation variance. In a real agent, pass the returned \`modelInput.messages\`
+directly to a role-aware model API. The stable system message stays first, while the query and
+retrieved records are separately labelled untrusted JSON data in later user messages. Retain the
+trace for evaluation.
 
 ## Verify it
 
@@ -70,8 +72,8 @@ bash check.sh
 The check creates a temporary collection and runs actual persistent vector retrieval. It
 asserts that the agent invoked \`memory.search\`, the exact identifier survives hybrid fusion,
 another tenant's record cannot enter the candidate set, the superseded policy cannot enter at
-the query time, the packet respects its budget, and retrieved content is the final prompt
-block.
+the query time, the packet respects its budget, a generic telemetry query retrieves its evidence,
+and hostile query or record markup remains escaped data inside the final native messages.
 
 ## Upgrade path
 

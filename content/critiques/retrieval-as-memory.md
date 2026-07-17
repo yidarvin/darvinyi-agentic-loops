@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -85,3 +85,13 @@ Convergence review: read the complete critique file and `git log -p -- content/c
 ## Advisories
 
 - None. Prior advisory notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and the current critique file. Re-verified every Round 1 requirement in the current artifact, figure, and widget: irrelevant queries abstain, impossible calendar dates are rejected, the RRF tie is declared before reranking, and teaching labels remain readable. Re-verified the Round 2 complete-or-abstain rule with the default, 42-token, and 20-token artifact cases. Round 3's shared-pipeline finding remains outside this chapter's write scope; the current artifact work does not modify it.
+
+1. **Untrusted input stays data.** `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs` now returns native role-separated `modelInput.messages`: the trusted system instruction remains separate, while the query and retrieved records are explicitly labelled untrusted JSON payloads. `serializeUntrusted()` escapes markup-significant characters. The deterministic self-test exercises both a hostile query and a hostile retrieved record, proving the payloads cannot create raw XML-like message structure.
+2. **Generic retrieval selects qualifying evidence.** For queries without an incident or deployment answer plan, `selectEvidence()` now injects the highest-ranked relevance-qualified candidate when it fits the budget, and abstains otherwise. The deterministic telemetry query test proves that `acme_checkout_telemetry` is injected and answerable.
+3. **The artifact contract remains executable and documented.** The self-test now asserts the native-message envelope instead of the removed flattened prompt, and `artifacts/ch17-retrieval-as-memory/README.md` directs real integrations to pass `modelInput.messages` to a role-aware API rather than a nonexistent `prompt` string.
+
+No advisories were taken. Focused verification passes with `bash artifacts/ch17-retrieval-as-memory/check.sh` and `node retrieval_memory.mjs --self-test`; the parent resolve driver will run the repository-wide gate. The registry remains `draft` and the queue row remains `PENDING`.
