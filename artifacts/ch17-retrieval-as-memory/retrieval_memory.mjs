@@ -519,8 +519,9 @@ function actionInGenericInterrogativeQuestion(tokens) {
 
   const thirdPersonSubjectIndex = tokens.findIndex(
     (term, index) =>
-      GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
-      ["team", "teams"].includes(term),
+      (term === "who" && index === 0) ||
+      (GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
+        ["team", "teams"].includes(term)),
   );
   if (thirdPersonSubjectIndex === -1) return null;
   return firstActionTerm(tokens, thirdPersonSubjectIndex + 1);
@@ -1043,6 +1044,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       thirdPersonGenericInterrogativeDeletion,
       "third-person generic-interrogative deletion operation",
+    );
+
+    const thirdPersonOwnershipDeletion = await runAgent({
+      storePath: resolve(directory, "third-person-ownership-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Who deletes checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      thirdPersonOwnershipDeletion,
+      "third-person ownership deletion operation",
     );
 
     const passiveSafetyDeletion = await runAgent({
