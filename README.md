@@ -35,8 +35,10 @@ separate critic writes `content/critiques/<slug>.md`; only `verdict: approve` al
 the validator to record `done`. `runqueue.sh` is a compatibility wrapper only.
 
 The launchd worker runs one leased Terra stage at a time, validates exact role-specific
-write scope, commits only a valid state transition, pushes it, and immediately selects
-the next stage. Delayed Codex output keeps its lease and is recovered after the model
+write scope, commits every valid state transition locally, and immediately selects the
+next stage. It pushes the accumulated build, critique, and resolution commits only when
+the independent critic approves the chapter as done, producing at most one deployment per
+completed chapter. Delayed Codex output keeps its lease and is recovered after the model
 process exits; a quiet grace period prevents duplicate retries. `./run.sh status` shows
 the queue, last worker heartbeat, and any active lease.
 

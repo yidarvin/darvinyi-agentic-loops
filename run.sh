@@ -13,6 +13,7 @@ MODEL="${TERRA_MODEL:-gpt-5.6-terra}"
 EFFORT="${TERRA_EFFORT:-ultra}"
 SANDBOX="${TERRA_SANDBOX:-workspace-write}"
 PUSH=0
+PUSH_ON_DONE=0
 CHECK=1
 DRY=0
 VERB=next
@@ -27,6 +28,7 @@ Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [op
   -e, --effort LEVEL   reasoning effort (default: ultra)
       TERRA_SANDBOX    nested Codex sandbox (default: workspace-write)
       --push           push the driver-created commit after a successful stage
+      --push-on-done   push accumulated commits only when a chapter reaches done
       --retries N      accepted for compatibility; safe retries are worker-managed
       --no-check       skip npm run check (manual use only)
       --allow-dirty    deprecated and rejected; unattended stages require a clean tree
@@ -53,6 +55,7 @@ while (($#)); do
     -e|--effort) (($# >= 2)) || die "$1 needs a value"; EFFORT="$2"; shift 2 ;;
     --retries) (($# >= 2)) || die "$1 needs a value"; is_positive "$2" || die "--retries needs a positive integer"; RETRIES="$2"; shift 2 ;;
     --push) PUSH=1; shift ;;
+    --push-on-done) PUSH_ON_DONE=1; shift ;;
     --no-check) CHECK=0; shift ;;
     --allow-dirty) die "--allow-dirty is no longer supported; commit or stash changes first" ;;
     --dry-run) DRY=1; shift ;;
@@ -62,10 +65,13 @@ while (($#)); do
   esac
 done
 
+(( ! PUSH || ! PUSH_ON_DONE )) || die "--push and --push-on-done are mutually exclusive"
+
 case "$EFFORT" in low|medium|high|xhigh|max|ultra) ;; *) die "invalid effort '$EFFORT'" ;; esac
 case "$SANDBOX" in workspace-write|danger-full-access) ;; *) die "invalid TERRA_SANDBOX '$SANDBOX'" ;; esac
 
 GUARD="$ROOT/scripts/pipeline_guard.py"
+PUBLISH_READY="$ROOT/.pipeline/publish-ready"
 cd "$ROOT"
 [[ -f content/registry.json && -f prompts/queue.md && -x "$GUARD" && -x "$GIT_HELPER" && -x "$SYNC_COMMAND" ]] || die "not a runnable refsite repository"
 
@@ -154,6 +160,34 @@ push_head() {
   "$SYNC_COMMAND" --repo "$ROOT"
 }
 
+chapter_is_done() {
+  local slug="$1"
+  python3 - "$slug" <<'PY'
+import json, sys
+for chapter in json.load(open('content/registry.json'))['chapters']:
+    if chapter.get('slug') == sys.argv[1]:
+        raise SystemExit(0 if chapter.get('status') == 'done' else 1)
+raise SystemExit(1)
+PY
+}
+
+mark_publish_ready() {
+  local slug="$1" temp="$PUBLISH_READY.$$.tmp" head
+  head="$("$GIT_HELPER" --repo "$ROOT" rev-parse HEAD)"
+  mkdir -p "$ROOT/.pipeline"
+  printf '%s %s\n' "$slug" "$head" >"$temp"
+  mv "$temp" "$PUBLISH_READY"
+}
+
+publish_completed_chapter() {
+  local stage="$1" slug="$2"
+  [[ "$stage" == critique ]] || return 0
+  chapter_is_done "$slug" || return 0
+  mark_publish_ready "$slug"
+  push_head
+  rm -f "$PUBLISH_READY"
+}
+
 record_approved_critique() {
   local stage="$1" slug="$2" state verdict_line
   [[ "$stage" == critique ]] || return 0
@@ -187,7 +221,11 @@ commit_stage() {
   "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num" >/dev/null
   "$GIT_HELPER" --repo "$ROOT" commit -m "$message"
   "$GUARD" --repo "$ROOT" lease-clear
-  if (( PUSH )); then push_head; fi
+  if (( PUSH )); then
+    push_head
+  elif (( PUSH_ON_DONE )); then
+    publish_completed_chapter "$stage" "$slug"
+  fi
 }
 
 recover_stage() {

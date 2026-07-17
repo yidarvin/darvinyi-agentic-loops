@@ -12,6 +12,7 @@ LOG="$ROOT/.pipeline/queue-worker.log"
 STATUS="$ROOT/.pipeline/queue-worker.status"
 LOCK="${PIPELINE_LOCK_FILE:-/private/tmp/com.darvin.agentic-loops-queue.lock}"
 SYNC_RETRY_FILE="$ROOT/.pipeline/sync-retry"
+PUBLISH_READY="$ROOT/.pipeline/publish-ready"
 SYNC_BACKOFF_BASE_SECONDS="${PIPELINE_SYNC_BACKOFF_BASE_SECONDS:-60}"
 SYNC_BACKOFF_CAP_SECONDS="${PIPELINE_SYNC_BACKOFF_CAP_SECONDS:-900}"
 ASYNC_GRACE_SECONDS="${QUEUE_ASYNC_GRACE_SECONDS:-180}"
@@ -114,6 +115,20 @@ attempt_sync() {
   return "$sync_rc"
 }
 
+publish_pending_chapter() {
+  local sync_rc
+  [[ -f "$PUBLISH_READY" ]] || return 0
+  report_status 'retrying deferred approved-chapter publication without model recovery'
+  if attempt_sync; then
+    rm -f "$PUBLISH_READY"
+    report_status 'approved chapter and accumulated stage commits pushed'
+    return 0
+  else
+    sync_rc=$?
+  fi
+  return "$sync_rc"
+}
+
 handle_existing_lease() {
   local stage slug num state age active_rc recover_rc
   [[ -f .pipeline/active-stage.json ]] || return 1
@@ -129,11 +144,11 @@ handle_existing_lease() {
   if has_changes; then
     report_status 'recovering completed asynchronous Terra output'
     set +e
-    TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" recover --push
+    TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" recover --push-on-done
     recover_rc=$?
     set -e
     if (( recover_rc == 0 )); then
-      report_status 'asynchronous Terra stage recovered and pushed'
+      report_status 'asynchronous Terra stage recovered; chapter-boundary publication policy applied'
       LEASE_CONTINUE=1
       return 0
     fi
@@ -181,6 +196,13 @@ run_worker() {
     return 0
   fi
 
+  if publish_pending_chapter; then
+    sync_rc=0
+  else
+    sync_rc=$?
+  fi
+  (( sync_rc == 0 )) || return "$sync_rc"
+
   if [[ -f .pipeline/active-stage.json ]]; then
     handle_existing_lease
     if (( ! LEASE_CONTINUE )); then
@@ -194,13 +216,6 @@ run_worker() {
     [[ $changed_rc -eq 1 ]] || return "$changed_rc"
   fi
 
-  if attempt_sync; then
-    sync_rc=0
-  else
-    sync_rc=$?
-  fi
-  (( sync_rc == 0 )) || return "$sync_rc"
-
   for ((iteration=1; iteration<=STAGES_PER_TICK; iteration++)); do
     next="$(python3 scripts/decide.py next)"
     if [[ "$next" == "NEXT done "* ]]; then
@@ -213,11 +228,11 @@ run_worker() {
     fi
     report_status "launching ${next#NEXT }"
     set +e
-    TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" next --push
+    TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" next --push-on-done
     run_rc=$?
     set -e
     if (( run_rc == 0 )); then
-      report_status 'stage committed and pushed; selecting the next stage'
+      report_status 'stage committed; approved chapters publish with accumulated commits'
       continue
     fi
     if (( run_rc == 75 )); then

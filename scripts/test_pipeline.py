@@ -452,6 +452,104 @@ def test_worker_waits_on_existing_lease_and_refuses_unleased_changes() -> None:
         shutil.rmtree(home)
 
 
+def test_worker_defers_intermediate_push_and_publishes_approval() -> None:
+    build_codex = """#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+args = sys.argv[1:]
+root = pathlib.Path(args[args.index('-C') + 1])
+registry = root / 'content/registry.json'
+data = json.loads(registry.read_text(encoding='utf-8'))
+data['chapters'][0]['status'] = 'draft'
+registry.write_text(json.dumps(data), encoding='utf-8')
+(root / 'src/chapters/one.mdx').write_text('# Built one\\n', encoding='utf-8')
+"""
+    work, env = driver_fixture(build_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        sync_calls = home / "sync-calls"
+        fake_sync = home / "fake-sync"
+        fake_sync.write_text(
+            "#!/bin/bash\n"
+            "printf 'sync\\n' >>\"$SYNC_CALLS\"\n",
+            encoding="utf-8",
+        )
+        fake_sync.chmod(0o755)
+        fake_tools = home / "bin"
+        fake_tools.mkdir()
+        npm = fake_tools / "npm"
+        npm.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        npm.chmod(0o755)
+        env["PATH"] = f"{fake_tools}:{env['PATH']}"
+        env.update({
+            "HOME": str(home),
+            "PIPELINE_LOCK_FILE": str(home / "build-worker.lock"),
+            "PIPELINE_SYNC_COMMAND": str(fake_sync),
+            "QUEUE_STAGES_PER_TICK": "1",
+            "SYNC_CALLS": str(sync_calls),
+        })
+        result = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert result.returncode == 0, (
+            result.stdout + result.stderr +
+            (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert not sync_calls.exists(), "a draft chapter must remain committed locally"
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "build(one): Terra stage"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+    approve_codex = """#!/usr/bin/env python3
+import pathlib
+import sys
+
+args = sys.argv[1:]
+root = pathlib.Path(args[args.index('-C') + 1])
+(root / 'content/critiques/one.md').write_text(
+    'verdict: approve\\n\\n## Round 2 review\\n\\nNo required findings.\\n',
+    encoding='utf-8',
+)
+"""
+    work, env = driver_fixture(approve_codex, initial_status="draft", verdict="resolved")
+    home = Path(tempfile.mkdtemp())
+    try:
+        sync_calls = home / "sync-calls"
+        fake_sync = home / "fake-sync"
+        fake_sync.write_text(
+            "#!/bin/bash\n"
+            "printf 'sync\\n' >>\"$SYNC_CALLS\"\n",
+            encoding="utf-8",
+        )
+        fake_sync.chmod(0o755)
+        fake_tools = home / "bin"
+        fake_tools.mkdir()
+        npm = fake_tools / "npm"
+        npm.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        npm.chmod(0o755)
+        env["PATH"] = f"{fake_tools}:{env['PATH']}"
+        env.update({
+            "HOME": str(home),
+            "PIPELINE_LOCK_FILE": str(home / "approve-worker.lock"),
+            "PIPELINE_SYNC_COMMAND": str(fake_sync),
+            "QUEUE_STAGES_PER_TICK": "1",
+            "SYNC_CALLS": str(sync_calls),
+        })
+        result = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert result.returncode == 0, (
+            result.stdout + result.stderr +
+            (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert sync_calls.read_text(encoding="utf-8").splitlines() == ["sync"]
+        assert not (work / ".pipeline/publish-ready").exists()
+        data = json.loads((work / "content/registry.json").read_text(encoding="utf-8"))
+        assert data["chapters"][0]["status"] == "done"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
 def test_three_sync_failures_never_invoke_model_recovery() -> None:
     fake_codex = """#!/bin/bash
 printf 'model\\n' >>"$MODEL_CALLS"
@@ -478,6 +576,8 @@ exit 1
             "SYNC_ATTEMPTS": str(sync_attempts),
             "MODEL_CALLS": str(model_calls),
         })
+        (work / ".pipeline").mkdir(exist_ok=True)
+        (work / ".pipeline/publish-ready").write_text("one pending\n", encoding="utf-8")
         for _ in range(3):
             result = run("./scripts/queue-worker.sh", cwd=work, env=env)
             assert result.returncode == 69, (
@@ -486,6 +586,7 @@ exit 1
             )
         assert sync_attempts.read_text(encoding="utf-8").splitlines() == ["sync"] * 3
         assert not model_calls.exists()
+        assert (work / ".pipeline/publish-ready").exists()
         assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
     finally:
         shutil.rmtree(work)
@@ -546,6 +647,7 @@ def main() -> int:
         test_driver_commits_valid_stage_once()
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
+        test_worker_defers_intermediate_push_and_publishes_approval()
         test_three_sync_failures_never_invoke_model_recovery()
         test_normal_model_failure_keeps_existing_delayed_recovery_path()
         test_status_and_doctor_are_non_mutating()
