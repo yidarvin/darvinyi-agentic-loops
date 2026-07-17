@@ -13,6 +13,8 @@
     <key>HOME</key><string>/Users/darvin</string>
     <key>PATH</key><string>/Users/darvin/Documents/Projects/darvinyi-agentic-loops/scripts/service-bin:/Users/darvin/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>
     <key>PIPELINE_GIT_BIN</key><string>/usr/bin/git</string>
+    <key>TERRA_IDLE_TIMEOUT_SECONDS</key><string>1800</string>
+    <key>TERRA_MAX_RUNTIME_SECONDS</key><string>5400</string>
   </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>

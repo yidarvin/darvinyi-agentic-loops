@@ -165,12 +165,12 @@ handle_existing_lease() {
   fi
 
   read -r stage slug num state age < <("$GUARD" --repo "$ROOT" lease-show)
-  if [[ "$state" == running ]]; then
-    "$GUARD" --repo "$ROOT" lease-update awaiting-output
-    read -r stage slug num state age < <("$GUARD" --repo "$ROOT" lease-show)
-  fi
   if (( age < ASYNC_GRACE_SECONDS )); then
-    report_status "awaiting delayed output for $stage $slug (${age}s/${ASYNC_GRACE_SECONDS}s)"
+    if [[ "$state" == running ]]; then
+      report_status "waiting for abandoned running lease $stage $slug (${age}s/${ASYNC_GRACE_SECONDS}s)"
+    else
+      report_status "awaiting delayed output for $stage $slug (${age}s/${ASYNC_GRACE_SECONDS}s)"
+    fi
     return 0
   fi
   "$GUARD" --repo "$ROOT" lease-clear
@@ -237,6 +237,10 @@ run_worker() {
     fi
     if (( run_rc == 75 )); then
       report_status 'stage is still settling; launchd will resume automatically'
+      return 0
+    fi
+    if (( run_rc == 76 )); then
+      report_status 'stage watchdog timed out; launchd will retry automatically'
       return 0
     fi
     if (( run_rc == 69 )); then

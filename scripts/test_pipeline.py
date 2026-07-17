@@ -8,10 +8,12 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "scripts/pipeline_guard.py"
+WATCHDOG = ROOT / "scripts/process_watchdog.py"
 
 
 def run(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -177,6 +179,8 @@ def test_service_git_plan_is_pinned_and_shimmed() -> None:
     environment = plist["EnvironmentVariables"]
     assert environment["PIPELINE_GIT_BIN"] == "/usr/bin/git"
     assert environment["PATH"].split(":")[0] == str(ROOT / "scripts/service-bin")
+    assert environment["TERRA_IDLE_TIMEOUT_SECONDS"] == "1800"
+    assert environment["TERRA_MAX_RUNTIME_SECONDS"] == "5400"
     worker = (ROOT / "scripts/queue-worker.sh").read_text(encoding="utf-8")
     assert "/usr/bin/shlock" in worker
     assert "PIPELINE_GIT_BIN" in worker
@@ -294,6 +298,74 @@ def test_synchronized_branch_does_not_push() -> None:
         shutil.rmtree(home)
 
 
+def test_watchdog_terminates_a_silent_process_group() -> None:
+    assert WATCHDOG.exists(), "stage process watchdog must exist"
+    work = Path(tempfile.mkdtemp())
+    try:
+        child = work / "silent_tree.py"
+        grandchild_marker = work / "grandchild-terminated"
+        child.write_text(
+            "import pathlib, signal, subprocess, sys, time\n"
+            "marker = pathlib.Path(sys.argv[1])\n"
+            "code = (\"import pathlib, signal, sys, time\\n\"\n"
+            "        \"marker = pathlib.Path(sys.argv[1])\\n\"\n"
+            "        \"def stop(*_): marker.write_text('terminated', encoding='utf-8'); raise SystemExit(0)\\n\"\n"
+            "        \"signal.signal(signal.SIGTERM, stop)\\n\"\n"
+            "        \"while True: time.sleep(1)\\n\")\n"
+            "subprocess.Popen([sys.executable, '-c', code, str(marker)])\n"
+            "while True: time.sleep(1)\n",
+            encoding="utf-8",
+        )
+        started = time.monotonic()
+        result = run(
+            str(WATCHDOG),
+            "--log", str(work / "stage.log"),
+            "--idle-timeout", "0.25",
+            "--max-runtime", "5",
+            "--term-grace", "0.5",
+            "--poll-interval", "0.05",
+            "--",
+            "python3", str(child), str(grandchild_marker),
+            cwd=work,
+        )
+        elapsed = time.monotonic() - started
+        assert result.returncode == 124, result.stdout + result.stderr
+        assert elapsed < 3, f"silent process took {elapsed:.2f}s to terminate"
+        assert grandchild_marker.read_text(encoding="utf-8") == "terminated"
+        assert "idle timeout" in result.stderr
+    finally:
+        shutil.rmtree(work)
+
+
+def test_watchdog_allows_a_command_that_keeps_making_progress() -> None:
+    assert WATCHDOG.exists(), "stage process watchdog must exist"
+    work = Path(tempfile.mkdtemp())
+    try:
+        command = (
+            "import time\n"
+            "for index in range(6):\n"
+            " print(index, flush=True)\n"
+            " time.sleep(0.08)\n"
+        )
+        result = run(
+            str(WATCHDOG),
+            "--log", str(work / "stage.log"),
+            "--idle-timeout", "0.2",
+            "--max-runtime", "3",
+            "--term-grace", "0.2",
+            "--poll-interval", "0.03",
+            "--",
+            "python3", "-c", command,
+            cwd=work,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (work / "stage.log").read_text(encoding="utf-8").splitlines() == [
+            "0", "1", "2", "3", "4", "5"
+        ]
+    finally:
+        shutil.rmtree(work)
+
+
 def driver_fixture(
     fake_codex: str, *, initial_status: str = "pending", verdict: str | None = None
 ) -> tuple[Path, dict[str, str]]:
@@ -301,6 +373,7 @@ def driver_fixture(
     (work / "scripts").mkdir(exist_ok=True)
     for name in ("pipeline_guard.py", "decide.py", "validate.py", "mark.py"):
         shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
+    shutil.copy2(ROOT / "scripts/process_watchdog.py", work / "scripts/process_watchdog.py")
     for name in ("pipeline-git.sh", "pipeline-sync.sh"):
         shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
     (work / "scripts/service-bin").mkdir()
@@ -322,6 +395,7 @@ def driver_fixture(
     for path in (
         work / "run.sh",
         work / "scripts/pipeline_guard.py",
+        work / "scripts/process_watchdog.py",
         work / "scripts/pipeline-git.sh",
         work / "scripts/pipeline-sync.sh",
         work / "scripts/queue-worker.sh",
@@ -447,6 +521,41 @@ def test_worker_waits_on_existing_lease_and_refuses_unleased_changes() -> None:
         status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
         assert "dirty worktree without a stage lease" in status
         assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_worker_expires_a_stale_running_lease_without_resetting_its_age() -> None:
+    fake_codex = """#!/bin/bash
+printf 'model\n' >>"$MODEL_CALLS"
+exit 1
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        model_calls = home / "model-calls"
+        env.update({
+            "HOME": str(home),
+            "MODEL_CALLS": str(model_calls),
+            "PIPELINE_LOCK_FILE": str(home / "stale-lease-worker.lock"),
+            "QUEUE_ASYNC_GRACE_SECONDS": "180",
+            "QUEUE_STAGES_PER_TICK": "1",
+        })
+        assert guard(work, "lease-create", "build", "one", "01").returncode == 0
+        lease_path = work / ".pipeline/active-stage.json"
+        lease = json.loads(lease_path.read_text(encoding="utf-8"))
+        lease["updated_at"] = int(time.time()) - 600
+        lease_path.write_text(json.dumps(lease), encoding="utf-8")
+
+        result = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert result.returncode == 0, (
+            result.stdout + result.stderr
+            + (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert model_calls.read_text(encoding="utf-8").splitlines() == ["model"]
+        status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
+        assert "stage is still settling; launchd will resume automatically" in status
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
@@ -606,6 +715,38 @@ def test_normal_model_failure_keeps_existing_delayed_recovery_path() -> None:
         shutil.rmtree(work)
 
 
+def test_watchdog_timeout_clears_lease_and_worker_yields_for_retry() -> None:
+    work, env = driver_fixture("#!/bin/bash\nsleep 30\n")
+    home = Path(tempfile.mkdtemp())
+    try:
+        env.update({
+            "HOME": str(home),
+            "PIPELINE_LOCK_FILE": str(home / "watchdog-worker.lock"),
+            "QUEUE_STAGES_PER_TICK": "1",
+            "TERRA_IDLE_TIMEOUT_SECONDS": "0.25",
+            "TERRA_MAX_RUNTIME_SECONDS": "5",
+            "TERRA_WATCHDOG_TERM_GRACE_SECONDS": "0.1",
+            "TERRA_WATCHDOG_POLL_SECONDS": "0.03",
+        })
+        direct = run("./run.sh", "next", "--no-check", cwd=work, env=env)
+        assert direct.returncode == 76, direct.stdout + direct.stderr
+        assert not (work / ".pipeline/active-stage.json").exists()
+        assert "watchdog timed out" in direct.stderr
+
+        worker = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert worker.returncode == 0, (
+            worker.stdout + worker.stderr
+            + (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert not (work / ".pipeline/active-stage.json").exists()
+        status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
+        assert "watchdog timed out; launchd will retry automatically" in status
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
 def test_status_and_doctor_are_non_mutating() -> None:
     work, env = driver_fixture("#!/bin/bash\nexit 1\n")
     try:
@@ -643,13 +784,17 @@ def main() -> int:
         test_service_git_plan_is_pinned_and_shimmed()
         test_git_shim_and_parent_helper_pin_apple_git()
         test_synchronized_branch_does_not_push()
+        test_watchdog_terminates_a_silent_process_group()
+        test_watchdog_allows_a_command_that_keeps_making_progress()
         test_driver_retains_lease_for_delayed_output()
         test_driver_commits_valid_stage_once()
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
+        test_worker_expires_a_stale_running_lease_without_resetting_its_age()
         test_worker_defers_intermediate_push_and_publishes_approval()
         test_three_sync_failures_never_invoke_model_recovery()
         test_normal_model_failure_keeps_existing_delayed_recovery_path()
+        test_watchdog_timeout_clears_lease_and_worker_yields_for_retry()
         test_status_and_doctor_are_non_mutating()
         print("pipeline state-machine tests: OK")
         return 0

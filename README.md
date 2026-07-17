@@ -42,6 +42,13 @@ completed chapter. Delayed Codex output keeps its lease and is recovered after t
 process exits; a quiet grace period prevents duplicate retries. `./run.sh status` shows
 the queue, last worker heartbeat, and any active lease.
 
+Each model stage runs in its own process group behind an output-idle and absolute-runtime
+watchdog. The durable service terminates the full group after 30 minutes without output
+or 90 minutes total, clears an unchanged lease, and lets launchd retry on its next tick.
+Valid edits are still validated and committed if the model exits abnormally. Override
+the bounds for a manual run with `TERRA_IDLE_TIMEOUT_SECONDS` and
+`TERRA_MAX_RUNTIME_SECONDS`.
+
 On macOS, the persistent LaunchAgent runs directly from this checkout. The service
 pins `/usr/bin/git`, prepends `scripts/service-bin` so child agents resolve the same
 Apple Git identity, and routes parent Git calls through a neutral-cwd helper. Run

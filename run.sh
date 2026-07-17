@@ -8,10 +8,15 @@ export PIPELINE_GIT_BIN="${PIPELINE_GIT_BIN:-/usr/bin/git}"
 export PATH="$ROOT/scripts/service-bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 GIT_HELPER="$ROOT/scripts/pipeline-git.sh"
 SYNC_COMMAND="${PIPELINE_SYNC_COMMAND:-$ROOT/scripts/pipeline-sync.sh}"
+WATCHDOG="$ROOT/scripts/process_watchdog.py"
 
 MODEL="${TERRA_MODEL:-gpt-5.6-terra}"
 EFFORT="${TERRA_EFFORT:-ultra}"
 SANDBOX="${TERRA_SANDBOX:-workspace-write}"
+IDLE_TIMEOUT="${TERRA_IDLE_TIMEOUT_SECONDS:-1800}"
+MAX_RUNTIME="${TERRA_MAX_RUNTIME_SECONDS:-5400}"
+WATCHDOG_TERM_GRACE="${TERRA_WATCHDOG_TERM_GRACE_SECONDS:-10}"
+WATCHDOG_POLL="${TERRA_WATCHDOG_POLL_SECONDS:-5}"
 PUSH=0
 PUSH_ON_DONE=0
 CHECK=1
@@ -27,6 +32,10 @@ Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [op
   -m, --model MODEL    Terra model (default: gpt-5.6-terra)
   -e, --effort LEVEL   reasoning effort (default: ultra)
       TERRA_SANDBOX    nested Codex sandbox (default: workspace-write)
+      TERRA_IDLE_TIMEOUT_SECONDS
+                       abort after no model output for this long (default: 1800)
+      TERRA_MAX_RUNTIME_SECONDS
+                       abort a model stage after this long (default: 5400)
       --push           push the driver-created commit after a successful stage
       --push-on-done   push accumulated commits only when a chapter reaches done
       --retries N      accepted for compatibility; safe retries are worker-managed
@@ -37,7 +46,8 @@ Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [op
   -h, --help           show this help
 
 Exit codes: 0 success, 1 stage failure, 2 usage/invariant failure,
-69 infrastructure synchronization failure, 75 asynchronous work still settling.
+69 infrastructure synchronization failure, 75 asynchronous work still settling,
+76 model stage watchdog timeout (safe to retry).
 loop N counts stages, not chapters.
 Terra never commits or pushes. The driver validates exact role-specific scope,
 the queue outcome, and the full project gate before creating a commit.
@@ -275,8 +285,13 @@ run_stage() {
   "$GUARD" --repo "$ROOT" lease-create "$stage" "$slug" "$num"
   log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
   set +e
-  codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" \
-    -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt" >"$log" 2>&1
+  "$WATCHDOG" --log "$log" \
+    --idle-timeout "$IDLE_TIMEOUT" \
+    --max-runtime "$MAX_RUNTIME" \
+    --term-grace "$WATCHDOG_TERM_GRACE" \
+    --poll-interval "$WATCHDOG_POLL" \
+    -- codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" \
+    -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt"
   codex_rc=$?
   set -e
 
@@ -298,6 +313,13 @@ run_stage() {
   else
     local changed_rc=$?
     [[ $changed_rc -eq 1 ]] || return "$changed_rc"
+  fi
+
+  if (( codex_rc == 124 )); then
+    "$GUARD" --repo "$ROOT" lease-clear
+    echo "run.sh: stage watchdog timed out without changes; lease cleared for a fresh attempt" >&2
+    tail -40 "$log" >&2
+    return 76
   fi
 
   "$GUARD" --repo "$ROOT" lease-update awaiting-output
@@ -362,6 +384,7 @@ elif [[ "$VERB" == recover ]]; then
   recover_stage
 else
   command -v codex >/dev/null || die "codex CLI is not on PATH"
+  [[ -x "$WATCHDOG" ]] || die "stage watchdog is not executable: $WATCHDOG"
   [[ -x "$PIPELINE_GIT_BIN" ]] || die "pinned Git is not executable: $PIPELINE_GIT_BIN"
   if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
   if [[ "$VERB" == loop ]]; then
