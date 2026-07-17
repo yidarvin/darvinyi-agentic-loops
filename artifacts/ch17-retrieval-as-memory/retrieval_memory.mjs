@@ -55,6 +55,25 @@ const ACTION_REQUEST_FILLERS = new Set([
   "you",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release"]);
+const UNSUPPORTED_IMPERATIVE_ACTION_TERMS = new Set([
+  "approve",
+  "archive",
+  "cancel",
+  "create",
+  "delete",
+  "disable",
+  "enable",
+  "erase",
+  "export",
+  "grant",
+  "migrate",
+  "modify",
+  "purge",
+  "remove",
+  "revoke",
+  "send",
+  "update",
+]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -406,15 +425,25 @@ function requestedServices(tokens) {
 
 function classifyActionRequest(tokens) {
   const prefixIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
-  if (prefixIndex === -1) return { supported: true };
+  const operationStart = prefixIndex === -1 ? 0 : prefixIndex + 1;
+  const operation = firstActionTerm(tokens, operationStart);
+  if (!operation) return { supported: prefixIndex === -1 };
 
-  for (let index = prefixIndex + 1; index < tokens.length; index += 1) {
-    const term = tokens[index];
-    if (ACTION_REQUEST_FILLERS.has(term)) continue;
-    return { supported: SUPPORTED_ACTION_TERMS.has(term) };
+  if (prefixIndex !== -1 || SUPPORTED_ACTION_TERMS.has(operation) || UNSUPPORTED_IMPERATIVE_ACTION_TERMS.has(operation)) {
+    return { supported: SUPPORTED_ACTION_TERMS.has(operation) };
   }
 
-  return { supported: false };
+  return { supported: true };
+}
+
+function firstActionTerm(tokens, startIndex) {
+  for (let index = startIndex; index < tokens.length; index += 1) {
+    const term = tokens[index];
+    if (ACTION_REQUEST_FILLERS.has(term)) continue;
+    return term;
+  }
+
+  return null;
 }
 
 function addServicesAfter(tokens, startIndex, services) {
@@ -838,6 +867,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(imperativeDeletion, "imperative deletion operation");
+
+    const bareImperativeDeletion = await runAgent({
+      storePath: resolve(directory, "bare-imperative-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Delete checkout customer data.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(bareImperativeDeletion, "bare imperative deletion operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),

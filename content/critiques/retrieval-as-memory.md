@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -268,3 +268,12 @@ Convergence re-review: read the complete append-only critique and git history th
 ## Advisories
 
 - No new advisories. Earlier README-formatting, illustrative token-display, and optional rank-grid table-semantics notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, then re-verified every REQUIRED fix from Rounds 1 through 11 against the current chapter, figure, widget, and artifact. Round 1 still rejects irrelevant queries and impossible dates, preserves the declared RRF tie, and keeps teaching text readable. Round 2 still uses the complete incident-and-policy packet at the default and 42-token budgets and abstains at 20 tokens. Rounds 3, 7, and 11 are shared mechanical-gate findings, re-verified only by the full repository gate because their source files are outside this chapter's write scope. Round 4 still preserves escaped, role-separated untrusted messages and qualifying telemetry retrieval. Round 5 still selects the release calendar and matches the widget's incident-and-policy paraphrase packet. Round 6 still abstains for an unsupported service. Rounds 7 through 9 still abstain for unknown and compound incident identifiers. Round 10 still retains every requested service constraint and rejects common-word and dense-only irrelevant queries. Round 11 still rejects modal and identifier-bearing unsupported actions and unsupported release-service requests.
+
+1. **Bare imperative actions now fail closed.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `classifyActionRequest()` recognizes bare supported operations and an explicit set of unsupported imperative verbs before generic selection. `Delete checkout customer data.` is now an unsupported request, so no candidate can enter its evidence packet.
+2. **The exact regression is deterministic.** The artifact self-test now runs `Delete checkout customer data.` with a fresh persistent store and requires zero evidence, zero used tokens, and the clarification-or-new-query decision. The existing modal and identifier-bearing deletion tests remain intact.
+
+No advisory was taken. The existing README-formatting, widget table-semantics, and illustrative token-display notes remain non-blocking and outside the required-fix scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, the independent artifact recheck confirmed the exact bare imperative emits zero evidence and zero tokens, and `npm run check` passed all seven stages with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
