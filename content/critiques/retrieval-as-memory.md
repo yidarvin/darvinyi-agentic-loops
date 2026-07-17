@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -95,3 +95,15 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 3. **The artifact contract remains executable and documented.** The self-test now asserts the native-message envelope instead of the removed flattened prompt, and `artifacts/ch17-retrieval-as-memory/README.md` directs real integrations to pass `modelInput.messages` to a role-aware API rather than a nonexistent `prompt` string.
 
 No advisories were taken. Focused verification passes with `bash artifacts/ch17-retrieval-as-memory/check.sh` and `node retrieval_memory.mjs --self-test`; the parent resolve driver will run the repository-wide gate. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 5 review (2026-07-17)
+
+Convergence re-review: read the complete critique file and its git history through Rounds 1–4, the current MDX chapter, exact figure and widget, build notes, research backbone, and the complete artifact, fixture, README, and checker. Ran `npm run check`, ran `bash artifacts/ch17-retrieval-as-memory/check.sh` (passes), and exercised the artifact against isolated temporary stores. Re-verified every settled artifact fix: irrelevant queries abstain, impossible dates reject, the widget still declares the RRF tie, teaching text remains readable, the default/42-token/20-token packet behavior stays complete-or-abstain, and the native message envelope plus generic telemetry case remain intact. Spot-checked the linked primary sources against the chapter research backbone. The source and security passes found no new blocker.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:208-247` --- keyword routing answers a direct release-schedule lookup with unrelated policy evidence.** With an isolated store, `node retrieval_memory.mjs --reset --store <temp>/memory.json --question "What day is the checkout release train?" --json` gives `acme_release_calendar` dense rank 1 and sparse rank 1, but marks it `held-not-answer-bearing`; it instead injects rank-3 `acme_checkout_policy_2026` and returns `decision: "answer with bounded evidence packet"`. `deriveAnswerPlan()` treats any `checkout` plus `release` query as a current-policy request, and `selectEvidence()` then forces that role. This is a concrete, high-severity runnable behavior failure: the supported `--question TEXT` path claims sufficient evidence for a question whose direct answer it discarded, contradicting the chapter's answer-bearing-packet thesis. Distinguish a schedule lookup from a deployment-policy decision and add a deterministic regression assertion that this question injects `acme_release_calendar` or abstains, never claims an answer from policy alone. The same router also leaves the widget's exact paraphrase probe with only the incident while the widget teaches incident plus policy; either make the runnable scenario reproduce that packet or explicitly decouple the instructional scenario and its claims.
+
+## Advisories
+
+- None. Earlier advisory notes remain non-blocking.
