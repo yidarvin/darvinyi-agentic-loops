@@ -22,7 +22,7 @@ const DEFAULTS = {
   model: "deepseek-v4-flash",
   baseUrl: "https://api.deepseek.com",
   inputPrice: 0.14,
-  cachedInputPrice: 0.028,
+  cachedInputPrice: 0.0028,
   json: false,
   help: false,
 };

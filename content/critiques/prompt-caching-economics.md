@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -20,3 +20,30 @@ primary sources, plus DeepSeek's current official pricing page.
 ## Advisories
 
 - The live A/B is not a literal move of one identical field as `README.md:48` says: `makeMessages()` uses different static and dynamic namespace strings, with different lengths and contents, in the two layouts. It remains a useful teaching benchmark because it reports provider usage, but a same-length field moved between sides of the stable prefix would make the live comparison cleaner.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the full append-only history and `git log -p` for this critique.
+Round 1 is the only review round, so no earlier REQUIRED fixes exist to regress. Re-verified
+every Round 1 finding against the current MDX, figure, widget, runnable artifact, matching
+research, and linked primary sources.
+
+1. **Cross-provider benchmark attribution:** Updated
+   `src/chapters/prompt-caching-economics.mdx` to attribute the 41% to 80% API-cost and
+   13% to 31% TTFT result to Lumer and colleagues, and gave the source its exact title.
+   Corrected the same material misattribution in
+   `docs/research/ch16-prompt-caching-economics.md`.
+2. **Timing-side-channel source:** Replaced the chapter source-list title with Gu et al.,
+   *Auditing Prompt Caching in Language Model APIs*, which is the work resolved by
+   arXiv:2502.07776.
+3. **DeepSeek pricing:** Changed the V4 Flash cached-input default and documented live
+   command from `$0.028` to `$0.0028` per million tokens in the chapter MDX, artifact
+   README, and `cache_benchmark.mjs`. Added the official DeepSeek Models & Pricing source
+   to the chapter and artifact references. Reconciled the matching research pricing line,
+   including the stale V4 Pro figures and cache-hit ratio.
+
+Advisories: left the namespace-field layout suggestion untouched because it is advisory and
+would require a broader benchmark redesign.
+
+Verification: `bash artifacts/ch16-prompt-caching-economics/check.sh`, the offline
+simulation, the missing-key live-mode failure path, and `npm run check` all pass.

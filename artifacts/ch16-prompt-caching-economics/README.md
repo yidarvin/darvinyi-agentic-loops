@@ -40,7 +40,7 @@ node cache_benchmark.mjs --live \
   --prefix-words 1200 \
   --tail-words 80 \
   --input-price 0.14 \
-  --cached-input-price 0.028
+  --cached-input-price 0.0028
 ```
 
 The request uses native `fetch`, no SDK. Calls are sequential so a cache write has time to
@@ -49,8 +49,9 @@ not streaming time-to-first-token. The only differing input is the placement of 
 non-semantic namespace field. If the provider's best-effort cache misses, the output shows
 it instead of assuming success.
 
-The two price arguments are USD per million input tokens. Their defaults are values from
-the chapter research snapshot, not a billing quote. Pass current prices before using the
+The two price arguments are USD per million input tokens. Their defaults use DeepSeek V4
+Flash's listed $0.14 cache-miss and $0.0028 cache-hit input prices. See the official
+[Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) page before using the
 estimated input-cost result for a budget. Output-token cost is deliberately excluded,
 because prompt caching does not discount generation.
 
@@ -83,3 +84,4 @@ own data policy.
 ## Reference
 
 - [DeepSeek Context Caching documentation](https://api-docs.deepseek.com/guides/kv_cache/), for the usage fields and its best-effort cache behavior.
+- [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/), for the benchmark's DeepSeek V4 Flash cache-miss and cache-hit input prices.
