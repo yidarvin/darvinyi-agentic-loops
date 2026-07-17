@@ -12,6 +12,36 @@ const DEFAULT_AS_OF = "2026-06-15";
 const DENSE_RELEVANCE_FLOOR = 0.2;
 const RELEASE_SCHEDULE_QUESTION = "What day is the checkout release train?";
 const WIDGET_PARAPHRASE_QUESTION = "How do we ship a repair without ignoring a recent payment incident?";
+const QUERY_FUNCTION_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "at",
+  "be",
+  "by",
+  "can",
+  "do",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "with",
+]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -174,22 +204,27 @@ function retrieve(collection, store, question, filter, rrfK) {
   }
 
   const queryTerms = new Set(tokenize(question));
+  const meaningfulQueryTerms = new Set([...queryTerms].filter(isMeaningfulQueryTerm));
   const candidates = [...byId.values()]
     .map((item) => {
       const rrf =
         (item.denseRank ? 1 / (rrfK + item.denseRank) : 0) +
         (item.sparseRank ? 1 / (rrfK + item.sparseRank) : 0);
-      const overlap = lexicalOverlap(queryTerms, tokenize(documentText(item.record)));
+      const documentTerms = tokenize(documentText(item.record));
+      const overlap = lexicalOverlap(queryTerms, documentTerms);
+      const meaningfulOverlap = lexicalOverlap(meaningfulQueryTerms, documentTerms);
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
       const answerability = answerabilityScore(item.record, answerPlan);
       const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness + 0.6 * answerability;
-      const hasRelevanceSignal = item.sparseScore > 0 || item.denseScore >= DENSE_RELEVANCE_FLOOR;
+      const hasRelevanceSignal =
+        meaningfulOverlap > 0 || item.denseScore >= DENSE_RELEVANCE_FLOOR || answerability > 0;
       return {
         ...item,
         answerability,
         answerRoles: item.record.answerRoles || [],
         rrf,
         overlap,
+        meaningfulOverlap,
         freshness,
         rerankScore,
         hasRelevanceSignal,
@@ -210,7 +245,7 @@ function retrieve(collection, store, question, filter, rrfK) {
 function deriveAnswerPlan(question) {
   const tokens = tokenize(question);
   const terms = new Set(tokens);
-  const incidentIdentifier = tokens.find((term) => term.startsWith("err-pay-")) || null;
+  const incidentIdentifier = tokens.find(isIncidentIdentifier) || null;
   const repairAfterIncident =
     terms.has("ship") && terms.has("repair") && terms.has("incident");
   const mentionsIncident = Boolean(incidentIdentifier) || repairAfterIncident;
@@ -357,7 +392,7 @@ function isServiceTerm(term) {
     "required",
     "to",
     "with",
-  ].includes(term) && !term.startsWith("err-pay-");
+  ].includes(term) && !isIncidentIdentifier(term);
 }
 
 function recordMatchesPlanRole(record, plan, role) {
@@ -476,6 +511,14 @@ function evidenceText(record) {
 
 function tokenize(value) {
   return value.toLowerCase().match(/[a-z0-9]+(?:[-_][a-z0-9]+)*/g) || [];
+}
+
+function isMeaningfulQueryTerm(term) {
+  return term.length >= 3 && !QUERY_FUNCTION_WORDS.has(term);
+}
+
+function isIncidentIdentifier(term) {
+  return /^err-[a-z0-9]+(?:-[a-z0-9]+)+$/.test(term);
 }
 
 function embed(value) {
@@ -679,6 +722,18 @@ async function selfTest() {
     });
     assertUnknownIncidentAbstains(unknownIncident);
 
+    const unrecognizedIncident = await runAgent({
+      storePath: resolve(directory, "unrecognized-incident-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout after ERR-DB-999?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnknownIncidentAbstains(unrecognizedIncident);
+
     const irrelevant = await runAgent({
       storePath: resolve(directory, "irrelevant-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -694,6 +749,23 @@ async function selfTest() {
     }
     if (irrelevant.decision !== "ask for clarification or retrieve with a new query") {
       throw new Error("irrelevant query did not take the abstention path");
+    }
+
+    const ordinaryIrrelevant = await runAgent({
+      storePath: resolve(directory, "ordinary-irrelevant-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What is banana?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    if (ordinaryIrrelevant.evidence.length !== 0 || ordinaryIrrelevant.usedTokens !== 0) {
+      throw new Error("ordinary out-of-corpus query injected evidence from a common word");
+    }
+    if (ordinaryIrrelevant.decision !== "ask for clarification or retrieve with a new query") {
+      throw new Error("ordinary out-of-corpus query did not take the abstention path");
     }
 
     let invalidDateRejected = false;

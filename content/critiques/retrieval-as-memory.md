@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -174,3 +174,12 @@ Convergence review: read the complete critique and git history through Rounds 1 
 ## Advisories
 
 - No new advisories. Earlier README-formatting, token-display, rank-grid semantics, and late-interaction wording notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and this append-only critique file. Re-verified every Round 1 fix: gibberish retrieval abstains, impossible calendar dates reject, the widget declares the RRF tie before reranking, and the figure and widget retain readable teaching text. Re-verified Round 2's complete-or-abstain deployment packet at the default, 42-token, and 20-token budgets. Re-verified Round 3's shared mechanical gate with the required repository-wide check. Re-verified Round 4's role-separated escaped native-message envelope, hostile-input cases, and generic telemetry retrieval. Re-verified Round 5's release-calendar lookup and widget-paraphrase packet, Round 6's unsupported-service abstention, and Round 7's exact `ERR-PAY-999` abstention.
+
+1. **Generic retrieval now requires meaningful content evidence.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, a generic candidate must now have either a non-function-word lexical overlap or meet the dense relevance floor. A positive BM25 score from a common word such as `is` no longer makes a record injectable. The deterministic self-test runs `What is banana?` and asserts zero evidence, zero used tokens, and the clarification or new-query decision. Scoped answer-role packets remain eligible through their existing service, action, and identifier checks.
+2. **Incident identifiers now use a general normalized `ERR-*` shape.** The artifact recognizes incident identifiers beyond the `ERR-PAY-*` family and excludes them from service parsing. Its existing exact identifier match still guards incident-role selection. The deterministic self-test runs `Can I deploy checkout after ERR-DB-999?` and asserts zero evidence, zero used tokens, and the clarification or new-query decision.
+
+No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
