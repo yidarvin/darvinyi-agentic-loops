@@ -9,6 +9,7 @@ const DEFAULT_RRF_K = 60;
 const DEFAULT_BUDGET = 110;
 const DEFAULT_QUESTION = "Can I deploy checkout after ERR-PAY-142?";
 const DEFAULT_AS_OF = "2026-06-15";
+const DENSE_RELEVANCE_FLOOR = 0.2;
 
 async function main() {
   if (hasFlag("--help")) {
@@ -142,7 +143,9 @@ function retrieve(collection, store, question, filter, rrfK) {
   }
 
   const dense = store.search(collection, embed(question), filter, Math.min(eligible.length, 12));
-  const sparse = bm25(question, eligible).slice(0, Math.min(eligible.length, 12));
+  const sparse = bm25(question, eligible)
+    .filter((item) => item.score > 0)
+    .slice(0, Math.min(eligible.length, 12));
   const byId = new Map();
 
   for (const item of dense) {
@@ -176,7 +179,8 @@ function retrieve(collection, store, question, filter, rrfK) {
       const overlap = lexicalOverlap(queryTerms, tokenize(documentText(item.record)));
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
       const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness;
-      return { ...item, rrf, overlap, freshness, rerankScore };
+      const hasRelevanceSignal = item.sparseScore > 0 || item.denseScore >= DENSE_RELEVANCE_FLOOR;
+      return { ...item, rrf, overlap, freshness, rerankScore, hasRelevanceSignal };
     })
     .sort((left, right) => right.rerankScore - left.rerankScore || left.record.id.localeCompare(right.record.id))
     .map((item, index) => ({ ...item, finalRank: index + 1 }));
@@ -195,7 +199,8 @@ function selectEvidence(candidates, budget) {
   const annotated = candidates.map((candidate) => {
     const content = evidenceText(candidate.record);
     const tokens = estimateTokens(content);
-    const shouldInject = candidate.rerankScore >= 0.3 && usedTokens + tokens <= budget;
+    const shouldInject =
+      candidate.hasRelevanceSignal && candidate.rerankScore >= 0.3 && usedTokens + tokens <= budget;
     if (shouldInject) {
       usedTokens += tokens;
       evidence.push({
@@ -220,10 +225,13 @@ function selectEvidence(candidates, budget) {
       sparseScore: round(candidate.sparseScore),
       rrfScore: round(candidate.rrf),
       rerankScore: round(candidate.rerankScore),
+      relevanceSignal: candidate.hasRelevanceSignal,
       tokens,
       status: shouldInject
         ? "injected"
-        : candidate.rerankScore < 0.3
+        : !candidate.hasRelevanceSignal
+          ? "held-no-relevance"
+          : candidate.rerankScore < 0.3
           ? "held-low-relevance"
           : "held-budget",
     };
@@ -379,8 +387,10 @@ function hasFlag(name) {
 }
 
 function assertDate(value, label) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value + "T00:00:00Z"))) {
-    throw new Error(label + " must use YYYY-MM-DD");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(label + " must use YYYY-MM-DD");
+  const parsed = new Date(value + "T00:00:00.000Z");
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error(label + " must be a real calendar date");
   }
 }
 
@@ -451,6 +461,41 @@ async function selfTest() {
     if (!result.prompt.endsWith("</retrieved_memory>")) {
       throw new Error("retrieved evidence was not placed at the dynamic prompt tail");
     }
+
+    const irrelevant = await runAgent({
+      storePath: resolve(directory, "irrelevant-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "florpquux nebula xylophone",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    if (irrelevant.evidence.length !== 0 || irrelevant.usedTokens !== 0) {
+      throw new Error("irrelevant query injected unrelated records into the evidence packet");
+    }
+    if (irrelevant.decision !== "ask for clarification or retrieve with a new query") {
+      throw new Error("irrelevant query did not take the abstention path");
+    }
+
+    let invalidDateRejected = false;
+    try {
+      await runAgent({
+        storePath: resolve(directory, "invalid-date-memory.json"),
+        fixturesPath: resolve("fixtures/memories.json"),
+        reset: true,
+        tenant: "acme",
+        asOf: "2026-02-31",
+        question: DEFAULT_QUESTION,
+        budget: DEFAULT_BUDGET,
+        rrfK: DEFAULT_RRF_K,
+      });
+    } catch (error) {
+      invalidDateRejected = String(error).includes("--as-of must be a real calendar date");
+    }
+    if (!invalidDateRejected) throw new Error("impossible --as-of date was not rejected");
+
     console.log("persistent retrieval memory: checks passed");
   } finally {
     await rm(directory, { recursive: true, force: true });

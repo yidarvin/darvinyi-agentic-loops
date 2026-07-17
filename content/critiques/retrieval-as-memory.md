@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -17,3 +17,14 @@ Fresh-eyes review: confirmed there is no existing critique file or git history f
 
 - `artifacts/ch17-retrieval-as-memory/README.md` escapes its Markdown backticks and fence markers. The commands remain clear and runnable, but the rendered README will show literal fence characters.
 - Give the widget's visual rank grid table semantics or header associations for stronger screen-reader column navigation. The content is currently exposed linearly, so this does not block the chapter.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and the current critique file. Round 1 is the only review round, so all four Round 1 REQUIRED fixes were re-verified against the current artifact, figure, and widget.
+
+1. **Irrelevant retrieval abstains.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, zero-score BM25 rows no longer receive sparse ranks, evidence selection now requires either a nonzero sparse score or a calibrated dense relevance signal, and held rows report `held-no-relevance`. The deterministic `--self-test` now proves that `florpquux nebula xylophone` emits zero evidence, zero used tokens, and the clarification/new-query decision.
+2. **Valid-time inputs are real calendar dates.** `assertDate()` now round-trips the UTC ISO date before filtering, so `2026-02-31` is rejected rather than normalized. The deterministic `--self-test` asserts that this impossible `--as-of` value fails.
+3. **The RRF teaching example declares its tie.** `src/chapters/_widgets/RetrievalAsMemoryWidget.tsx` labels both `(dense, sparse) = (3, 1)` and `(1, 3)` rows as `1 (tie)`, then explicitly explains that their distinct reranker scores order the packet.
+4. **Teaching text is readable.** `src/chapters/_figures/RetrievalAsMemoryFigure.tsx` promotes semantic labels from `--comment` to passing foreground-muted text, reflows the failure labels, and renders meaningful SVG labels at at least 15 user units. The widget promotes its result explanation, rank headers, candidate rationale, and packet labels to readable `text-xs` text with passing colors.
+
+No advisories were taken: the escaped README Markdown and optional table semantics remain outside this resolution scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` pass.

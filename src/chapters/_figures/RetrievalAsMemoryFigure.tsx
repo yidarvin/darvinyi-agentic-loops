@@ -19,7 +19,7 @@ export function RetrievalAsMemoryFigure() {
       </defs>
 
       <rect x="1" y="1" width="978" height="588" rx="10" fill="var(--surface-2)" stroke="var(--border)" />
-      <text x="28" y="34" fontFamily="var(--font-mono)" fontSize="14" fill="var(--fg-muted)">
+      <text x="28" y="34" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
         {"// retrieval_as_memory: broad recall outside the prompt, precise evidence inside it"}
       </text>
 
@@ -72,7 +72,7 @@ export function RetrievalAsMemoryFigure() {
           { text: "top 3 to 10", accent: true },
           { text: "citations" },
           { text: "token budget" },
-          { text: "replace, do not append", muted: true },
+          { text: "replace, no append", muted: true },
         ]}
       />
       <StageCard
@@ -94,73 +94,75 @@ export function RetrievalAsMemoryFigure() {
       <path d="M614 157 H646" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#retrieval-memory-arrow)" />
       <path d="M802 157 H834" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#retrieval-memory-arrow)" />
 
-      <text x="28" y="290" fontFamily="var(--font-mono)" fontSize="13" fill="var(--fg-muted)">
+      <text x="28" y="290" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         candidate space grows here
       </text>
       <path d="M56 307 H590" stroke="var(--border)" strokeWidth="1" strokeDasharray="4 5" />
       <path d="M56 307 V329 H590 V307" stroke="var(--fg-muted)" strokeWidth="1" markerEnd="url(#retrieval-memory-muted-arrow)" />
-      <text x="278" y="352" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--comment)">
-        recall failure: the needed record never reaches the shortlist
+      <text x="278" y="350" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
+        <tspan x="278" dy="0">recall failure: needed record</tspan>
+        <tspan x="278" dy="19">never reaches the shortlist</tspan>
       </text>
 
-      <text x="656" y="290" fontFamily="var(--font-mono)" fontSize="13" fill="var(--fg-muted)">
-        context stays small here
+      <text x="656" y="290" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
+        bounded context
       </text>
       <path d="M676 307 H930" stroke="var(--border)" strokeWidth="1" strokeDasharray="4 5" />
       <path d="M676 307 V329 H930 V307" stroke="var(--fg-muted)" strokeWidth="1" markerEnd="url(#retrieval-memory-muted-arrow)" />
-      <text x="803" y="352" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--comment)">
-        precision failure: distractors enter the window
+      <text x="803" y="350" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
+        <tspan x="803" dy="0">precision failure: distractors</tspan>
+        <tspan x="803" dy="19">enter the window</tspan>
       </text>
 
       <rect x="28" y="392" width="574" height="132" rx="8" fill="var(--surface)" stroke="var(--border)" />
-      <text x="48" y="421" fontFamily="var(--font-mono)" fontSize="14" fill="var(--accent)">
+      <text x="48" y="421" fontFamily="var(--font-mono)" fontSize="16" fill="var(--accent)">
         prompt layout
       </text>
       <rect x="48" y="440" width="155" height="54" rx="5" fill="var(--surface-2)" stroke="var(--border)" />
-      <text x="125" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">
+      <text x="125" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg)">
         system + tools
       </text>
-      <text x="125" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg-muted)">
+      <text x="125" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         stable prefix
       </text>
       <rect x="203" y="440" width="149" height="54" rx="5" fill="var(--surface-2)" stroke="var(--border)" />
-      <text x="277" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">
+      <text x="277" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg)">
         current request
       </text>
-      <text x="277" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg-muted)">
+      <text x="277" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         fresh turn
       </text>
       <rect x="352" y="440" width="222" height="54" rx="5" fill="var(--surface-2)" stroke="var(--accent)" strokeOpacity="0.8" />
-      <text x="463" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)">
-        retrieved evidence packet
+      <text x="463" y="463" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--accent)">
+        evidence packet
       </text>
-      <text x="463" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg-muted)">
+      <text x="463" y="481" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         dynamic tail, bounded
       </text>
 
       <rect x="650" y="392" width="302" height="132" rx="8" fill="var(--surface)" stroke="var(--border)" />
-      <text x="670" y="421" fontFamily="var(--font-mono)" fontSize="14" fill="var(--accent)">
+      <text x="670" y="421" fontFamily="var(--font-mono)" fontSize="16" fill="var(--accent)">
         retrieval controller
       </text>
-      <text x="670" y="451" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">
+      <text x="670" y="451" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg)">
         evidence sufficient?
       </text>
-      <text x="670" y="477" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg-muted)">
+      <text x="670" y="477" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         yes: answer or act
       </text>
-      <text x="670" y="500" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg-muted)">
+      <text x="670" y="500" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         no: rewrite, retrieve, replace
       </text>
 
       <path d="M898 250 V365 H778" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="5 4" markerEnd="url(#retrieval-memory-arrow)" />
-      <text x="906" y="320" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
+      <text x="954" y="275" textAnchor="end" fontFamily="var(--font-mono)" fontSize="15" fill="var(--accent)">
         step budget
       </text>
-      <text x="906" y="336" fontFamily="var(--font-mono)" fontSize="11" fill="var(--accent)">
+      <text x="954" y="296" textAnchor="end" fontFamily="var(--font-mono)" fontSize="15" fill="var(--accent)">
         evidence budget
       </text>
 
-      <text x="490" y="560" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="13" fill="var(--fg-muted)">
+      <text x="490" y="560" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="15" fill="var(--fg-muted)">
         retrieval quality = right evidence, right time, right scope, right amount
       </text>
     </svg>
@@ -185,7 +187,7 @@ function StageCard({
   return (
     <g>
       <rect x={x} y={y} width={width} height="170" rx="8" fill="var(--surface)" stroke={accent} strokeOpacity="0.75" />
-      <text x={x + 18} y={y + 29} fontFamily="var(--font-mono)" fontSize="13" fill={accent}>
+      <text x={x + 18} y={y + 29} fontFamily="var(--font-mono)" fontSize="15" fill={accent}>
         {title}
       </text>
       <line x1={x + 18} y1={y + 42} x2={x + width - 18} y2={y + 42} stroke="var(--border)" />
@@ -195,8 +197,8 @@ function StageCard({
           x={x + 18}
           y={y + 63 + index * 25}
           fontFamily="var(--font-mono)"
-          fontSize="12"
-          fill={line.accent ? "var(--accent)" : line.muted ? "var(--comment)" : "var(--fg)"}
+          fontSize="15"
+          fill={line.accent ? "var(--accent)" : line.muted ? "var(--fg-muted)" : "var(--fg)"}
         >
           {line.text}
         </text>

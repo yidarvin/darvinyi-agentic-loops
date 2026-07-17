@@ -32,7 +32,7 @@ const scenarios: Scenario[] = [
     query: "Can I deploy checkout after ERR-PAY-142?",
     budget: 120,
     packetTokens: 93,
-    decision: "hybrid retrieval keeps the exact incident and the current deploy policy",
+    decision: "RRF ties the exact incident and current policy; reranking orders the answer-bearing packet",
     candidates: [
       {
         id: "incident_pay_142",
@@ -40,10 +40,10 @@ const scenarios: Scenario[] = [
         date: "2026-05-28",
         dense: "3",
         sparse: "1",
-        rrf: "1",
+        rrf: "1 (tie)",
         rerank: "0.96",
         state: "injected",
-        detail: "exact error identifier rescued by sparse rank",
+        detail: "exact identifier rescued by sparse rank; reranker breaks the RRF tie",
       },
       {
         id: "checkout_policy_2026",
@@ -51,10 +51,10 @@ const scenarios: Scenario[] = [
         date: "2026-04-01",
         dense: "1",
         sparse: "3",
-        rrf: "2",
+        rrf: "1 (tie)",
         rerank: "0.92",
         state: "injected",
-        detail: "current approval and migration gate",
+        detail: "current approval and migration gate; reranker keeps it second after the tie",
       },
       {
         id: "checkout_telemetry",
@@ -193,7 +193,7 @@ export function RetrievalAsMemoryWidget() {
   return (
     <div className="font-sans">
       <form onSubmit={issueQuery} className="rounded border border-border bg-surface-2 p-4">
-        <label htmlFor="retrieval-query" className="font-mono text-[0.7rem] text-muted">
+        <label htmlFor="retrieval-query" className="font-mono text-xs text-muted">
           // memory.search(query, tenant="acme", as_of="2026-06-15")
         </label>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -211,13 +211,13 @@ export function RetrievalAsMemoryWidget() {
             inspect read
           </button>
         </div>
-        <p id="retrieval-query-help" className="mt-2 font-mono text-[0.7rem] leading-relaxed text-muted">
+        <p id="retrieval-query-help" className="mt-2 font-mono text-xs leading-relaxed text-muted">
           This instructional inspector recognizes the three probes below. Its ranks are deterministic examples, not an embedding benchmark.
         </p>
       </form>
 
       <fieldset className="mt-4">
-        <legend className="font-mono text-[0.7rem] text-muted">// load a query shape</legend>
+        <legend className="font-mono text-xs text-muted">// load a query shape</legend>
         <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Choose a retrieval query shape">
           {scenarios.map((scenario) => {
             const selected = scenario.id === active.id;
@@ -246,11 +246,11 @@ export function RetrievalAsMemoryWidget() {
       <section className="mt-5 overflow-hidden rounded border border-border" aria-label="Retrieval candidate inspection" aria-live="polite">
         <div className="border-b border-border bg-surface-2 px-4 py-3">
           <p className="font-mono text-xs text-fg">{active.query}</p>
-          <p className="mt-1 font-mono text-[0.7rem] text-comment">// {active.decision}</p>
+          <p className="mt-1 font-mono text-xs leading-relaxed text-muted">// {active.decision}</p>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[650px]">
-            <div className="grid grid-cols-[1.55fr_repeat(4,0.52fr)_1.05fr] gap-x-2 border-b border-border px-4 py-2 font-mono text-[0.65rem] uppercase tracking-wide text-comment">
+            <div className="grid grid-cols-[1.55fr_repeat(4,0.52fr)_1.05fr] gap-x-2 border-b border-border px-4 py-2 font-mono text-xs uppercase tracking-wide text-muted">
               <span>candidate</span>
               <span>dense</span>
               <span>sparse</span>
@@ -265,15 +265,15 @@ export function RetrievalAsMemoryWidget() {
               >
                 <div className="min-w-0">
                   <p className="truncate font-mono text-xs text-fg">{candidate.id}</p>
-                  <p className="mt-1 font-mono text-[0.65rem] leading-relaxed text-muted">{candidate.source} · {candidate.date}</p>
+                  <p className="mt-1 font-mono text-xs leading-relaxed text-muted">{candidate.source} · {candidate.date}</p>
                 </div>
                 <Rank value={candidate.dense} />
                 <Rank value={candidate.sparse} />
                 <Rank value={candidate.rrf} />
                 <Rank value={candidate.rerank} />
                 <div>
-                  <p className={`font-mono text-[0.7rem] ${stateClass(candidate.state)}`}>{candidate.state}</p>
-                  <p className="mt-1 font-mono text-[0.62rem] leading-relaxed text-muted">{candidate.detail}</p>
+                  <p className={`font-mono text-xs ${stateClass(candidate.state)}`}>{candidate.state}</p>
+                  <p className="mt-1 font-mono text-xs leading-relaxed text-muted">{candidate.detail}</p>
                 </div>
               </div>
             ))}
@@ -283,8 +283,8 @@ export function RetrievalAsMemoryWidget() {
 
       <section className="mt-5 rounded border border-accent/25 bg-surface-2 p-4" aria-label="Evidence packet injected into prompt">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">evidence packet at prompt tail</p>
-          <p className="font-mono text-[0.7rem] text-accent">{active.packetTokens} / {active.budget} token budget</p>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">evidence packet at prompt tail</p>
+          <p className="font-mono text-xs text-accent">{active.packetTokens} / {active.budget} token budget</p>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded bg-border" aria-label={`${active.packetTokens} of ${active.budget} context tokens used`}>
           <div className="h-full rounded bg-accent" style={{ width: `${packetPercent}%` }} />
@@ -296,7 +296,7 @@ export function RetrievalAsMemoryWidget() {
             </li>
           ))}
         </ol>
-        <pre className="mt-4 overflow-x-auto rounded border border-border bg-surface p-3 font-mono text-[0.7rem] leading-relaxed text-muted">{`system + tools + stable reference\ncurrent user request\n<retrieved_memory>\n${active.packet.map((record) => `${record}`).join("\n")}\n</retrieved_memory>`}</pre>
+        <pre className="mt-4 overflow-x-auto rounded border border-border bg-surface p-3 font-mono text-xs leading-relaxed text-muted">{`system + tools + stable reference\ncurrent user request\n<retrieved_memory>\n${active.packet.map((record) => `${record}`).join("\n")}\n</retrieved_memory>`}</pre>
       </section>
     </div>
   );
