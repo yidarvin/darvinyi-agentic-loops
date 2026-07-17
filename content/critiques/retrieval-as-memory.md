@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -183,3 +183,15 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 2. **Incident identifiers now use a general normalized `ERR-*` shape.** The artifact recognizes incident identifiers beyond the `ERR-PAY-*` family and excludes them from service parsing. Its existing exact identifier match still guards incident-role selection. The deterministic self-test runs `Can I deploy checkout after ERR-DB-999?` and asserts zero evidence, zero used tokens, and the clarification or new-query decision.
 
 No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 9 review (2026-07-17)
+
+Convergence re-review: read the complete critique history, current MDX chapter, exact figure and widget, research backbone, fixture, README, checker, and complete runnable artifact. Ran `npm run check` to `CHECK OK` across all seven stages, including the artifact gate, 38 Vitest tests, production build, and lint; `bash artifacts/ch17-retrieval-as-memory/check.sh` also passes. Re-verified the settled requirements: irrelevant and ordinary out-of-corpus questions abstain, impossible dates reject, the RRF tie and readable teaching text remain intact, the default/42-token/20-token deployment cases are complete-or-abstain, native messages keep untrusted data separate, telemetry and release-schedule retrieval work, the widget paraphrase keeps its two-record packet, and unsupported services plus single unknown `ERR-PAY-*` and `ERR-DB-*` identifiers abstain. Fetched the linked primary and official sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings. They support the chapter's consequential claims; the ACM DOI returned 403, so RRF was checked against the authors' primary PDF.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:245-269,398-408` --- a deployment question with a known incident followed by an unknown incident is falsely marked answerable.** From the artifact directory, `node retrieval_memory.mjs --reset --store <temp>/memory.json --question "Can I deploy checkout after ERR-PAY-142 and ERR-DB-999?" --json` returns `decision: "answer with bounded evidence packet"`, `evidenceCount: 2`, and injects only `acme_incident_pay_142` plus `acme_checkout_policy_2026`. The fixture has no evidence for `ERR-DB-999`. `deriveAnswerPlan()` uses `tokens.find(isIncidentIdentifier)`, so it retains only the first identifier, and `recordMatchesPlanRole()` validates only that one. Rounds 7 and 8 correctly fixed each single-unknown-ID path, but this distinct compound-ID path lets an unverified incident disappear from a safety-sensitive deployment decision. Collect every normalized incident identifier and require an exact, scoped incident record for each before the packet is answerable, or abstain when any is missing. Add a deterministic regression assertion for this known-then-unknown case, ideally also its reversed order, requiring zero evidence, zero used tokens, and the clarification/new-query decision.
+
+## Advisories
+
+- No new advisories. Prior advisory notes remain non-blocking.
