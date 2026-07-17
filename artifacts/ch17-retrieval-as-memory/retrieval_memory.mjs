@@ -515,8 +515,15 @@ function actionInGenericInterrogativeQuestion(tokens) {
       ["do", "does", "did"].includes(term) &&
       ["i", "we", "you"].includes(tokens[index + 1]),
   );
-  if (auxiliaryIndex === -1) return null;
-  return firstActionTerm(tokens, auxiliaryIndex + 1);
+  if (auxiliaryIndex !== -1) return firstActionTerm(tokens, auxiliaryIndex + 1);
+
+  const thirdPersonSubjectIndex = tokens.findIndex(
+    (term, index) =>
+      GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
+      ["team", "teams"].includes(term),
+  );
+  if (thirdPersonSubjectIndex === -1) return null;
+  return firstActionTerm(tokens, thirdPersonSubjectIndex + 1);
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -1022,6 +1029,21 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(genericInterrogativeDeletion, "generic-interrogative deletion operation");
+
+    const thirdPersonGenericInterrogativeDeletion = await runAgent({
+      storePath: resolve(directory, "third-person-generic-interrogative-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Which team deletes checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      thirdPersonGenericInterrogativeDeletion,
+      "third-person generic-interrogative deletion operation",
+    );
 
     const passiveSafetyDeletion = await runAgent({
       storePath: resolve(directory, "passive-safety-deletion-memory.json"),

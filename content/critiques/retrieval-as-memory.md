@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -440,3 +440,12 @@ Independent convergence review: read `prompts/critique-rubric.md`, the complete 
 ## Advisories
 
 - No new advisories. The existing README-fence formatting, illustrative token-display, and optional rank-grid semantics notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, then re-verified every REQUIRED fix from Rounds 1 through 19 against the current MDX chapter, exact figure and widget, fixture, README, checker, and runnable artifact. Round 1 still rejects irrelevant retrieval and impossible dates, declares the RRF tie, and keeps teaching text readable. Round 2 still injects the complete incident-and-policy packet at the default and 42-token budgets and abstains at 20 tokens. Rounds 3, 7, 11, and 14 shared-pipeline requirements were re-proven by the full repository gate. Round 4 still separates escaped, role-separated untrusted messages and preserves qualifying telemetry retrieval. Round 5 still selects the release calendar and the widget's incident-and-policy packet. Rounds 6 through 10 still fail closed for unsupported or mixed service scope, unknown or compound incident identifiers, common-word input, and dense-only collisions. Rounds 11 through 17 still fail closed for every previously covered explicit-action form. Round 18 still requires query-specific generic evidence and rejects the retention query. Round 19 still rejects `Where do I delete checkout telemetry data?` before generic retrieval.
+
+1. **Third-person generic interrogatives now reach the positive operation grammar.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `actionInGenericInterrogativeQuestion()` retains the settled auxiliary-and-pronoun route, then recognizes a generic question followed by `team` or `teams` and extracts the following operation before generic fallback. `Which team deletes checkout telemetry data?` therefore classifies `deletes` as unsupported and produces no evidence packet.
+2. **Round 20 is deterministic.** The artifact `--self-test` now runs that exact third-person query in a fresh persistent store through `assertUnsupportedRequestAbstains`, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision. The existing successful telemetry lookup remains covered by its established assertion.
+
+No advisories were taken. `node retrieval_memory.mjs --self-test`, `bash artifacts/ch17-retrieval-as-memory/check.sh`, and `npm run check` pass; the full gate completed all seven stages with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
