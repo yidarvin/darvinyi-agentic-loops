@@ -210,9 +210,10 @@ function retrieve(collection, store, question, filter, rrfK) {
 function deriveAnswerPlan(question) {
   const tokens = tokenize(question);
   const terms = new Set(tokens);
+  const incidentIdentifier = tokens.find((term) => term.startsWith("err-pay-")) || null;
   const repairAfterIncident =
     terms.has("ship") && terms.has("repair") && terms.has("incident");
-  const mentionsIncident = [...terms].some((term) => term.startsWith("err-pay-")) || repairAfterIncident;
+  const mentionsIncident = Boolean(incidentIdentifier) || repairAfterIncident;
   const asksReleaseSchedule =
     terms.has("checkout") &&
     terms.has("release") &&
@@ -228,6 +229,7 @@ function deriveAnswerPlan(question) {
     scope: {
       service: requestedService(tokens),
       action: needsDeploymentDecision ? "deployment" : null,
+      incidentIdentifier,
     },
   };
 }
@@ -359,7 +361,19 @@ function isServiceTerm(term) {
 }
 
 function recordMatchesPlanRole(record, plan, role) {
-  return (record.answerRoles || []).includes(role) && recordMatchesPlanScope(record, plan, role);
+  if (!(record.answerRoles || []).includes(role)) return false;
+  if (
+    role === "incident" &&
+    plan.scope.incidentIdentifier &&
+    !recordHasIdentifier(record, plan.scope.incidentIdentifier)
+  ) {
+    return false;
+  }
+  return recordMatchesPlanScope(record, plan, role);
+}
+
+function recordHasIdentifier(record, identifier) {
+  return tokenize([record.id, ...(record.tags || []), record.text].join(" ")).includes(identifier);
 }
 
 function recordMatchesPlanScope(record, plan, role) {
@@ -653,6 +667,18 @@ async function selfTest() {
     });
     assertUnsupportedServiceAbstains(unsupportedBilling);
 
+    const unknownIncident = await runAgent({
+      storePath: resolve(directory, "unknown-incident-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout after ERR-PAY-999?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnknownIncidentAbstains(unknownIncident);
+
     const irrelevant = await runAgent({
       storePath: resolve(directory, "irrelevant-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -793,6 +819,15 @@ function assertUnsupportedServiceAbstains(result) {
   }
   if (result.decision !== "ask for clarification or retrieve with a new query") {
     throw new Error("unsupported-service deployment query claimed to have answer-bearing evidence");
+  }
+}
+
+function assertUnknownIncidentAbstains(result) {
+  if (result.evidence.length !== 0 || result.usedTokens !== 0) {
+    throw new Error("unknown incident identifier injected evidence for a different incident");
+  }
+  if (result.decision !== "ask for clarification or retrieve with a new query") {
+    throw new Error("unknown incident identifier claimed to have answer-bearing evidence");
   }
 }
 

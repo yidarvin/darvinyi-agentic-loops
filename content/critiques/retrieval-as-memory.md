@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -151,3 +151,12 @@ Convergence review: read the complete critique history and `git log -p -- conten
 ## Advisories
 
 - No new advisories. The previously noted escaped README fences and optional rank-grid table semantics remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and this append-only critique file. Re-verified every Round 1 requirement in the current artifact, figure, and widget: irrelevant queries abstain, impossible calendar dates reject, the identifier rows declare the RRF tie before reranking, and teaching text remains readable. Re-verified Round 2's complete-or-abstain packet rule at the default, 42-token, and 20-token budgets. Re-verified Round 3's mechanical gate with one full `npm run check` and five consecutive `python3 scripts/test_pipeline.py` passes. Re-verified Round 4's role-separated escaped native-message envelope, hostile-input checks, and relevance-qualified telemetry retrieval. Re-verified Round 5's release-calendar lookup and widget-paraphrase incident-and-policy packet. Re-verified Round 6's unsupported-service abstention.
+
+1. **Unknown incident identifiers now abstain.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `deriveAnswerPlan()` retains the normalized requested `ERR-PAY-*` identifier, and incident-role selection requires an exact normalized identifier present in the incident record. `Can I deploy checkout after ERR-PAY-999?` can no longer substitute `ERR-PAY-142`; the deterministic self-test asserts zero evidence, zero used tokens, and the clarification/new-query decision.
+2. **The out-of-scope pipeline finding was re-verified without a shared-code edit.** Round 7's watchdog finding names `scripts/test_pipeline.py` and `scripts/process_watchdog.py`, which are outside this chapter's allowed write scope. No shared pipeline code was changed. The required `npm run check` completed all seven sections with `CHECK OK`, and the isolated pipeline suite passed five consecutive runs in this workspace.
+
+No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes. The registry remains `draft` and the queue row remains `PENDING`.
