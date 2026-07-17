@@ -1,0 +1,217 @@
+import { PromptCachingEconomicsFigure } from "./_figures/PromptCachingEconomicsFigure";
+import { PromptCachingEconomicsWidget } from "./_widgets/PromptCachingEconomicsWidget";
+
+Prompt caching changes the price of keeping information in an agent's active context. A
+provider retains the attention KV state for a reusable prompt prefix, so a later request
+with that same prefix can skip its prefill work. Stable procedural and semantic memory can
+therefore stay in-window at a fraction of its ordinary input price. The architectural
+question is no longer simply what an agent should remember. It is which memory can remain
+byte-stable long enough to earn a cache read.
+
+## A cache is a prefix state
+
+The object being cached is not raw prompt text. During prefill, each token produces keys
+and values that later attention layers consult. Reusing that state is valid only through a
+prefix whose preceding tokens are the same. Change one token before the cache boundary and
+every state after that point belongs to a different computation.
+
+That is why cache placement is a systems decision, not an SDK switch. Put system
+instructions, tool definitions, few-shot examples, and stable reference material first.
+Put the current user request, timestamps, per-request identifiers, dynamic state, and
+freshly retrieved episodes after the boundary. The first group can amortize. The second
+group must be prefetched on every call.
+
+The rule holds across provider surfaces. [OpenAI's prompt-caching guide](https://developers.openai.com/api/docs/guides/prompt-caching)
+describes exact prefix matching and recommends static content first. [Anthropic's guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+states the stronger operational form: every segment through an explicit cache boundary must
+match exactly. The APIs differ in when and how they cache. The dependency graph does not.
+
+<Figure id="16.1" caption="A cache boundary divides reusable prefix state from a fresh suffix. Requests two and three reuse the KV state only because their system, tools, and stable reference material are byte-identical. Moving a timestamp ahead of the boundary creates the first divergence and makes the rest of that prefix a miss.">
+  <PromptCachingEconomicsFigure />
+</Figure>
+
+## The boundary is a memory policy
+
+This chapter follows [the memory taxonomy](/memory-taxonomy) for a reason. Caching does
+not decide what is true, what happened, or how an agent should act. It decides the unit
+cost of presenting a chosen piece of memory to the model again. That makes it the seam
+between the memory classes and [context-window economics](/context-window-economics).
+
+Use the front of the prompt for material that is stable and broadly relevant: policy,
+procedures, tools, a compact project constitution, or a small static corpus. Keep
+retrieved episodic evidence at the end. A retrieved chunk may be highly relevant for this
+turn, but it is usually volatile across turns. Inserting it before a cacheable system
+prompt destroys the reuse of everything after it in the same request.
+
+Conversation history has a useful special case. An append-only agent loop preserves the
+entire earlier transcript as a prefix when the next message is added at the tail. Providers
+can advance a cache boundary as the conversation grows, which makes long multi-step runs a
+natural fit. Client-side surgery is less friendly: deleting or rewriting an old tool result
+may save context tokens but also force a new prefill of everything downstream. Measure both
+terms before choosing a compaction policy.
+
+## Cost starts at the first repeated prefix
+
+Let `S` be cacheable stable-prefix tokens, `V` be the variable tail per turn, `N` the
+number of turns, and `p` the ordinary input price. Without caching, input cost is:
+
+`uncached = N × (S + V) × p`
+
+With a cache read multiplier `r`, a cache-write multiplier `w`, and a realized hit rate
+`h` after the first write, the expected cached cost is:
+
+`cached = N × V × p + S × p × [w × (1 + (N - 1) × (1 - h)) + r × (N - 1) × h]`
+
+The formula exposes the discipline. The tail still pays full price. Output still pays full
+price. A high hit rate only discounts `S`, and a write premium makes a cold or short-lived
+cache worse than no cache at all.
+
+Take eight turns with a 6K-token stable prefix and a 2K-token variable tail. At a one-time
+write and a 0.1x read rate, the uncached input total is 64K token-equivalents. The cached
+run costs 16K for the tails plus 10.2K for the prefix, a 59% reduction. The familiar 90%
+read discount applies only to the 6K stable region after its first use. It says nothing
+about the tail or generated output.
+
+**Product example.** Anthropic currently lists a 1.25x multiplier for a five-minute cache
+write and 0.1x for a cache read. Under those terms, two uses of the cached prefix average
+0.675x of ordinary input cost, three average about 0.483x, and the long-lived limit tends
+toward 0.1x. Its documentation also exposes different TTLs and multiple breakpoints. Those
+figures are pricing inputs, not universal constants. Recheck the provider price page before
+committing a budget.
+
+## TTL turns a design rule into a traffic pattern
+
+A perfect prompt layout still needs repeat traffic. A cache that expires between requests
+is another write. A shared, long-lived prefix can justify a longer retention window or a
+deliberate warmup. A sparse, low-volume path often cannot. The correct breakpoint is the
+last block that stays identical for the set of requests meant to share it, never a
+placeholder user message or a timestamped retrieval bundle.
+
+**Product examples.** Anthropic makes breakpoints and TTL visible controls. OpenAI exposes
+automatic caching, cache usage fields, and model-dependent write policy. Gemini offers
+implicit caching plus an explicit-cache route with TTL management. DeepSeek exposes
+`prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` for its disk-backed cache. Treat
+automatic caches as best effort. A structurally valid prefix can still miss because of
+routing, retention, capacity, or provider policy.
+
+This is the operational loop:
+
+- Log cached-read, cache-write, and uncached-input tokens separately. One field called
+  `input_tokens` rarely tells the whole bill.
+- Compute hit rate by token volume as well as request count. One missed 40K-token prefix
+  matters more than ten missed short prompts.
+- Investigate a long-context path below roughly 60% realized hit rate before adding more
+  cache controls. Stable prefixes often contain a hidden timestamp, request id, reordered
+  tool schema, or inconsistent serialization.
+- Compare cost and time-to-first-token against an uncached control. The useful result is
+  an observed delta on the workload that actually drives spend.
+
+The evidence is large enough to make the audit worthwhile. Chan and colleagues report
+41% to 80% API-cost reductions and 13% to 31% time-to-first-token improvements across
+providers on their benchmark. Those numbers are a direction, not a service-level promise.
+Benefits scale with a stable prefix, its reuse, and the share of each request that remains
+input-bound.
+
+## Move the seam and price the consequence
+
+The calculator holds a small agent workload fixed. Choose a boundary after stable material
+or put it after dynamic material, then vary the hit rate. The second choice intentionally
+turns every reuse into a miss. The cost curve makes the failure visible: a cache is only
+cheap when the content before its seam actually repeats.
+
+<Widget name="cache_economics" hint="Set the boundary after the stable prefix, then move the hit-rate slider. Switch the boundary after dynamic content to see why a timestamp or retrieved bundle in front of it turns every read back into a write.">
+  <PromptCachingEconomicsWidget />
+</Widget>
+
+## Cache, retrieve, or rebuild
+
+Caching, retrieval, and recomputation are three prices for showing the model information.
+Choose the cheapest mechanism that preserves the needed behavior.
+
+- **Cache in context** when the information is small enough for the working window,
+  byte-stable, and reused inside the retention window. System prompts, tool schemas, and a
+  static project reference are the default cases.
+- **Retrieve at the tail** when the corpus is large, changing, or rarely relevant. This is
+  the subject of [retrieval as memory](/retrieval-as-memory). Retrieval should preserve the
+  stable front rather than bisect it.
+- **Recompute, summarize, or train** when reuse is low, context is already crowded, or the
+  knowledge is universal enough to justify an expensive update path. Caching cannot repair
+  context rot or make output-bound work faster.
+
+Self-hosted serving widens the implementation options. PagedAttention reuses block-based
+KV state, while SGLang's RadixAttention can detect a longest shared token prefix across
+branches. Both are mechanisms for the same policy: consistent prefix ordering turns shared
+agent scaffolding into a reusable resource. They do not remove the need to isolate tenant
+state and evaluate timing side-channel risk.
+
+<Callout>
+The cache is a privacy boundary as well as a performance feature. Cache hits are faster,
+which can expose whether a prefix was recently used if tenants share a cache domain. Major
+providers document isolation controls, but a regulated design should still ask who shares a
+cache, where KV state resides, how long it lives, and what an attacker can infer from
+latency. Keep sensitive workloads in their smallest practical isolation domain.
+</Callout>
+
+## Benchmark the same workload twice
+
+The companion artifact sends the same generated workload through two layouts. The
+cache-friendly layout places a fixed prefix before each changing user tail. The
+cache-breaking layout places a changing nonce before the same fixed material. Offline mode
+is a deterministic model that keeps the check reproducible. Live mode records actual
+wall-clock latency and cache-hit usage from a labeled product example: DeepSeek Chat
+Completions. Supply current input prices on the command line so the cost report remains
+honest when pricing changes.
+
+<RunnableArtifact
+  name="cache_layout_benchmark"
+  path="artifacts/ch16-prompt-caching-economics/"
+  runtime="node 18+"
+  run={[
+    "cd artifacts/ch16-prompt-caching-economics",
+    "node cache_benchmark.mjs --simulate",
+    "DEEPSEEK_API_KEY=... node cache_benchmark.mjs --live --input-price 0.14 --cached-input-price 0.028"
+  ]}
+  requires="DEEPSEEK_API_KEY only for live mode; simulation runs offline">
+A self-contained cached-versus-cache-breaking benchmark. It reports per-layout input,
+cached-token, estimated-cost, and elapsed-time totals. Live mode uses the provider's usage
+fields rather than inferring a hit from prompt shape.
+</RunnableArtifact>
+
+## Exercises
+
+<ExerciseCard n="01" title="Draw your actual cache boundary">
+Take the structured request from one hot agent path and label every block stable, slow
+changing, or per-request. Place a single proposed boundary after the last stable block.
+Then find the earliest field that changes across two real requests. If it sits before the
+boundary, move it or accept the miss explicitly.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Reproduce a miss">
+Run the artifact in simulation mode, then run it live on a non-sensitive test workload if
+you have credentials. Change only the placement of the generated nonce. Compare cached
+input tokens, elapsed time, and cost. Keep the request count, completion cap, and pricing
+arguments fixed so the layout is the causal difference.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Set a cache alert">
+Choose one long-context path and write an alert definition using cached-read tokens divided
+by eligible prefix tokens. Include a minimum sample size, an owner, and a first diagnostic
+step for a result below 60%. Test the alert against a known dynamic-field regression.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Choose the memory lever">
+Pick a 20K-token reference corpus that an agent currently sends on every call. State how
+often it changes, how often it is used, and whether it fits beside the working task. Make a
+cache, retrieval, or recomputation decision and name the measurement that could overturn
+it.
+</ExerciseCard>
+
+## Sources
+
+- [OpenAI, "Prompt caching"](https://developers.openai.com/api/docs/guides/prompt-caching), for automatic and explicit cache behavior, prefix ordering, cache metrics, and the current model-dependent write policy.
+- [Anthropic, "Prompt caching"](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), for explicit cache controls, exact prefix matching, TTL behavior, cache-read and cache-write accounting, and breakpoint placement.
+- [Google, "Context caching"](https://ai.google.dev/gemini-api/docs/caching/), for implicit caching, explicit cache objects, TTL controls, and cache-hit usage reporting.
+- [DeepSeek, "Context Caching"](https://api-docs.deepseek.com/guides/kv_cache/), for disk-backed prefix caching, hit and miss usage fields, and its best-effort caveat.
+- [Chan et al., "Don't Break the Cache: A Framework for Cache-Aware LLM Application Design"](https://arxiv.org/abs/2601.06007), for the cross-provider benchmark on cost and time-to-first-token effects.
+- [Zheng et al., "SGLang: Efficient Execution of Structured Language Model Programs"](https://arxiv.org/abs/2312.07104), for RadixAttention and longest-prefix KV sharing in self-hosted serving.
+- [Gu et al., "Token-Level Membership Inference Attacks against Prompt Caching"](https://arxiv.org/abs/2502.07776), for the timing side-channel risk of shared prompt caches.
