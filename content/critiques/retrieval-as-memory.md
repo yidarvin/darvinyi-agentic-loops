@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -28,3 +28,16 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 4. **Teaching text is readable.** `src/chapters/_figures/RetrievalAsMemoryFigure.tsx` promotes semantic labels from `--comment` to passing foreground-muted text, reflows the failure labels, and renders meaningful SVG labels at at least 15 user units. The widget promotes its result explanation, rank headers, candidate rationale, and packet labels to readable `text-xs` text with passing colors.
 
 No advisories were taken: the escaped README Markdown and optional table semantics remain outside this resolution scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` pass.
+
+## Round 2 review (2026-07-16)
+
+Fresh-eyes re-review: read the complete critique and git history, the current chapter, figure, widget, artifact, fixture, README, build notes, and research backbone. Re-ran `npm run check`, which passes all seven sections. Manually ran the artifact's default, irrelevant-query, invalid-date, and constrained-budget paths against temporary stores. Re-verified every Round 1 REQUIRED fix: the irrelevant query injects zero evidence and abstains, `2026-02-31` is rejected, the widget declares the RRF tie and lets reranking order it, and the central figure/widget labels now use passing semantic colors at the resolved sizes. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. Those sources support the chapter's material claims.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:173-239,430-499` --- the default lab's reranker injects distractors and can spend the packet budget before it selects the answer-bearing policy.** The default question is the same identifier question modeled by the widget, yet `node retrieval_memory.mjs --reset --json` injects all four eligible Acme records: the incident, release calendar, current policy, and telemetry. More concretely, with `--budget 42`, it injects the 21-token incident and 19-token release calendar, then holds the 21-token current checkout policy as `held-budget`, even though the incident plus current policy fit exactly in 42 tokens. At the supported minimum `--budget 20`, it holds the 21-token incident and policy, injects only the 19-token release calendar, and still says it can answer. The chapter's thesis requires the smallest answer-bearing packet (`src/chapters/retrieval-as-memory.mdx:4-7`), and the widget teaches the same query as incident plus current policy with telemetry held (`RetrievalAsMemoryWidget.tsx:28-85`). The lab's positive-score relevance check and low injection threshold make a stale precision failure look like a successful rerank. Make the fixture's selection order demonstrate answerability rather than raw topical overlap, add deterministic assertions that the default and 42-token runs inject the incident and current policy while holding the calendar and telemetry, and reject or abstain when an accepted budget cannot hold answer-bearing evidence. It must not claim it can answer from a distractor-only packet.
+
+## Advisories
+
+- `artifacts/ch17-retrieval-as-memory/README.md` still escapes its Markdown backticks and fences. The commands remain clear and the artifact runs, so this stays non-blocking.
+- The widget's visual rank grid could use table semantics or explicit header associations for stronger screen-reader navigation. Its content is exposed linearly, so this stays non-blocking.
