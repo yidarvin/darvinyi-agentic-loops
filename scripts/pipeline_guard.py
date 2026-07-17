@@ -25,13 +25,17 @@ def git(repo: Path, *args: str, text: bool = True) -> subprocess.CompletedProces
     neutral_cwd = Path(os.environ.get("HOME", "/"))
     if not neutral_cwd.is_dir():
         neutral_cwd = Path("/")
-    proc = subprocess.run(
-        [str(helper), "--repo", str(repo), *args],
-        cwd=neutral_cwd,
-        text=text,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [str(helper), "--repo", str(repo), *args],
+            cwd=neutral_cwd,
+            text=text,
+            capture_output=True,
+            check=False,
+            timeout=float(os.environ.get("PIPELINE_LOCAL_GIT_TIMEOUT_SECONDS", "60")),
+        )
+    except subprocess.TimeoutExpired as error:
+        raise GuardError(f"git {' '.join(args)} exceeded its local deadline") from error
     if proc.returncode != 0:
         stderr = proc.stderr.strip() if text else proc.stderr.decode("utf-8", "replace").strip()
         raise GuardError(f"git {' '.join(args)} failed: {stderr or f'exit {proc.returncode}'}")

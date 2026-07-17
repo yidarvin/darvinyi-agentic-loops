@@ -9,6 +9,10 @@ export PATH="$ROOT/scripts/service-bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 GIT_HELPER="$ROOT/scripts/pipeline-git.sh"
 SYNC_COMMAND="${PIPELINE_SYNC_COMMAND:-$ROOT/scripts/pipeline-sync.sh}"
 WATCHDOG="$ROOT/scripts/process_watchdog.py"
+PROCESS_STATE_TOOL="$ROOT/scripts/process_state.py"
+PROCESS_STATE="$ROOT/.pipeline/active-process.json"
+VALIDATION_FAILURE="$ROOT/.pipeline/validation-failure.json"
+VALIDATED_HEAD="$ROOT/.pipeline/validated-head"
 
 MODEL="${TERRA_MODEL:-gpt-5.6-terra}"
 EFFORT="${TERRA_EFFORT:-ultra}"
@@ -17,6 +21,11 @@ IDLE_TIMEOUT="${TERRA_IDLE_TIMEOUT_SECONDS:-1800}"
 MAX_RUNTIME="${TERRA_MAX_RUNTIME_SECONDS:-5400}"
 WATCHDOG_TERM_GRACE="${TERRA_WATCHDOG_TERM_GRACE_SECONDS:-10}"
 WATCHDOG_POLL="${TERRA_WATCHDOG_POLL_SECONDS:-5}"
+VALIDATION_IDLE_TIMEOUT="${PIPELINE_VALIDATION_IDLE_TIMEOUT_SECONDS:-600}"
+VALIDATION_MAX_RUNTIME="${PIPELINE_VALIDATION_MAX_RUNTIME_SECONDS:-1800}"
+PIPELINE_TERM_GRACE="${PIPELINE_WATCHDOG_TERM_GRACE_SECONDS:-10}"
+PIPELINE_POLL="${PIPELINE_WATCHDOG_POLL_SECONDS:-2}"
+REPAIR_ATTEMPTS_PER_RUN="${PIPELINE_REPAIR_ATTEMPTS_PER_RUN:-1}"
 PUSH=0
 PUSH_ON_DONE=0
 CHECK=1
@@ -27,7 +36,7 @@ RETRIES=1
 
 usage() {
   cat <<'EOF'
-Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [options]
+Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover|repair|preflight] [options]
 
   -m, --model MODEL    Terra model (default: gpt-5.6-terra)
   -e, --effort LEVEL   reasoning effort (default: ultra)
@@ -47,7 +56,8 @@ Usage: ./run.sh [status|doctor|next|loop [N]|build|critique|resolve|recover] [op
 
 Exit codes: 0 success, 1 stage failure, 2 usage/invariant failure,
 69 infrastructure synchronization failure, 75 asynchronous work still settling,
-76 model stage watchdog timeout (safe to retry).
+76 model stage watchdog timeout, 77 stage validation failure requiring repair,
+78 validation watchdog timeout, 79 baseline preflight failure (both retry without model recovery).
 loop N counts stages, not chapters.
 Terra never commits or pushes. The driver validates exact role-specific scope,
 the queue outcome, and the full project gate before creating a commit.
@@ -59,7 +69,7 @@ is_positive() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 
 while (($#)); do
   case "$1" in
-    status|doctor|next|build|critique|resolve|recover) VERB="$1"; shift ;;
+    status|doctor|next|build|critique|resolve|recover|repair|preflight) VERB="$1"; shift ;;
     loop) VERB=loop; LIMIT=999999; shift; if (($#)) && is_positive "$1"; then LIMIT="$1"; shift; fi ;;
     -m|--model) (($# >= 2)) || die "$1 needs a value"; MODEL="$2"; shift 2 ;;
     -e|--effort) (($# >= 2)) || die "$1 needs a value"; EFFORT="$2"; shift 2 ;;
@@ -85,12 +95,12 @@ PUBLISH_READY="$ROOT/.pipeline/publish-ready"
 cd "$ROOT"
 [[ -f content/registry.json && -f prompts/queue.md && -x "$GUARD" && -x "$GIT_HELPER" && -x "$SYNC_COMMAND" ]] || die "not a runnable refsite repository"
 
-terra_active() {
-  pgrep -f "codex .* -C $ROOT exec" >/dev/null 2>&1
+pipeline_process_active() {
+  "$PROCESS_STATE_TOOL" active --state "$PROCESS_STATE" >/dev/null 2>&1
   local rc=$?
   [[ $rc -eq 0 ]] && return 0
   [[ $rc -eq 1 ]] && return 1
-  echo "run.sh: could not inspect Terra processes" >&2
+  echo "run.sh: could not inspect the owned pipeline process" >&2
   return 2
 }
 
@@ -217,20 +227,88 @@ PY
   fi
 }
 
+record_validation_failure() {
+  local kind="$1" stage="$2" slug="$3" log="$4" exit_code="$5"
+  python3 - "$VALIDATION_FAILURE" "$kind" "$stage" "$slug" "$log" "$exit_code" <<'PY'
+import json, os, pathlib, sys, time
+path = pathlib.Path(sys.argv[1])
+payload = {
+    "version": 1,
+    "kind": sys.argv[2],
+    "stage": sys.argv[3],
+    "slug": sys.argv[4],
+    "log": sys.argv[5],
+    "exit_code": int(sys.argv[6]),
+    "recorded_at": int(time.time()),
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+with temp.open("x", encoding="utf-8") as handle:
+    json.dump(payload, handle, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temp, path)
+PY
+}
+
+clear_validation_failure() {
+  rm -f "$VALIDATION_FAILURE"
+}
+
+record_validated_head() {
+  local temp="$VALIDATED_HEAD.$$.tmp"
+  "$GIT_HELPER" --repo "$ROOT" rev-parse HEAD >"$temp"
+  mv "$temp" "$VALIDATED_HEAD"
+}
+
+run_validation() {
+  local stage="$1" slug="$2" log rc
+  log="$ROOT/.pipeline/validation-${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
+  set +e
+  if (( CHECK )); then
+    "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label "validation:$stage:$slug" \
+      --idle-timeout "$VALIDATION_IDLE_TIMEOUT" --max-runtime "$VALIDATION_MAX_RUNTIME" \
+      --term-grace "$PIPELINE_TERM_GRACE" --poll-interval "$PIPELINE_POLL" \
+      -- npm run check
+  else
+    "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label "validation:$stage:$slug" \
+      --idle-timeout "$VALIDATION_IDLE_TIMEOUT" --max-runtime "$VALIDATION_MAX_RUNTIME" \
+      --term-grace "$PIPELINE_TERM_GRACE" --poll-interval "$PIPELINE_POLL" \
+      -- python3 scripts/validate.py
+  fi
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    clear_validation_failure
+    return 0
+  fi
+  tail -80 "$log" >&2 || true
+  if (( rc == 124 )); then
+    record_validation_failure infrastructure-timeout "$stage" "$slug" "$log" "$rc"
+    echo "run.sh: validation deadline expired; preserving the leased stage for infrastructure retry" >&2
+    return 78
+  fi
+  record_validation_failure stage-validation "$stage" "$slug" "$log" "$rc"
+  echo "run.sh: stage validation failed; preserving output for a scoped repair attempt" >&2
+  return 77
+}
+
 commit_stage() {
   local stage="$1" slug="$2" num="$3" message="$4" lease_stage lease_slug lease_num lease_state
   read -r lease_stage lease_slug lease_num lease_state < <("$GUARD" --repo "$ROOT" lease-verify)
   [[ "$lease_stage $lease_slug $lease_num" == "$stage $slug $num" ]] || die "active lease does not match $stage $slug $num"
   "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num"
   record_approved_critique "$stage" "$slug"
-  python3 scripts/validate.py
-  if (( CHECK )); then npm run check; fi
+  run_validation "$stage" "$slug" || return $?
   "$GUARD" --repo "$ROOT" outcome "$stage" "$slug"
   "$GUARD" --repo "$ROOT" branch >/dev/null
   "$GIT_HELPER" --repo "$ROOT" add -A
   "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num" >/dev/null
   "$GIT_HELPER" --repo "$ROOT" commit -m "$message"
   "$GUARD" --repo "$ROOT" lease-clear
+  clear_validation_failure
+  record_validated_head
   if (( PUSH )); then
     push_head
   elif (( PUSH_ON_DONE )); then
@@ -238,9 +316,78 @@ commit_stage() {
   fi
 }
 
+repair_stage() {
+  local lease_stage lease_slug lease_num lease_state kind failure_stage failure_slug failure_log
+  local prompt log repair_rc active_rc
+  read -r lease_stage lease_slug lease_num lease_state < <("$GUARD" --repo "$ROOT" lease-verify)
+  [[ -f "$VALIDATION_FAILURE" ]] || die "no recorded validation failure to repair"
+  read -r kind failure_stage failure_slug failure_log < <(python3 - "$VALIDATION_FAILURE" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data.get("kind", ""), data.get("stage", ""), data.get("slug", ""), data.get("log", ""))
+PY
+)
+  [[ "$failure_stage $failure_slug" == "$lease_stage $lease_slug" ]] \
+    || die "validation failure does not match the active lease"
+  if [[ "$kind" == infrastructure-timeout ]]; then
+    commit_stage "$lease_stage" "$lease_slug" "$lease_num" \
+      "${lease_stage}(${lease_slug}): recover validated Terra stage"
+    return $?
+  fi
+  [[ "$kind" == stage-validation ]] || die "unknown validation failure kind '$kind'"
+  "$GUARD" --repo "$ROOT" scope "$lease_stage" "$lease_slug" "$lease_num" >/dev/null
+  prompt="You are repairing a failed validation for the active $lease_stage stage of chapter '$lease_slug'. Read $failure_log and the current uncommitted diff. Fix only the concrete failures caused by this chapter stage. Preserve all valid work and stay inside the original role scope. Do not edit pipeline code, configuration, other chapters, or unrelated files. Run focused checks as useful, but do not commit or push; the parent will run the full gate."
+  log="$ROOT/.pipeline/repair-${lease_stage}-${lease_slug}-$(date +%Y%m%d-%H%M%S).log"
+  set +e
+  "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label "repair:$lease_stage:$lease_slug" \
+    --idle-timeout "$IDLE_TIMEOUT" --max-runtime "$MAX_RUNTIME" \
+    --term-grace "$WATCHDOG_TERM_GRACE" --poll-interval "$WATCHDOG_POLL" \
+    -- codex --search -m "$MODEL" -c "model_reasoning_effort=\"$EFFORT\"" \
+    -s "$SANDBOX" -a never -C "$ROOT" exec "$prompt"
+  repair_rc=$?
+  set -e
+  if pipeline_process_active; then
+    echo "run.sh: validation repair is still active" >&2
+    return 75
+  else
+    active_rc=$?
+    [[ $active_rc -eq 1 ]] || return "$active_rc"
+  fi
+  if (( repair_rc == 124 )); then
+    echo "run.sh: validation repair watchdog timed out; preserving stage output" >&2
+    return 76
+  fi
+  if (( repair_rc != 0 )); then
+    echo "run.sh: repair model exited $repair_rc; validating any resulting changes" >&2
+    tail -40 "$log" >&2 || true
+  fi
+  commit_stage "$lease_stage" "$lease_slug" "$lease_num" \
+    "${lease_stage}(${lease_slug}): Terra stage"
+}
+
+commit_with_repair() {
+  local stage="$1" slug="$2" num="$3" message="$4" rc attempt
+  if commit_stage "$stage" "$slug" "$num" "$message"; then
+    return 0
+  else
+    rc=$?
+  fi
+  (( rc == 77 )) || return "$rc"
+  for ((attempt=1; attempt<=REPAIR_ATTEMPTS_PER_RUN; attempt++)); do
+    echo "run.sh: starting scoped validation repair attempt $attempt/$REPAIR_ATTEMPTS_PER_RUN" >&2
+    if repair_stage; then
+      return 0
+    else
+      rc=$?
+    fi
+    (( rc == 77 )) || return "$rc"
+  done
+  return 77
+}
+
 recover_stage() {
   local active_rc lease_stage lease_slug lease_num lease_state
-  if terra_active; then
+  if pipeline_process_active; then
     echo "run.sh: Terra is still active; recovery will wait" >&2
     return 75
   else
@@ -255,8 +402,44 @@ recover_stage() {
     die "recorded Terra stage has no changes to recover"
   fi
   read -r lease_stage lease_slug lease_num lease_state < <("$GUARD" --repo "$ROOT" lease-verify)
-  commit_stage "$lease_stage" "$lease_slug" "$lease_num" \
+  commit_with_repair "$lease_stage" "$lease_slug" "$lease_num" \
     "${lease_stage}(${lease_slug}): recover asynchronous Terra stage"
+}
+
+preflight_stage() {
+  local head validated='' log rc
+  if has_changes; then
+    die "baseline preflight requires a clean working tree"
+  else
+    local changed_rc=$?
+    [[ $changed_rc -eq 1 ]] || return "$changed_rc"
+  fi
+  head="$("$GIT_HELPER" --repo "$ROOT" rev-parse HEAD)"
+  [[ -f "$VALIDATED_HEAD" ]] && validated="$(tr -d '[:space:]' <"$VALIDATED_HEAD")"
+  if [[ "$validated" == "$head" ]]; then
+    echo "run.sh: baseline preflight already passed for $head"
+    return 0
+  fi
+  log="$ROOT/.pipeline/preflight-$(date +%Y%m%d-%H%M%S).log"
+  set +e
+  "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label preflight \
+    --idle-timeout "$VALIDATION_IDLE_TIMEOUT" --max-runtime "$VALIDATION_MAX_RUNTIME" \
+    --term-grace "$PIPELINE_TERM_GRACE" --poll-interval "$PIPELINE_POLL" \
+    -- npm run check
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    record_validated_head
+    echo "run.sh: baseline preflight passed for $head"
+    return 0
+  fi
+  tail -80 "$log" >&2 || true
+  if (( rc == 124 )); then
+    echo "run.sh: baseline validation deadline expired" >&2
+    return 78
+  fi
+  echo "run.sh: baseline preflight failed at unchanged HEAD; no chapter model will run" >&2
+  return 79
 }
 
 run_stage() {
@@ -274,7 +457,7 @@ run_stage() {
     local changed_rc=$?
     [[ $changed_rc -eq 1 ]] || return "$changed_rc"
   fi
-  if terra_active; then
+  if pipeline_process_active; then
     echo "run.sh: another Terra stage is already active" >&2
     return 75
   else
@@ -285,7 +468,7 @@ run_stage() {
   "$GUARD" --repo "$ROOT" lease-create "$stage" "$slug" "$num"
   log=".pipeline/${stage}-${slug}-$(date +%Y%m%d-%H%M%S).log"
   set +e
-  "$WATCHDOG" --log "$log" \
+  "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label "model:$stage:$slug" \
     --idle-timeout "$IDLE_TIMEOUT" \
     --max-runtime "$MAX_RUNTIME" \
     --term-grace "$WATCHDOG_TERM_GRACE" \
@@ -295,7 +478,7 @@ run_stage() {
   codex_rc=$?
   set -e
 
-  if terra_active; then
+  if pipeline_process_active; then
     echo "run.sh: Terra handed off to a child process; lease retained" >&2
     return 75
   else
@@ -308,7 +491,7 @@ run_stage() {
       echo "run.sh: Codex exited $codex_rc after producing changes; validating output" >&2
       tail -40 "$log" >&2
     fi
-    commit_stage "$stage" "$slug" "$num" "${stage}(${slug}): Terra stage"
+    commit_with_repair "$stage" "$slug" "$num" "${stage}(${slug}): Terra stage"
     return 0
   else
     local changed_rc=$?
@@ -351,6 +534,11 @@ show_status() {
   else
     echo "LEASE none"
   fi
+  "$PROCESS_STATE_TOOL" show --state "$PROCESS_STATE" 2>/dev/null || echo "PROCESS invalid"
+  [[ -f .pipeline/no-progress-retry ]] && printf 'NO_PROGRESS_RETRY %s\n' "$(cat .pipeline/no-progress-retry)"
+  [[ -f .pipeline/validation-retry ]] && printf 'VALIDATION_RETRY %s\n' "$(cat .pipeline/validation-retry)"
+  [[ -f .pipeline/sync-retry ]] && printf 'SYNC_RETRY %s\n' "$(cat .pipeline/sync-retry)"
+  return 0
 }
 
 show_doctor() {
@@ -378,13 +566,21 @@ if [[ "$VERB" == status ]]; then
   show_status
 elif [[ "$VERB" == doctor ]]; then
   show_doctor
+elif [[ "$VERB" == preflight ]]; then
+  [[ -x "$WATCHDOG" && -x "$PROCESS_STATE_TOOL" ]] || die "pipeline watchdog tools are not executable"
+  command -v npm >/dev/null || die "npm is not on PATH"
+  preflight_stage
 elif [[ "$VERB" == recover ]]; then
   [[ -x "$PIPELINE_GIT_BIN" ]] || die "pinned Git is not executable: $PIPELINE_GIT_BIN"
   if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
   recover_stage
+elif [[ "$VERB" == repair ]]; then
+  command -v codex >/dev/null || die "codex CLI is not on PATH"
+  [[ -x "$WATCHDOG" && -x "$PROCESS_STATE_TOOL" ]] || die "pipeline watchdog tools are not executable"
+  repair_stage
 else
   command -v codex >/dev/null || die "codex CLI is not on PATH"
-  [[ -x "$WATCHDOG" ]] || die "stage watchdog is not executable: $WATCHDOG"
+  [[ -x "$WATCHDOG" && -x "$PROCESS_STATE_TOOL" ]] || die "pipeline watchdog tools are not executable"
   [[ -x "$PIPELINE_GIT_BIN" ]] || die "pinned Git is not executable: $PIPELINE_GIT_BIN"
   if (( CHECK )); then command -v npm >/dev/null || die "npm is not on PATH"; fi
   if [[ "$VERB" == loop ]]; then

@@ -5,7 +5,12 @@ set -uo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="${PIPELINE_REPO_ROOT:-$ROOT}"
 GIT_HELPER="$ROOT/scripts/pipeline-git.sh"
+WATCHDOG="$ROOT/scripts/process_watchdog.py"
 SYNC_EXIT=69
+SYNC_IDLE_TIMEOUT="${PIPELINE_SYNC_IDLE_TIMEOUT_SECONDS:-120}"
+SYNC_MAX_RUNTIME="${PIPELINE_SYNC_MAX_RUNTIME_SECONDS:-900}"
+WATCHDOG_TERM_GRACE="${PIPELINE_WATCHDOG_TERM_GRACE_SECONDS:-10}"
+WATCHDOG_POLL="${PIPELINE_WATCHDOG_POLL_SECONDS:-2}"
 
 if [[ "${1:-}" == --repo ]]; then
   (($# == 2)) || { echo "pipeline-sync: usage: pipeline-sync.sh [--repo PATH]" >&2; exit 2; }
@@ -15,8 +20,26 @@ elif (($#)); then
   exit 2
 fi
 
+PROCESS_STATE="$REPO_ROOT/.pipeline/active-process.json"
+
 git_run() {
   "$GIT_HELPER" --repo "$REPO_ROOT" "$@"
+}
+
+bounded_push() {
+  local log rc
+  mkdir -p "$REPO_ROOT/.pipeline"
+  log="$REPO_ROOT/.pipeline/sync-$(date +%Y%m%d-%H%M%S).log"
+  set +e
+  PIPELINE_GIT_TIMEOUT_SECONDS="$SYNC_MAX_RUNTIME" \
+  "$WATCHDOG" --log "$log" --state "$PROCESS_STATE" --label sync:push \
+    --idle-timeout "$SYNC_IDLE_TIMEOUT" --max-runtime "$SYNC_MAX_RUNTIME" \
+    --term-grace "$WATCHDOG_TERM_GRACE" --poll-interval "$WATCHDOG_POLL" \
+    -- "$GIT_HELPER" --repo "$REPO_ROOT" push "$@"
+  rc=$?
+  set -e
+  cat "$log"
+  return "$rc"
 }
 
 sync_failed() {
@@ -42,7 +65,7 @@ fi
 
 if (( set_upstream )); then
   echo "pipeline-sync: remote branch is not present; pushing the local branch"
-  git_run push -u origin HEAD || sync_failed "git push failed"
+  bounded_push -u origin HEAD || sync_failed "git push failed or exceeded its deadline"
   exit 0
 fi
 
@@ -59,4 +82,4 @@ if (( ahead == 0 )); then
 fi
 
 echo "pipeline-sync: pushing $ahead committed stage(s) to $upstream"
-git_run push || sync_failed "git push failed"
+bounded_push || sync_failed "git push failed or exceeded its deadline"

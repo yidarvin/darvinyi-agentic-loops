@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import signal
@@ -29,6 +30,8 @@ def parse_args() -> argparse.Namespace:
         description="Bound a command by output inactivity and total runtime."
     )
     parser.add_argument("--log", required=True, type=Path)
+    parser.add_argument("--state", type=Path)
+    parser.add_argument("--label", default="command")
     parser.add_argument("--idle-timeout", required=True, type=positive_seconds)
     parser.add_argument("--max-runtime", required=True, type=positive_seconds)
     parser.add_argument("--term-grace", default=10.0, type=positive_seconds)
@@ -83,11 +86,30 @@ def terminate_process_group(process: subprocess.Popen[bytes], grace: float) -> N
             pass
 
 
+def atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temp.open("x", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    finally:
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def main() -> int:
     args = parse_args()
     args.log.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    started_at = time.time()
     last_activity = started
+    last_output_at = started_at
     interrupted_by: int | None = None
 
     def remember_signal(signum: int, _frame: object) -> None:
@@ -105,13 +127,37 @@ def main() -> int:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        state: dict[str, object] = {
+            "version": 1,
+            "label": args.label,
+            "state": "running",
+            "pid": process.pid,
+            "pgid": process.pid,
+            "started_at": started_at,
+            "updated_at": started_at,
+            "last_output_at": started_at,
+            "idle_timeout_seconds": args.idle_timeout,
+            "max_runtime_seconds": args.max_runtime,
+            "max_deadline_at": started_at + args.max_runtime,
+            "log": str(args.log.resolve()),
+            "command": Path(args.command[0]).name,
+        }
+
+        def persist(**updates: object) -> None:
+            if args.state is None:
+                return
+            state.update(updates)
+            state["updated_at"] = time.time()
+            atomic_write_json(args.state, state)
+
+        persist()
         last_size = 0
         reason: str | None = None
         while True:
             try:
-                return process.wait(timeout=args.poll_interval)
+                returncode = process.wait(timeout=args.poll_interval)
             except subprocess.TimeoutExpired:
-                pass
+                returncode = None
 
             now = time.monotonic()
             try:
@@ -121,6 +167,18 @@ def main() -> int:
             if current_size != last_size:
                 last_size = current_size
                 last_activity = now
+                last_output_at = time.time()
+
+            if returncode is not None:
+                persist(
+                    state="succeeded" if returncode == 0 else "failed",
+                    exit_code=returncode,
+                    last_output_at=last_output_at,
+                    finished_at=time.time(),
+                )
+                return returncode
+
+            persist(last_output_at=last_output_at)
 
             if interrupted_by is not None:
                 reason = f"received signal {interrupted_by}"
@@ -137,7 +195,22 @@ def main() -> int:
         log_handle.write(f"\n[watchdog] {message}\n".encode())
         print(message, file=sys.stderr)
         if interrupted_by is not None:
-            return 128 + interrupted_by
+            exit_code = 128 + interrupted_by
+            persist(
+                state="interrupted",
+                exit_code=exit_code,
+                reason=reason or "interrupted",
+                last_output_at=last_output_at,
+                finished_at=time.time(),
+            )
+            return exit_code
+        persist(
+            state="timed-out",
+            exit_code=TIMEOUT_EXIT,
+            reason=reason or "deadline exceeded",
+            last_output_at=last_output_at,
+            finished_at=time.time(),
+        )
         return TIMEOUT_EXIT
 
 

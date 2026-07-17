@@ -13,11 +13,16 @@ STATUS="$ROOT/.pipeline/queue-worker.status"
 LOCK="${PIPELINE_LOCK_FILE:-/private/tmp/com.darvin.agentic-loops-queue.lock}"
 SYNC_RETRY_FILE="$ROOT/.pipeline/sync-retry"
 NO_PROGRESS_RETRY_FILE="$ROOT/.pipeline/no-progress-retry"
+VALIDATION_RETRY_FILE="$ROOT/.pipeline/validation-retry"
+PROCESS_STATE_TOOL="$ROOT/scripts/process_state.py"
+PROCESS_STATE="$ROOT/.pipeline/active-process.json"
 PUBLISH_READY="$ROOT/.pipeline/publish-ready"
 SYNC_BACKOFF_BASE_SECONDS="${PIPELINE_SYNC_BACKOFF_BASE_SECONDS:-60}"
 SYNC_BACKOFF_CAP_SECONDS="${PIPELINE_SYNC_BACKOFF_CAP_SECONDS:-900}"
 NO_PROGRESS_BACKOFF_BASE_SECONDS="${PIPELINE_NO_PROGRESS_BACKOFF_BASE_SECONDS:-60}"
 NO_PROGRESS_BACKOFF_CAP_SECONDS="${PIPELINE_NO_PROGRESS_BACKOFF_CAP_SECONDS:-900}"
+VALIDATION_BACKOFF_BASE_SECONDS="${PIPELINE_VALIDATION_BACKOFF_BASE_SECONDS:-60}"
+VALIDATION_BACKOFF_CAP_SECONDS="${PIPELINE_VALIDATION_BACKOFF_CAP_SECONDS:-900}"
 ASYNC_GRACE_SECONDS="${QUEUE_ASYNC_GRACE_SECONDS:-180}"
 STAGES_PER_TICK="${QUEUE_STAGES_PER_TICK:-6}"
 LEASE_CONTINUE=0
@@ -42,12 +47,12 @@ report_status() {
   echo "queue worker: $message"
 }
 
-terra_active() {
-  pgrep -f "codex .* -C $ROOT exec" >/dev/null 2>&1
+pipeline_process_active() {
+  "$PROCESS_STATE_TOOL" active --state "$PROCESS_STATE" >/dev/null 2>&1
   local rc=$?
   [[ $rc -eq 0 ]] && return 0
   [[ $rc -eq 1 ]] && return 1
-  report_status 'cannot inspect Terra process state; stopping safely'
+  report_status 'cannot inspect owned pipeline process state; stopping safely'
   return 2
 }
 
@@ -65,6 +70,47 @@ clear_sync_backoff() {
 
 clear_no_progress_backoff() {
   rm -f "$NO_PROGRESS_RETRY_FILE"
+}
+
+clear_validation_backoff() {
+  rm -f "$VALIDATION_RETRY_FILE"
+}
+
+schedule_validation_retry() {
+  local count=0 ignored=0 exponent delay now not_before temp i
+  if [[ -f "$VALIDATION_RETRY_FILE" ]]; then
+    read -r count ignored <"$VALIDATION_RETRY_FILE" || count=0
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  fi
+  ((count += 1))
+  exponent=$((count - 1))
+  (( exponent > 10 )) && exponent=10
+  delay=$VALIDATION_BACKOFF_BASE_SECONDS
+  for ((i=0; i<exponent; i++)); do delay=$((delay * 2)); done
+  (( delay > VALIDATION_BACKOFF_CAP_SECONDS )) && delay=$VALIDATION_BACKOFF_CAP_SECONDS
+  now="$(date +%s)"
+  not_before=$((now + delay))
+  temp="$VALIDATION_RETRY_FILE.$$.tmp"
+  printf '%s %s\n' "$count" "$not_before" >"$temp"
+  mv "$temp" "$VALIDATION_RETRY_FILE"
+  report_status "validation recovery failure $count; retrying automatically in ${delay}s"
+}
+
+validation_backoff_active() {
+  local count not_before now remaining
+  [[ -f "$VALIDATION_RETRY_FILE" ]] || return 1
+  if ! read -r count not_before <"$VALIDATION_RETRY_FILE" \
+    || [[ ! "$count" =~ ^[0-9]+$ || ! "$not_before" =~ ^[0-9]+$ ]]; then
+    clear_validation_backoff
+    return 1
+  fi
+  now="$(date +%s)"
+  if (( now < not_before )); then
+    remaining=$((not_before - now))
+    report_status "validation recovery backoff active (${remaining}s); work is preserved"
+    return 0
+  fi
+  return 1
 }
 
 schedule_no_progress_retry() {
@@ -184,8 +230,8 @@ handle_existing_lease() {
   local stage slug num state age active_rc recover_rc
   [[ -f .pipeline/active-stage.json ]] || return 1
 
-  if terra_active; then
-    report_status 'Terra stage is active; waiting'
+  if pipeline_process_active; then
+    report_status 'owned pipeline subprocess is active; waiting'
     return 0
   else
     active_rc=$?
@@ -193,6 +239,9 @@ handle_existing_lease() {
   fi
 
   if has_changes; then
+    if validation_backoff_active; then
+      return 0
+    fi
     report_status 'recovering completed asynchronous Terra output'
     set +e
     TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" recover --push-on-done
@@ -200,6 +249,7 @@ handle_existing_lease() {
     set -e
     if (( recover_rc == 0 )); then
       clear_no_progress_backoff
+      clear_validation_backoff
       report_status 'asynchronous Terra stage recovered; chapter-boundary publication policy applied'
       LEASE_CONTINUE=1
       return 0
@@ -208,6 +258,11 @@ handle_existing_lease() {
       schedule_sync_retry
       report_status 'asynchronous stage is committed locally; synchronization deferred without model recovery'
       return 69
+    fi
+    if (( recover_rc == 77 || recover_rc == 78 || recover_rc == 76 )); then
+      schedule_validation_retry
+      report_status "validation recovery deferred after exit $recover_rc; lease and changes preserved"
+      return 0
     fi
     report_status "asynchronous recovery failed with exit $recover_rc; preserving lease and changes"
     return "$recover_rc"
@@ -241,8 +296,8 @@ run_worker() {
   date '+%Y-%m-%dT%H:%M:%S%z queue worker tick'
   "$GUARD" --repo "$ROOT" branch >/dev/null
 
-  if terra_active; then
-    report_status 'Terra stage is active; waiting'
+  if pipeline_process_active; then
+    report_status 'owned pipeline subprocess is active; waiting'
     return 0
   else
     active_rc=$?
@@ -271,6 +326,24 @@ run_worker() {
   else
     local changed_rc=$?
     [[ $changed_rc -eq 1 ]] || return "$changed_rc"
+  fi
+
+  if validation_backoff_active; then
+    return 0
+  fi
+  set +e
+  "$ROOT/run.sh" preflight
+  run_rc=$?
+  set -e
+  if (( run_rc == 0 )); then
+    clear_validation_backoff
+  elif (( run_rc == 78 || run_rc == 79 )); then
+    schedule_validation_retry
+    report_status "baseline preflight failed with exit $run_rc; no chapter model invoked"
+    return 0
+  else
+    report_status "baseline preflight failed unexpectedly with exit $run_rc"
+    return "$run_rc"
   fi
 
   for ((iteration=1; iteration<=STAGES_PER_TICK; iteration++)); do
@@ -303,6 +376,11 @@ run_worker() {
     fi
     if (( run_rc == 76 )); then
       report_status 'stage watchdog timed out; launchd will retry automatically'
+      return 0
+    fi
+    if (( run_rc == 77 || run_rc == 78 )); then
+      schedule_validation_retry
+      report_status "stage validation deferred after exit $run_rc; lease and changes preserved"
       return 0
     fi
     if (( run_rc == 69 )); then

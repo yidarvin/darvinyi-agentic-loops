@@ -16,8 +16,21 @@ GUARD = ROOT / "scripts/pipeline_guard.py"
 WATCHDOG = ROOT / "scripts/process_watchdog.py"
 
 
-def run(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True, check=False)
+def run(
+    *args: str,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
+    )
 
 
 def fixture() -> Path:
@@ -178,9 +191,12 @@ def test_service_git_plan_is_pinned_and_shimmed() -> None:
     assert args[1] == str(ROOT / "scripts/queue-worker.sh")
     environment = plist["EnvironmentVariables"]
     assert environment["PIPELINE_GIT_BIN"] == "/usr/bin/git"
+    assert environment["PIPELINE_GIT_TIMEOUT_SECONDS"] == "60"
     assert environment["PATH"].split(":")[0] == str(ROOT / "scripts/service-bin")
     assert environment["TERRA_IDLE_TIMEOUT_SECONDS"] == "1800"
     assert environment["TERRA_MAX_RUNTIME_SECONDS"] == "5400"
+    assert environment["PIPELINE_VALIDATION_MAX_RUNTIME_SECONDS"] == "1800"
+    assert environment["PIPELINE_SYNC_MAX_RUNTIME_SECONDS"] == "900"
     worker = (ROOT / "scripts/queue-worker.sh").read_text(encoding="utf-8")
     assert "/usr/bin/shlock" in worker
     assert "PIPELINE_GIT_BIN" in worker
@@ -233,6 +249,25 @@ def test_git_shim_and_parent_helper_pin_apple_git() -> None:
         observed = json.loads(trace.read_text(encoding="utf-8"))
         assert Path(observed["cwd"]).resolve() == home.resolve()
         assert observed["args"][:2] == ["-C", str(work)]
+
+        hanging_git = work / "hanging-git"
+        hanging_git.write_text("#!/bin/bash\nsleep 30\n", encoding="utf-8")
+        hanging_git.chmod(0o755)
+        started = time.monotonic()
+        timed_out = run(
+            str(helper), "--repo", str(work), "status",
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "HOME": str(home),
+                "PIPELINE_GIT_BIN": str(hanging_git),
+                "PIPELINE_GIT_TIMEOUT_SECONDS": "0.25",
+                "PIPELINE_GIT_TERM_GRACE_SECONDS": "0.1",
+            },
+            timeout=3,
+        )
+        assert timed_out.returncode == 124, timed_out.stdout + timed_out.stderr
+        assert time.monotonic() - started < 2
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
@@ -293,6 +328,46 @@ def test_synchronized_branch_does_not_push() -> None:
         )
         assert failed_push.returncode == 69, failed_push.stdout + failed_push.stderr
         assert pushed.exists()
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_synchronization_push_has_a_hard_deadline() -> None:
+    sync = ROOT / "scripts/pipeline-sync.sh"
+    work = Path(tempfile.mkdtemp())
+    home = Path(tempfile.mkdtemp())
+    try:
+        fake_git = work / "fake-git"
+        fake_git.write_text(
+            "#!/bin/bash\n"
+            "case \" $* \" in\n"
+            "  *\" rev-parse \"*\" @{u} \"*) echo origin/codex/test ;;\n"
+            "  *\" rev-list \"*) echo '0 1' ;;\n"
+            "  *\" push \"*) sleep 30 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        started = time.monotonic()
+        result = run(
+            str(sync), "--repo", str(work),
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "HOME": str(home),
+                "PIPELINE_GIT_BIN": str(fake_git),
+                "PIPELINE_SYNC_IDLE_TIMEOUT_SECONDS": "0.25",
+                "PIPELINE_SYNC_MAX_RUNTIME_SECONDS": "1",
+                "PIPELINE_WATCHDOG_TERM_GRACE_SECONDS": "0.1",
+                "PIPELINE_WATCHDOG_POLL_SECONDS": "0.03",
+            },
+            timeout=4,
+        )
+        elapsed = time.monotonic() - started
+        assert result.returncode == 69, result.stdout + result.stderr
+        assert elapsed < 3, f"push deadline took {elapsed:.2f}s"
+        assert "watchdog" in result.stdout + result.stderr
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
@@ -373,6 +448,34 @@ def test_watchdog_allows_a_command_that_keeps_making_progress() -> None:
         shutil.rmtree(work)
 
 
+def test_watchdog_persists_an_owned_process_heartbeat() -> None:
+    work = Path(tempfile.mkdtemp())
+    try:
+        state = work / "active-process.json"
+        result = run(
+            str(WATCHDOG),
+            "--log", str(work / "stage.log"),
+            "--state", str(state),
+            "--label", "test-heartbeat",
+            "--idle-timeout", "1",
+            "--max-runtime", "5",
+            "--term-grace", "0.2",
+            "--poll-interval", "0.05",
+            "--",
+            "python3", "-c", "print('progress', flush=True)",
+            cwd=work,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        observed = json.loads(state.read_text(encoding="utf-8"))
+        assert observed["label"] == "test-heartbeat"
+        assert observed["state"] == "succeeded"
+        assert observed["pid"] > 0
+        assert observed["last_output_at"] >= observed["started_at"]
+        assert observed["max_deadline_at"] > observed["started_at"]
+    finally:
+        shutil.rmtree(work)
+
+
 def driver_fixture(
     fake_codex: str, *, initial_status: str = "pending", verdict: str | None = None
 ) -> tuple[Path, dict[str, str]]:
@@ -381,7 +484,8 @@ def driver_fixture(
     for name in ("pipeline_guard.py", "decide.py", "validate.py", "mark.py"):
         shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
     shutil.copy2(ROOT / "scripts/process_watchdog.py", work / "scripts/process_watchdog.py")
-    for name in ("pipeline-git.sh", "pipeline-sync.sh"):
+    shutil.copy2(ROOT / "scripts/process_state.py", work / "scripts/process_state.py")
+    for name in ("git_deadline.py", "pipeline-git.sh", "pipeline-sync.sh"):
         shutil.copy2(ROOT / f"scripts/{name}", work / f"scripts/{name}")
     (work / "scripts/service-bin").mkdir()
     shutil.copy2(ROOT / "scripts/service-bin/git", work / "scripts/service-bin/git")
@@ -403,6 +507,8 @@ def driver_fixture(
         work / "run.sh",
         work / "scripts/pipeline_guard.py",
         work / "scripts/process_watchdog.py",
+        work / "scripts/process_state.py",
+        work / "scripts/git_deadline.py",
         work / "scripts/pipeline-git.sh",
         work / "scripts/pipeline-sync.sh",
         work / "scripts/queue-worker.sh",
@@ -411,6 +517,11 @@ def driver_fixture(
         path.chmod(0o755)
     assert run("git", "add", "-A", cwd=work).returncode == 0
     assert run("git", "commit", "-m", "driver fixture", cwd=work).returncode == 0
+    (work / ".pipeline").mkdir(exist_ok=True)
+    (work / ".pipeline/validated-head").write_text(
+        run("git", "rev-parse", "HEAD", cwd=work).stdout,
+        encoding="utf-8",
+    )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
     return work, env
@@ -454,6 +565,111 @@ registry.write_text(json.dumps(data), encoding='utf-8')
         assert guard(work, "branch").returncode == 0
     finally:
         shutil.rmtree(work)
+
+
+def test_driver_repairs_a_normal_validation_failure() -> None:
+    fake_codex = """#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+counter = pathlib.Path(os.environ['MODEL_CALLS'])
+count = int(counter.read_text(encoding='utf-8')) + 1 if counter.exists() else 1
+counter.write_text(str(count), encoding='utf-8')
+args = sys.argv[1:]
+root = pathlib.Path(args[args.index('-C') + 1])
+registry = root / 'content/registry.json'
+data = json.loads(registry.read_text(encoding='utf-8'))
+data['chapters'][0]['status'] = 'draft'
+registry.write_text(json.dumps(data), encoding='utf-8')
+(root / 'src/chapters/one.mdx').write_text(f'# Built one, pass {count}\\n', encoding='utf-8')
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        tools = home / "bin"
+        tools.mkdir()
+        npm_calls = home / "npm-calls"
+        npm = tools / "npm"
+        npm.write_text(
+            "#!/bin/bash\n"
+            "count=$(cat \"$NPM_CALLS\" 2>/dev/null || echo 0)\n"
+            "count=$((count + 1))\n"
+            "echo \"$count\" >\"$NPM_CALLS\"\n"
+            "if (( count == 1 )); then echo 'injected stage validation failure'; exit 1; fi\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        npm.chmod(0o755)
+        env.update({
+            "HOME": str(home),
+            "PATH": f"{tools}:{env['PATH']}",
+            "MODEL_CALLS": str(home / "model-calls"),
+            "NPM_CALLS": str(npm_calls),
+            "PIPELINE_REPAIR_ATTEMPTS_PER_RUN": "1",
+            "PIPELINE_VALIDATION_IDLE_TIMEOUT_SECONDS": "2",
+            "PIPELINE_VALIDATION_MAX_RUNTIME_SECONDS": "5",
+            "PIPELINE_WATCHDOG_POLL_SECONDS": "0.03",
+        })
+        result = run("./run.sh", "next", cwd=work, env=env, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (home / "model-calls").read_text(encoding="utf-8") == "2"
+        assert npm_calls.read_text(encoding="utf-8").strip() == "2"
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == (
+            "build(one): Terra stage"
+        )
+        assert not (work / ".pipeline/active-stage.json").exists()
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_validation_timeout_preserves_the_stage_without_model_recovery() -> None:
+    fake_codex = """#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+pathlib.Path(os.environ['MODEL_CALLS']).write_text('model', encoding='utf-8')
+args = sys.argv[1:]
+root = pathlib.Path(args[args.index('-C') + 1])
+registry = root / 'content/registry.json'
+data = json.loads(registry.read_text(encoding='utf-8'))
+data['chapters'][0]['status'] = 'draft'
+registry.write_text(json.dumps(data), encoding='utf-8')
+(root / 'src/chapters/one.mdx').write_text('# Built one\\n', encoding='utf-8')
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        tools = home / "bin"
+        tools.mkdir()
+        npm = tools / "npm"
+        npm.write_text("#!/bin/bash\nsleep 30\n", encoding="utf-8")
+        npm.chmod(0o755)
+        env.update({
+            "HOME": str(home),
+            "PATH": f"{tools}:{env['PATH']}",
+            "MODEL_CALLS": str(home / "model-calls"),
+            "PIPELINE_VALIDATION_IDLE_TIMEOUT_SECONDS": "0.25",
+            "PIPELINE_VALIDATION_MAX_RUNTIME_SECONDS": "1",
+            "PIPELINE_WATCHDOG_TERM_GRACE_SECONDS": "0.1",
+            "PIPELINE_WATCHDOG_POLL_SECONDS": "0.03",
+        })
+        result = run("./run.sh", "next", cwd=work, env=env, timeout=5)
+        assert result.returncode == 78, result.stdout + result.stderr
+        assert (home / "model-calls").read_text(encoding="utf-8") == "model"
+        assert guard(work, "lease-show").returncode == 0
+        assert guard(work, "has-changes").returncode == 0
+        failure = json.loads(
+            (work / ".pipeline/validation-failure.json").read_text(encoding="utf-8")
+        )
+        assert failure["kind"] == "infrastructure-timeout"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
 
 
 def test_driver_records_critic_approval_if_model_omits_mark_step() -> None:
@@ -528,6 +744,45 @@ def test_worker_waits_on_existing_lease_and_refuses_unleased_changes() -> None:
         status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
         assert "dirty worktree without a stage lease" in status
         assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == "driver fixture"
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_worker_preflight_failure_never_invokes_a_chapter_model() -> None:
+    fake_codex = """#!/bin/bash
+printf 'model\n' >>"$MODEL_CALLS"
+exit 1
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        (work / ".pipeline/validated-head").unlink()
+        tools = home / "bin"
+        tools.mkdir()
+        npm = tools / "npm"
+        npm.write_text("#!/bin/bash\necho 'injected baseline failure'\nexit 1\n", encoding="utf-8")
+        npm.chmod(0o755)
+        model_calls = home / "model-calls"
+        env.update({
+            "HOME": str(home),
+            "PATH": f"{tools}:{env['PATH']}",
+            "MODEL_CALLS": str(model_calls),
+            "PIPELINE_LOCK_FILE": str(home / "preflight-worker.lock"),
+            "PIPELINE_VALIDATION_BACKOFF_BASE_SECONDS": "60",
+            "PIPELINE_VALIDATION_IDLE_TIMEOUT_SECONDS": "2",
+            "PIPELINE_VALIDATION_MAX_RUNTIME_SECONDS": "5",
+            "PIPELINE_WATCHDOG_POLL_SECONDS": "0.03",
+        })
+        result = run("./scripts/queue-worker.sh", cwd=work, env=env, timeout=8)
+        assert result.returncode == 0, (
+            result.stdout + result.stderr
+            + (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert not model_calls.exists()
+        assert (work / ".pipeline/validation-retry").exists()
+        status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
+        assert "no chapter model invoked" in status
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
@@ -864,13 +1119,18 @@ def main() -> int:
         test_service_git_plan_is_pinned_and_shimmed()
         test_git_shim_and_parent_helper_pin_apple_git()
         test_synchronized_branch_does_not_push()
+        test_synchronization_push_has_a_hard_deadline()
         test_chapter_runtime_memory_is_ignored()
         test_watchdog_terminates_a_silent_process_group()
         test_watchdog_allows_a_command_that_keeps_making_progress()
+        test_watchdog_persists_an_owned_process_heartbeat()
         test_driver_retains_lease_for_delayed_output()
         test_driver_commits_valid_stage_once()
+        test_driver_repairs_a_normal_validation_failure()
+        test_validation_timeout_preserves_the_stage_without_model_recovery()
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
+        test_worker_preflight_failure_never_invokes_a_chapter_model()
         test_worker_expires_a_stale_running_lease_without_resetting_its_age()
         test_worker_backs_off_no_progress_then_retries_automatically()
         test_worker_defers_intermediate_push_and_publishes_approval()
