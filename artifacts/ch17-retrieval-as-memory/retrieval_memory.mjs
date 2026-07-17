@@ -446,14 +446,28 @@ function classifyActionRequest(tokens) {
   const howToOperation = actionInHowToQuestion(tokens);
   if (howToOperation) return { supported: SUPPORTED_ACTION_TERMS.has(howToOperation) };
 
+  const infinitiveOperation = actionAfterInfinitiveCue(tokens);
+  if (infinitiveOperation) return { supported: SUPPORTED_ACTION_TERMS.has(infinitiveOperation) };
+
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
   return { supported: SUPPORTED_ACTION_TERMS.has(firstTerm) };
 }
 
 function actionInHowToQuestion(tokens) {
-  if (tokens[0] !== "how" || !["do", "to"].includes(tokens[1])) return null;
-  return firstActionTerm(tokens, 2);
+  const howIndex = tokens.findIndex(
+    (term, index) => term === "how" && ["do", "to"].includes(tokens[index + 1]),
+  );
+  if (howIndex === -1) return null;
+  return firstActionTerm(tokens, howIndex + 2);
+}
+
+function actionAfterInfinitiveCue(tokens) {
+  const cueIndex = tokens.findIndex(
+    (term, index) => ["needed", "required"].includes(term) && tokens[index + 1] === "to",
+  );
+  if (cueIndex === -1) return null;
+  return firstActionTerm(tokens, cueIndex + 2);
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -923,6 +937,30 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(intentPrefixedDeletion, "intent-prefixed deletion operation");
+
+    const questionNeededDeletion = await runAgent({
+      storePath: resolve(directory, "question-needed-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What is needed to delete checkout customer data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(questionNeededDeletion, "question-form needed deletion operation");
+
+    const questionHowToDeletion = await runAgent({
+      storePath: resolve(directory, "question-how-to-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Tell me how to delete checkout customer data.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(questionHowToDeletion, "question-form how-to deletion operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),

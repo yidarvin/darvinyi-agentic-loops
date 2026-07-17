@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -313,3 +313,13 @@ Independent convergence review: read `prompts/critique-rubric.md`, the complete 
 ## Advisories
 
 - No new advisories. The existing README-formatting, illustrative token-display, and optional rank-grid semantics notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, then re-verified every REQUIRED fix from Rounds 1 through 13 against the current chapter, exact figure and widget, fixture, README, and runnable artifact. Round 1 still rejects irrelevant queries and impossible dates, declares the RRF tie, and keeps teaching text readable. Round 2 still injects the complete incident-and-policy packet at the default and 42-token budgets and abstains at 20 tokens. Rounds 3, 7, and 11 remain shared-pipeline findings and were re-verified by the full repository gate. Round 4 still keeps untrusted payloads escaped and role-separated while allowing qualifying telemetry retrieval. Round 5 still selects the release calendar and matches the widget paraphrase packet. Rounds 6 through 10 still reject unsupported services, unknown or compound incident identifiers, incomplete service scopes, common-word queries, and dense-only collisions. Rounds 11 through 13 still fail closed for the earlier modal, imperative, intent-prefixed, and encryption action forms.
+
+1. **Question-wrapped unsupported actions now fail closed.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `actionInHowToQuestion()` finds a `how do` or `how to` action phrase anywhere in the query, and `actionAfterInfinitiveCue()` recognizes `needed to` or `required to` before generic lookup fallback. Both paths apply the existing positive supported-operation grammar. The exact `What is needed to delete checkout customer data?` and `Tell me how to delete checkout customer data.` cases now emit zero evidence, use zero tokens, and take the clarification-or-new-query decision.
+2. **The regression is deterministic.** The artifact `--self-test` now runs both Round 14 question forms through `assertUnsupportedRequestAbstains`, alongside all prior action-form regressions.
+3. **The shared mechanical gate was re-verified without an out-of-scope edit.** Round 14's watchdog finding names shared pipeline files outside this chapter's allowed write scope, so no pipeline source was changed. A serial `npm run check` completed all seven stages with `pipeline state-machine tests: OK` and `CHECK OK`.
+
+No advisories were taken: README fence formatting, illustrative token display, and optional widget table semantics remain non-blocking and outside the required-fix scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes. The registry remains `draft` and the queue row remains `PENDING`.
