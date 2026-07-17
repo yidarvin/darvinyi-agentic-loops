@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -323,3 +323,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. **The shared mechanical gate was re-verified without an out-of-scope edit.** Round 14's watchdog finding names shared pipeline files outside this chapter's allowed write scope, so no pipeline source was changed. A serial `npm run check` completed all seven stages with `pipeline state-machine tests: OK` and `CHECK OK`.
 
 No advisories were taken: README fence formatting, illustrative token display, and optional widget table semantics remain non-blocking and outside the required-fix scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 15 review (2026-07-17)
+
+Independent convergence review: read `prompts/critique-rubric.md`, the complete append-only critique and `git log -p` history through Round 14, the current MDX chapter, exact figure and widget, build notes, research backbone, fixture, README, checker, and complete runnable artifact. Re-verified every settled REQUIRED result with `bash artifacts/ch17-retrieval-as-memory/check.sh`: irrelevant queries and invalid dates abstain or reject; the RRF tie and readable teaching text remain intact; complete-or-abstain deployment packets, role-separated escaped native messages, telemetry, release-schedule, and widget-paraphrase retrieval work; and all earlier service, identifier, relevance, budget, and explicitly tested action forms remain fail-closed. Checked the linked primary and official sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, OpenAI embeddings, and RAGAS against the research backbone. The consequential claims remain supported. Ran `npm run check`, which completed all seven stages with `CHECK OK`. I then ran the untested passive question form below in a fresh temporary store.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:439-454` --- an unsupported destructive action in a passive question wrapper bypasses the positive grammar and is falsely declared answerable.** `node retrieval_memory.mjs --reset --store <temp>/memory.json --question 'Is it safe to delete checkout customer data?' --json` returns `evidenceCount: 1`, `usedTokens: 22`, and `decision: "answer with bounded evidence packet"`, injecting only `acme_checkout_telemetry`. That record describes ordinary and incident telemetry sampling. It cannot answer or authorize customer-data deletion. `classifyActionRequest()` treats `is` as a `GENERIC_LOOKUP_STARTER` at lines 452-454, so it never classifies the later unsupported `delete` action; `deriveAnswerPlan()` therefore gives it no required roles and generic selection accepts the topical record. This is distinct from Round 14's settled `how do` or `how to` and infinitive wrappers, and it violates the artifact's stated fail-closed contract at `README.md:66-68`. Recognize unsupported action semantics before the generic-lookup fallback, including passive or gerund forms, or conservatively abstain whenever the action cannot be positively represented. Add deterministic regression coverage for this command, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision.
+
+## Advisories
+
+- No new advisories. Earlier README-formatting, illustrative token-display, and optional rank-grid-semantics notes remain non-blocking.
