@@ -250,6 +250,9 @@ function retrieve(collection, store, question, filter, rrfK) {
 
   const queryTerms = new Set(tokenize(question));
   const meaningfulQueryTerms = new Set([...queryTerms].filter(isMeaningfulQueryTerm));
+  const querySpecificTerms = new Set(
+    [...meaningfulQueryTerms].filter((term) => !answerPlan.scope.services.includes(term)),
+  );
   const candidates = [...byId.values()]
     .map((item) => {
       const rrf =
@@ -258,10 +261,12 @@ function retrieve(collection, store, question, filter, rrfK) {
       const documentTerms = tokenize(documentText(item.record));
       const overlap = lexicalOverlap(queryTerms, documentTerms);
       const meaningfulOverlap = lexicalOverlap(meaningfulQueryTerms, documentTerms);
+      const querySpecificOverlap = lexicalOverlap(querySpecificTerms, documentTerms);
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
       const answerability = answerabilityScore(item.record, answerPlan);
       const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness + 0.6 * answerability;
       const hasRelevanceSignal = meaningfulOverlap > 0 || answerability > 0;
+      const hasQuerySpecificRelevance = querySpecificOverlap > 0;
       return {
         ...item,
         answerability,
@@ -269,9 +274,11 @@ function retrieve(collection, store, question, filter, rrfK) {
         rrf,
         overlap,
         meaningfulOverlap,
+        querySpecificOverlap,
         freshness,
         rerankScore,
         hasRelevanceSignal,
+        hasQuerySpecificRelevance,
       };
     })
     .sort((left, right) => right.rerankScore - left.rerankScore || left.record.id.localeCompare(right.record.id))
@@ -352,6 +359,7 @@ function selectEvidence(candidates, budget, answerPlan) {
         (candidate) =>
           recordMatchesPlanScope(candidate.record, answerPlan) &&
           candidate.hasRelevanceSignal &&
+          candidate.hasQuerySpecificRelevance &&
           candidate.rerankScore >= 0.3,
       )
     : undefined;
@@ -1146,6 +1154,18 @@ async function selfTest() {
       throw new Error("dense-only out-of-corpus query did not take the abstention path");
     }
 
+    const unsupportedRetention = await runAgent({
+      storePath: resolve(directory, "unsupported-retention-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What is the checkout data retention period?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertGenericQueryAbstains(unsupportedRetention, "checkout data-retention query");
+
     let invalidDateRejected = false;
     try {
       await runAgent({
@@ -1275,6 +1295,15 @@ function assertUnsupportedServiceAbstains(result, label = "unsupported-service d
 function assertUnsupportedRequestAbstains(result, label) {
   if (result.evidence.length !== 0 || result.usedTokens !== 0) {
     throw new Error(label + " injected evidence without a supported, complete request scope");
+  }
+  if (result.decision !== "ask for clarification or retrieve with a new query") {
+    throw new Error(label + " claimed to have answer-bearing evidence");
+  }
+}
+
+function assertGenericQueryAbstains(result, label) {
+  if (result.evidence.length !== 0 || result.usedTokens !== 0) {
+    throw new Error(label + " injected evidence without query-specific support");
   }
   if (result.decision !== "ask for clarification or retrieve with a new query") {
     throw new Error(label + " claimed to have answer-bearing evidence");
