@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -63,3 +63,11 @@ Independent re-review: read the complete critique history and `git log -p` histo
 ## Advisories
 
 - The widget's illustrative identifier packet shows `93 / 120` tokens, while the matching lab scenario uses a 110-token default and its deterministic word-token estimator reports a smaller two-record packet. This does not break the interaction, but labeling the widget's estimator or harmonizing the numbers would prevent readers from treating the two displays as the same measurement.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and the current critique file. Re-verified every Round 1 REQUIRED fix in the current artifact, figure, and widget: irrelevant queries inject no evidence and abstain; impossible calendar dates are rejected; the identifier scenario declares the RRF tie before reranking; and central teaching text remains readable. Re-verified the Round 2 complete-or-abstain packet rule with the default, 42-token, and 20-token artifact cases: the first two inject only the incident and current policy, while the 20-token run injects nothing and asks for clarification.
+
+1. **The reported mechanical-gate failure was rechecked.** Round 3 names only `scripts/test_pipeline.py`, which is shared pipeline code outside this chapter's explicit write scope. No chapter source or research file can alter that test, and none was changed. `npm run check` nevertheless completed all seven sections in the current workspace, including `pipeline state-machine tests: OK`, the retrieval artifact gate, render tests, build, and advisory lint, ending with `CHECK OK`.
+
+No advisories were taken: the illustrative token-count mismatch remains non-blocking and outside the requested resolution scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` pass. The registry remains `draft` and the queue row remains `PENDING`.
