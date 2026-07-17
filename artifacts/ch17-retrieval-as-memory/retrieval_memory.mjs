@@ -41,6 +41,20 @@ const QUERY_FUNCTION_WORDS = new Set([
   "why",
   "with",
 ]);
+const ACTION_REQUEST_PREFIXES = new Set(["can", "may", "should", "will"]);
+const ACTION_REQUEST_FILLERS = new Set([
+  "a",
+  "an",
+  "i",
+  "now",
+  "please",
+  "safely",
+  "the",
+  "to",
+  "we",
+  "you",
+]);
+const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -243,6 +257,7 @@ function retrieve(collection, store, question, filter, rrfK) {
 function deriveAnswerPlan(question) {
   const tokens = tokenize(question);
   const terms = new Set(tokens);
+  const actionRequest = classifyActionRequest(tokens);
   const incidentIdentifiers = [...new Set(tokens.filter(isIncidentIdentifier))];
   const services = requestedServices(tokens);
   const repairAfterIncident =
@@ -254,25 +269,32 @@ function deriveAnswerPlan(question) {
   const needsDeploymentDecision =
     !asksReleaseSchedule &&
     ["approval", "deploy", "deployment", "release"].some((term) => terms.has(term));
+  const unsupportedIncidentAction =
+    incidentIdentifiers.length > 0 && !needsDeploymentDecision && !repairAfterIncident;
+  const supported = actionRequest.supported && !unsupportedIncidentAction;
   const requiredRoles = [];
-  if (mentionsIncident) requiredRoles.push("incident");
-  if (needsDeploymentDecision || repairAfterIncident) requiredRoles.push("current-policy");
+  if (supported && mentionsIncident) requiredRoles.push("incident");
+  if (supported && (needsDeploymentDecision || repairAfterIncident)) {
+    requiredRoles.push("current-policy");
+  }
   return {
+    supported,
     requiredRoles,
     scope: {
       services,
-      action: needsDeploymentDecision ? "deployment" : null,
+      action: needsDeploymentDecision || repairAfterIncident ? "deployment" : null,
       incidentIdentifiers,
     },
   };
 }
 
 function answerabilityScore(record, plan) {
+  if (!plan.supported) return 0;
   return plan.requiredRoles.some((role) => recordMatchesPlanRole(record, plan, role)) ? 1 : 0;
 }
 
 function selectEvidence(candidates, budget, answerPlan) {
-  const hasRequiredRoles = answerPlan.requiredRoles.length > 0;
+  const hasRequiredRoles = answerPlan.supported && answerPlan.requiredRoles.length > 0;
   const selectedByRole = hasRequiredRoles
     ? answerPlan.requiredRoles.flatMap((role) => {
         const incidentIdentifiers =
@@ -293,7 +315,7 @@ function selectEvidence(candidates, budget, answerPlan) {
   const roleSelected = [
     ...new Map(selectedByRole.filter(Boolean).map((candidate) => [candidate.record.id, candidate])).values(),
   ];
-  const genericSelected = !hasRequiredRoles
+  const genericSelected = answerPlan.supported && !hasRequiredRoles
     ? candidates.find(
         (candidate) =>
           recordMatchesPlanScope(candidate.record, answerPlan) &&
@@ -303,9 +325,9 @@ function selectEvidence(candidates, budget, answerPlan) {
     : undefined;
   const selected = hasRequiredRoles ? roleSelected : genericSelected ? [genericSelected] : [];
   const requiredTokens = selected.reduce((total, candidate) => total + estimateTokens(evidenceText(candidate.record)), 0);
-  const answerable = hasRequiredRoles
+  const answerable = answerPlan.supported && (hasRequiredRoles
     ? !missingAnswerEvidence && requiredTokens <= budget
-    : Boolean(genericSelected) && requiredTokens <= budget;
+    : Boolean(genericSelected) && requiredTokens <= budget);
   const selectedIds = new Set(answerable ? selected.map((candidate) => candidate.record.id) : []);
   let usedTokens = 0;
   const evidence = [];
@@ -342,7 +364,9 @@ function selectEvidence(candidates, budget, answerPlan) {
       tokens,
       status: shouldInject
         ? "injected"
-        : !candidate.hasRelevanceSignal
+        : !answerPlan.supported
+          ? "held-unsupported-request"
+          : !candidate.hasRelevanceSignal
           ? "held-no-relevance"
           : candidate.rerankScore < 0.3
           ? "held-low-relevance"
@@ -371,10 +395,26 @@ function requestedServices(tokens) {
   }
 
   const releaseIndex = tokens.indexOf("release");
-  if (releaseIndex !== -1) addServicesBefore(tokens, releaseIndex, services);
+  if (releaseIndex !== -1) {
+    addServicesBefore(tokens, releaseIndex, services);
+    addServicesAfter(tokens, releaseIndex + 1, services);
+  }
 
   if (!services.size && tokens.includes("checkout")) services.add("checkout");
   return [...services];
+}
+
+function classifyActionRequest(tokens) {
+  const prefixIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
+  if (prefixIndex === -1) return { supported: true };
+
+  for (let index = prefixIndex + 1; index < tokens.length; index += 1) {
+    const term = tokens[index];
+    if (ACTION_REQUEST_FILLERS.has(term)) continue;
+    return { supported: SUPPORTED_ACTION_TERMS.has(term) };
+  }
+
+  return { supported: false };
 }
 
 function addServicesAfter(tokens, startIndex, services) {
@@ -775,6 +815,42 @@ async function selfTest() {
     });
     assertUnsupportedServiceAbstains(mixedServiceSchedule, "mixed-service release-schedule query");
 
+    const unsupportedDeletion = await runAgent({
+      storePath: resolve(directory, "unsupported-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I delete checkout customer data after ERR-PAY-142?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(unsupportedDeletion, "unsupported deletion operation");
+
+    const imperativeDeletion = await runAgent({
+      storePath: resolve(directory, "imperative-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Delete checkout customer data after ERR-PAY-142.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(imperativeDeletion, "imperative deletion operation");
+
+    const releaseBilling = await runAgent({
+      storePath: resolve(directory, "release-billing-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I release billing?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(releaseBilling, "unsupported release-service operation");
+
     const unknownIncident = await runAgent({
       storePath: resolve(directory, "unknown-incident-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -994,6 +1070,15 @@ function assertCompleteDeploymentPacket(result, label) {
 function assertUnsupportedServiceAbstains(result, label = "unsupported-service deployment query") {
   if (result.evidence.length !== 0 || result.usedTokens !== 0) {
     throw new Error(label + " injected evidence outside its requested service scope");
+  }
+  if (result.decision !== "ask for clarification or retrieve with a new query") {
+    throw new Error(label + " claimed to have answer-bearing evidence");
+  }
+}
+
+function assertUnsupportedRequestAbstains(result, label) {
+  if (result.evidence.length !== 0 || result.usedTokens !== 0) {
+    throw new Error(label + " injected evidence without a supported, complete request scope");
   }
   if (result.decision !== "ask for clarification or retrieve with a new query") {
     throw new Error(label + " claimed to have answer-bearing evidence");

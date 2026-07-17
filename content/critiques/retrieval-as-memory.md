@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -241,3 +241,18 @@ Convergence re-review: read the complete append-only critique and `git log -p` h
 ## Advisories
 
 - None. Earlier README-formatting, token-display, and rank-grid-semantics notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, then re-verified every prior REQUIRED fix against the current chapter, figure, widget, and artifact. Round 1 still rejects impossible dates and irrelevant queries, declares the RRF tie, and keeps central teaching text readable. Round 2 still supplies the complete incident-and-policy packet at the default and 42-token budgets and abstains at 20 tokens. Rounds 3 and 7 remain shared-pipeline findings, rechecked only through the full gate because their source files are outside this chapter's write scope. Round 4 still preserves escaped, role-separated untrusted messages and qualifying telemetry retrieval. Round 5 still selects the release calendar and matches the widget's incident-and-policy paraphrase packet. Round 6 still abstains for a single unsupported deployment service. Rounds 7 through 9 still abstain for unknown and compound incident identifiers. Round 10 still retains every requested service constraint and rejects common-word and dense-only irrelevant queries.
+
+1. **Unsupported action requests now fail closed.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, explicit modal action requests pass through a small supported-operation grammar. Any action the fixture cannot represent disables both role and generic selection, produces an empty evidence packet, and asks for clarification. The deterministic self-test now proves that `Can I delete checkout customer data after ERR-PAY-142?` uses zero evidence tokens and cannot claim an answer.
+2. **Release requests retain services named after the verb.** `requestedServices()` now scans both sides of `release`, so `Can I release billing?` carries `billing` into scope matching. The checkout-only policy cannot satisfy that scope, and the deterministic self-test requires zero evidence, zero used tokens, and the clarification/new-query decision.
+3. **The artifact contract states the safe failure mode.** `artifacts/ch17-retrieval-as-memory/README.md` now explains that unsupported explicit actions and incompletely evidenced service scopes produce no packet rather than topical substitution.
+4. **The shared mechanical-gate regression was rechecked without an out-of-scope edit.** Round 11's first finding names `scripts/test_pipeline.py` and `scripts/process_watchdog.py`, neither of which this chapter-only resolution may modify. No shared pipeline code was changed. The final repository-wide `npm run check` run is recorded below.
+
+No advisory was taken: the prior README fence formatting, illustrative token-display, and optional rank-grid table semantics remain outside this required-fix scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes. The registry remains `draft` and the queue row remains `PENDING`.
+
+Final verification: `npm run check` passed all seven stages with `CHECK OK`, including the pipeline state-machine tests, artifact gate, 38 Vitest tests, production build, and lint.
+
+Post-audit regression extension: the artifact self-test also rejects the imperative form `Delete checkout customer data after ERR-PAY-142.` with zero evidence and the clarification/new-query decision. The subsequent repository-wide `npm run check` again passed all seven stages with `CHECK OK`.

@@ -63,6 +63,10 @@ directly to a role-aware model API. The stable system message stays first, while
 retrieved records are separately labelled untrusted JSON data in later user messages. Retain the
 trace for evaluation.
 
+The fixture supports generic lookups, release schedules, and checkout deployment decisions. When
+it cannot represent an explicit action or every requested service with current, answer-bearing
+records, it injects no evidence and asks for clarification instead of substituting topical text.
+
 ## Verify it
 
 \`\`\`sh
