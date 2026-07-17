@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -51,3 +51,15 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 3. **The regression is deterministic.** The artifact `--self-test` now asserts the exact two-record packet and held distractors for both the default and 42-token runs, and asserts zero evidence plus abstention at 20 tokens. The existing irrelevant-query, valid-time, tenant-isolation, hybrid-rank, prompt-tail, and budget checks remain in place.
 
 No advisories were taken: escaped README Markdown and optional widget table semantics remain outside this resolution scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` pass.
+
+## Round 3 review (2026-07-17)
+
+Independent re-review: read the complete critique history and `git log -p` history, the current MDX chapter, exact figure and widget, build notes, research backbone, and the complete runnable artifact, fixture, README, and checker. Re-verified every prior REQUIRED fix against the current files and `bash artifacts/ch17-retrieval-as-memory/check.sh`: irrelevant queries abstain, impossible dates are rejected, the RRF tie is declared before reranking, central teaching text remains readable, and the default, 42-token, and 20-token cases preserve the complete-or-abstain packet rule. Spot-checked the linked primary sources for Lost in the Middle, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, OpenAI embeddings, and RRF (the ACM landing page returned 403). `npm run test` passed 38 tests and `npm run build` passed. Ran `npm run check` twice; both runs failed in pipeline tests before the artifact, render-test, or build sections.
+
+## Required fixes
+
+1. **`scripts/test_pipeline.py:340-361` --- the required mechanical gate cannot complete reliably.** Both current `npm run check` runs fail in `test_watchdog_allows_a_command_that_keeps_making_progress`: its child emits one line every 0.08 seconds, but `process_watchdog.py` terminates it after reporting `idle timeout exceeded (0.2s without output)`. A draft cannot pass the required `npm run check` gate while this test spuriously kills its declared healthy command. Make the watchdog-progress test scheduler-tolerant or otherwise deterministic, then demonstrate a full `CHECK OK` run.
+
+## Advisories
+
+- The widget's illustrative identifier packet shows `93 / 120` tokens, while the matching lab scenario uses a 110-token default and its deterministic word-token estimator reports a smaller two-record packet. This does not break the interaction, but labeling the widget's estimator or harmonizing the numbers would prevent readers from treating the two displays as the same measurement.
