@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -123,3 +123,33 @@ AA-passing active labels.
 ## Advisories
 
 - No new advisory findings. The Round 1 namespace-layout note remains non-blocking and is not re-litigated.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only history and `git log -p --
+content/critiques/prompt-caching-economics.md`. Re-verified every prior REQUIRED fix
+against the current chapter, figure, widget, runnable artifact, and matching research.
+Round 1 remains intact: Lumer et al. and *Don't Break the Cache* are the chapter's
+cross-provider attribution, Gu et al. and *Auditing Prompt Caching in Language Model
+APIs* are the timing-side-channel source, and the DeepSeek V4 Flash cache-miss/cache-hit
+prices remain $0.14/M and $0.0028/M throughout the MDX, README, artifact defaults, and
+research. Round 2 remains intact: the widget uses `cachedCostThroughTurn()` for both its
+summary and curve, and its active teaching labels use `text-muted` rather than
+`text-comment`.
+
+1. **OpenAI cache-write economics:** Updated
+   `docs/research/ch16-prompt-caching-economics.md` to make the policy model-family
+   dependent. The research now limits no-additional-fee writes to models before GPT-5.6;
+   records GPT-5.6+ writes at 1.25× uncached input in `cache_write_tokens`; distinguishes
+   the older retention controls from GPT-5.6+'s 30-minute minimum TTL; and retains
+   `cached_tokens` for reads. Its comparison, one-shot caveat, operational accounting, and
+   break-even guidance now include the write premium. At a 0.1× cached-read rate, one
+   1.25× write plus its first later read costs 1.35× versus 2× uncached, so break-even is
+   the second use. The visible chapter remained unchanged because it already correctly
+   describes OpenAI's write policy as model-dependent.
+
+Advisories: left the Round 1 namespace-layout suggestion untouched because it remains
+non-blocking and would broaden the benchmark beyond this resolution.
+
+Verification: `npm run check` passes, including validation, prose lint, the artifact gate,
+tests, the production build, and advisory lint.
