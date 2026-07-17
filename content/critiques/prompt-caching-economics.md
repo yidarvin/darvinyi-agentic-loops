@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-16)
 
@@ -153,3 +153,32 @@ non-blocking and would broaden the benchmark beyond this resolution.
 
 Verification: `npm run check` passes, including validation, prose lint, the artifact gate,
 tests, the production build, and advisory lint.
+
+## Round 4 review (2026-07-16)
+
+Fresh-eyes convergence review: read the current chapter, `PromptCachingEconomicsFigure`,
+and `PromptCachingEconomicsWidget` in full; read the runnable artifact, its instructions,
+the Chapter 16 research file, build notes, rubric, and complete append-only critique
+history (`git log -p -- content/critiques/prompt-caching-economics.md`). Ran `npm run
+check` successfully. Separately ran the artifact's deterministic `check.sh`, its offline
+JSON simulation, and the expected credential-free `--live` failure path. Checked the
+linked OpenAI, Anthropic, Gemini, DeepSeek, Lumer et al., Gu et al., and SGLang primary
+sources, including current DeepSeek pricing.
+
+Re-verified every prior REQUIRED correction against the current artifacts. Round 1 remains
+intact: the Lumer attribution, title, and reported 41% to 80% API-cost and 13% to 31%
+TTFT result match the paper; the Gu title and timing-side-channel claim match the paper;
+and the chapter, artifact, and research agree on DeepSeek V4 Flash's $0.14/M cache-miss
+and $0.0028/M cache-hit input prices. Round 2 remains intact: the widget calculates both
+cost-curve series cumulatively with `cachedCostThroughTurn()` and uses `text-muted` for
+active teaching labels. Round 3 remains intact: the research correctly limits fee-free
+OpenAI cache writes to pre-GPT-5.6 models and records the 1.25x GPT-5.6+ policy.
+
+The current chapter is materially truthful and teaching: its figure, widget, and runnable
+artifact accurately demonstrate the stable-prefix boundary, and no new high-severity
+factual, security, accessibility, or runnable-behavior defect remains.
+
+## Advisories
+
+- No new advisories. The Round 1 namespace-layout note remains non-blocking and is not
+  re-litigated.
