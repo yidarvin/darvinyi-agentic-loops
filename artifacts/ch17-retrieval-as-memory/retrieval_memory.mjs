@@ -245,10 +245,10 @@ function retrieve(collection, store, question, filter, rrfK) {
 function deriveAnswerPlan(question) {
   const tokens = tokenize(question);
   const terms = new Set(tokens);
-  const incidentIdentifier = tokens.find(isIncidentIdentifier) || null;
+  const incidentIdentifiers = [...new Set(tokens.filter(isIncidentIdentifier))];
   const repairAfterIncident =
     terms.has("ship") && terms.has("repair") && terms.has("incident");
-  const mentionsIncident = Boolean(incidentIdentifier) || repairAfterIncident;
+  const mentionsIncident = incidentIdentifiers.length > 0 || repairAfterIncident;
   const asksReleaseSchedule =
     terms.has("checkout") &&
     terms.has("release") &&
@@ -264,7 +264,7 @@ function deriveAnswerPlan(question) {
     scope: {
       service: requestedService(tokens),
       action: needsDeploymentDecision ? "deployment" : null,
-      incidentIdentifier,
+      incidentIdentifiers,
     },
   };
 }
@@ -276,14 +276,20 @@ function answerabilityScore(record, plan) {
 function selectEvidence(candidates, budget, answerPlan) {
   const hasRequiredRoles = answerPlan.requiredRoles.length > 0;
   const selectedByRole = hasRequiredRoles
-    ? answerPlan.requiredRoles.map((role) =>
-        candidates.find(
-          (candidate) =>
-            recordMatchesPlanRole(candidate.record, answerPlan, role) &&
-            candidate.hasRelevanceSignal &&
-            candidate.rerankScore >= 0.3,
-        ),
-      )
+    ? answerPlan.requiredRoles.flatMap((role) => {
+        const incidentIdentifiers =
+          role === "incident" && answerPlan.scope.incidentIdentifiers.length > 0
+            ? answerPlan.scope.incidentIdentifiers
+            : [null];
+        return incidentIdentifiers.map((incidentIdentifier) =>
+          candidates.find(
+            (candidate) =>
+              recordMatchesPlanRole(candidate.record, answerPlan, role, incidentIdentifier) &&
+              candidate.hasRelevanceSignal &&
+              candidate.rerankScore >= 0.3,
+          ),
+        );
+      })
     : [];
   const missingAnswerEvidence = selectedByRole.some((candidate) => !candidate);
   const roleSelected = [
@@ -395,13 +401,12 @@ function isServiceTerm(term) {
   ].includes(term) && !isIncidentIdentifier(term);
 }
 
-function recordMatchesPlanRole(record, plan, role) {
+function recordMatchesPlanRole(record, plan, role, requiredIncidentIdentifier = null) {
   if (!(record.answerRoles || []).includes(role)) return false;
-  if (
-    role === "incident" &&
-    plan.scope.incidentIdentifier &&
-    !recordHasIdentifier(record, plan.scope.incidentIdentifier)
-  ) {
+  const incidentIdentifiers = requiredIncidentIdentifier
+    ? [requiredIncidentIdentifier]
+    : plan.scope.incidentIdentifiers;
+  if (role === "incident" && incidentIdentifiers.length > 0 && !incidentIdentifiers.some((identifier) => recordHasIdentifier(record, identifier))) {
     return false;
   }
   return recordMatchesPlanScope(record, plan, role);
@@ -734,6 +739,30 @@ async function selfTest() {
     });
     assertUnknownIncidentAbstains(unrecognizedIncident);
 
+    const knownThenUnknownIncident = await runAgent({
+      storePath: resolve(directory, "known-then-unknown-incident-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout after ERR-PAY-142 and ERR-DB-999?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnknownIncidentAbstains(knownThenUnknownIncident, "known-then-unknown incident identifiers");
+
+    const unknownThenKnownIncident = await runAgent({
+      storePath: resolve(directory, "unknown-then-known-incident-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout after ERR-DB-999 and ERR-PAY-142?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnknownIncidentAbstains(unknownThenKnownIncident, "unknown-then-known incident identifiers");
+
     const irrelevant = await runAgent({
       storePath: resolve(directory, "irrelevant-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -894,12 +923,12 @@ function assertUnsupportedServiceAbstains(result) {
   }
 }
 
-function assertUnknownIncidentAbstains(result) {
+function assertUnknownIncidentAbstains(result, label = "unknown incident identifier") {
   if (result.evidence.length !== 0 || result.usedTokens !== 0) {
-    throw new Error("unknown incident identifier injected evidence for a different incident");
+    throw new Error(label + " injected evidence for a different incident");
   }
   if (result.decision !== "ask for clarification or retrieve with a new query") {
-    throw new Error("unknown incident identifier claimed to have answer-bearing evidence");
+    throw new Error(label + " claimed to have answer-bearing evidence");
   }
 }
 

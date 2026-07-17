@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -195,3 +195,12 @@ Convergence re-review: read the complete critique history, current MDX chapter, 
 ## Advisories
 
 - No new advisories. Prior advisory notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and this append-only critique file. Re-verified every Round 1 requirement: gibberish retrieval abstains, impossible calendar dates reject, the widget declares the RRF tie before reranking, and figure and widget teaching text remains readable. Re-verified Round 2's complete-or-abstain deployment packet at the default, 42-token, and 20-token budgets. Re-verified Round 3's shared mechanical gate with the required repository-wide check. Re-verified Round 4's role-separated escaped native-message envelope, hostile-input cases, and generic telemetry retrieval. Re-verified Round 5's release-calendar lookup and widget-paraphrase packet, Round 6's unsupported-service abstention, Round 7's exact `ERR-PAY-999` abstention, and Round 8's ordinary out-of-corpus plus exact `ERR-DB-999` abstention.
+
+1. **Compound incident identifiers are complete-or-abstain.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `deriveAnswerPlan()` now collects every normalized `ERR-*` identifier. `selectEvidence()` expands the incident requirement once per identifier, and `recordMatchesPlanRole()` requires an exact identifier match while preserving the existing service and action scope. A known incident paired with an unknown incident therefore cannot produce a partial deployment packet.
+2. **The compound-ID regression is deterministic.** The artifact self-test now checks both `ERR-PAY-142 and ERR-DB-999` and the reverse ordering. Each case must emit zero evidence, consume zero tokens, and take the clarification or new-query decision.
+
+No advisories were taken; Round 9 has no new advisory items. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
