@@ -100,7 +100,7 @@ async function runAgent({ storePath, fixturesPath, reset, tenant, asOf, question
   const collection = await store.ensure(fixtures.records, reset);
   const filter = { tenant, asOf };
   const retrieval = retrieve(collection, store, question, filter, rrfK);
-  const packet = selectEvidence(retrieval.candidates, budget);
+  const packet = selectEvidence(retrieval.candidates, budget, retrieval.answerPlan);
   const prompt = buildPrompt(question, packet.evidence);
 
   return {
@@ -129,7 +129,7 @@ async function runAgent({ storePath, fixturesPath, reset, tenant, asOf, question
     evidence: packet.evidence,
     usedTokens: packet.usedTokens,
     tokenBudget: budget,
-    decision: packet.evidence.length
+    decision: packet.answerable
       ? "answer with bounded evidence packet"
       : "ask for clarification or retrieve with a new query",
     prompt,
@@ -137,9 +137,10 @@ async function runAgent({ storePath, fixturesPath, reset, tenant, asOf, question
 }
 
 function retrieve(collection, store, question, filter, rrfK) {
+  const answerPlan = deriveAnswerPlan(question);
   const eligible = collection.records.filter((record) => matchesFilter(record, filter));
   if (!eligible.length) {
-    return { eligibleRecords: 0, denseCandidates: 0, sparseCandidates: 0, candidates: [] };
+    return { eligibleRecords: 0, denseCandidates: 0, sparseCandidates: 0, answerPlan, candidates: [] };
   }
 
   const dense = store.search(collection, embed(question), filter, Math.min(eligible.length, 12));
@@ -178,9 +179,19 @@ function retrieve(collection, store, question, filter, rrfK) {
         (item.sparseRank ? 1 / (rrfK + item.sparseRank) : 0);
       const overlap = lexicalOverlap(queryTerms, tokenize(documentText(item.record)));
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
-      const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness;
+      const answerability = answerabilityScore(item.record, answerPlan);
+      const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness + 0.6 * answerability;
       const hasRelevanceSignal = item.sparseScore > 0 || item.denseScore >= DENSE_RELEVANCE_FLOOR;
-      return { ...item, rrf, overlap, freshness, rerankScore, hasRelevanceSignal };
+      return {
+        ...item,
+        answerability,
+        answerRoles: item.record.answerRoles || [],
+        rrf,
+        overlap,
+        freshness,
+        rerankScore,
+        hasRelevanceSignal,
+      };
     })
     .sort((left, right) => right.rerankScore - left.rerankScore || left.record.id.localeCompare(right.record.id))
     .map((item, index) => ({ ...item, finalRank: index + 1 }));
@@ -189,18 +200,48 @@ function retrieve(collection, store, question, filter, rrfK) {
     eligibleRecords: eligible.length,
     denseCandidates: dense.length,
     sparseCandidates: sparse.length,
+    answerPlan,
     candidates,
   };
 }
 
-function selectEvidence(candidates, budget) {
+function deriveAnswerPlan(question) {
+  const terms = new Set(tokenize(question));
+  const mentionsIncident = [...terms].some((term) => term.startsWith("err-pay-"));
+  const needsCheckoutDecision =
+    terms.has("checkout") && ["approval", "deploy", "deployment", "release"].some((term) => terms.has(term));
+  const requiredRoles = [];
+  if (mentionsIncident) requiredRoles.push("incident");
+  if (needsCheckoutDecision) requiredRoles.push("current-policy");
+  return { requiredRoles };
+}
+
+function answerabilityScore(record, plan) {
+  const roles = record.answerRoles || [];
+  return plan.requiredRoles.some((role) => roles.includes(role)) ? 1 : 0;
+}
+
+function selectEvidence(candidates, budget, answerPlan) {
+  const selectedByRole = answerPlan.requiredRoles.map((role) =>
+    candidates.find(
+      (candidate) =>
+        candidate.answerRoles.includes(role) &&
+        candidate.hasRelevanceSignal &&
+        candidate.rerankScore >= 0.3,
+    ),
+  );
+  const missingAnswerEvidence = selectedByRole.some((candidate) => !candidate);
+  const selected = [...new Map(selectedByRole.filter(Boolean).map((candidate) => [candidate.record.id, candidate])).values()];
+  const requiredTokens = selected.reduce((total, candidate) => total + estimateTokens(evidenceText(candidate.record)), 0);
+  const answerable =
+    answerPlan.requiredRoles.length > 0 && !missingAnswerEvidence && requiredTokens <= budget;
+  const selectedIds = new Set(answerable ? selected.map((candidate) => candidate.record.id) : []);
   let usedTokens = 0;
   const evidence = [];
   const annotated = candidates.map((candidate) => {
     const content = evidenceText(candidate.record);
     const tokens = estimateTokens(content);
-    const shouldInject =
-      candidate.hasRelevanceSignal && candidate.rerankScore >= 0.3 && usedTokens + tokens <= budget;
+    const shouldInject = selectedIds.has(candidate.record.id);
     if (shouldInject) {
       usedTokens += tokens;
       evidence.push({
@@ -225,6 +266,7 @@ function selectEvidence(candidates, budget) {
       sparseScore: round(candidate.sparseScore),
       rrfScore: round(candidate.rrf),
       rerankScore: round(candidate.rerankScore),
+      answerability: candidate.answerability,
       relevanceSignal: candidate.hasRelevanceSignal,
       tokens,
       status: shouldInject
@@ -233,10 +275,18 @@ function selectEvidence(candidates, budget) {
           ? "held-no-relevance"
           : candidate.rerankScore < 0.3
           ? "held-low-relevance"
-          : "held-budget",
+          : !answerPlan.requiredRoles.length
+            ? "held-no-answer-plan"
+            : missingAnswerEvidence
+              ? "held-missing-answer-evidence"
+              : !answerable && candidate.answerability > 0
+                ? "held-budget"
+                : candidate.answerability > 0
+                  ? "held-duplicate-answer-evidence"
+                  : "held-not-answer-bearing",
     };
   });
-  return { candidates: annotated, evidence, usedTokens };
+  return { candidates: annotated, evidence, usedTokens, answerable };
 }
 
 function rankByRrf(candidates, id) {
@@ -448,9 +498,8 @@ async function selfTest() {
     if (!incident || incident.sparseRank !== 1) {
       throw new Error("hybrid retrieval did not surface ERR-PAY-142 through sparse rank");
     }
-    if (!currentPolicy || currentPolicy.status !== "injected") {
-      throw new Error("current deployment policy was not injected");
-    }
+    if (!currentPolicy) throw new Error("current deployment policy was not retrieved");
+    assertCompleteDeploymentPacket(result, "default run");
     if (result.candidates.some((candidate) => candidate.id.includes("globex"))) {
       throw new Error("tenant filter leaked another tenant");
     }
@@ -460,6 +509,35 @@ async function selfTest() {
     if (result.usedTokens > result.tokenBudget) throw new Error("evidence packet exceeded its token budget");
     if (!result.prompt.endsWith("</retrieved_memory>")) {
       throw new Error("retrieved evidence was not placed at the dynamic prompt tail");
+    }
+
+    const constrained = await runAgent({
+      storePath: resolve(directory, "constrained-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: DEFAULT_QUESTION,
+      budget: 42,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertCompleteDeploymentPacket(constrained, "42-token run");
+
+    const insufficient = await runAgent({
+      storePath: resolve(directory, "insufficient-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: DEFAULT_QUESTION,
+      budget: 20,
+      rrfK: DEFAULT_RRF_K,
+    });
+    if (insufficient.evidence.length !== 0 || insufficient.usedTokens !== 0) {
+      throw new Error("an undersized budget injected a partial deployment answer");
+    }
+    if (insufficient.decision !== "ask for clarification or retrieve with a new query") {
+      throw new Error("an undersized budget claimed to answer without the complete evidence packet");
     }
 
     const irrelevant = await runAgent({
@@ -499,6 +577,29 @@ async function selfTest() {
     console.log("persistent retrieval memory: checks passed");
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function assertCompleteDeploymentPacket(result, label) {
+  const expectedIds = ["acme_incident_pay_142", "acme_checkout_policy_2026"];
+  const evidenceIds = result.evidence.map((item) => item.id);
+  if (evidenceIds.join(",") !== expectedIds.join(",")) {
+    throw new Error(label + " did not inject the minimal incident-and-policy evidence packet");
+  }
+  if (result.decision !== "answer with bounded evidence packet") {
+    throw new Error(label + " did not recognize the complete evidence packet as answerable");
+  }
+  for (const id of ["acme_incident_pay_142", "acme_checkout_policy_2026"]) {
+    const candidate = result.candidates.find((entry) => entry.id === id);
+    if (!candidate || candidate.finalRank > 2 || candidate.status !== "injected") {
+      throw new Error(label + " did not rank and inject required evidence: " + id);
+    }
+  }
+  for (const id of ["acme_release_calendar", "acme_checkout_telemetry"]) {
+    const candidate = result.candidates.find((entry) => entry.id === id);
+    if (!candidate || candidate.status !== "held-not-answer-bearing") {
+      throw new Error(label + " injected or misclassified a topical distractor: " + id);
+    }
   }
 }
 

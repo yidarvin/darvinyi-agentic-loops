@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -41,3 +41,13 @@ Fresh-eyes re-review: read the complete critique and git history, the current ch
 
 - `artifacts/ch17-retrieval-as-memory/README.md` still escapes its Markdown backticks and fences. The commands remain clear and the artifact runs, so this stays non-blocking.
 - The widget's visual rank grid could use table semantics or explicit header associations for stronger screen-reader navigation. Its content is exposed linearly, so this stays non-blocking.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and the current critique file. Re-verified all Round 1 REQUIRED fixes: irrelevant queries still inject no evidence and abstain, invalid calendar dates are rejected, the widget still declares the RRF tie before reranking, and the figure/widget retain the resolved readable semantic text. Re-verified the Round 2 requirement against the default, 42-token, and 20-token artifact runs.
+
+1. **Answerability now orders the fixture.** `artifacts/ch17-retrieval-as-memory/fixtures/memories.json` labels the current policy and the incident as the two answer roles for the deployment question, while calendar and telemetry are explicitly non-answer-bearing. `retrieval_memory.mjs` derives the required roles from that query, boosts answerability in the transparent reranker, and selects the complete role set rather than greedily accepting topical overlap. The default and 42-token runs therefore inject only `acme_incident_pay_142` and `acme_checkout_policy_2026`, holding calendar and telemetry.
+2. **An incomplete packet cannot claim an answer.** `selectEvidence()` now emits no evidence when the complete required set exceeds the budget. At the supported 20-token minimum, both required records remain held for budget and the artifact takes the clarification/new-query decision rather than answering from the release calendar.
+3. **The regression is deterministic.** The artifact `--self-test` now asserts the exact two-record packet and held distractors for both the default and 42-token runs, and asserts zero evidence plus abstention at 20 tokens. The existing irrelevant-query, valid-time, tenant-isolation, hybrid-rank, prompt-tail, and budget checks remain in place.
+
+No advisories were taken: escaped README Markdown and optional widget table semantics remain outside this resolution scope. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` pass.
