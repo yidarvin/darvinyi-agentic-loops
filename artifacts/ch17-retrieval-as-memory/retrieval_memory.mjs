@@ -41,7 +41,20 @@ const QUERY_FUNCTION_WORDS = new Set([
   "why",
   "with",
 ]);
-const ACTION_REQUEST_PREFIXES = new Set(["can", "may", "should", "will"]);
+const ACTION_REQUEST_PREFIXES = new Set([
+  "can",
+  "could",
+  "may",
+  "must",
+  "need",
+  "needs",
+  "please",
+  "should",
+  "want",
+  "wants",
+  "will",
+  "would",
+]);
 const ACTION_REQUEST_FILLERS = new Set([
   "a",
   "an",
@@ -54,26 +67,26 @@ const ACTION_REQUEST_FILLERS = new Set([
   "we",
   "you",
 ]);
-const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release"]);
-const UNSUPPORTED_IMPERATIVE_ACTION_TERMS = new Set([
-  "approve",
-  "archive",
-  "cancel",
-  "create",
-  "delete",
-  "disable",
-  "enable",
-  "erase",
-  "export",
-  "grant",
-  "migrate",
-  "modify",
-  "purge",
-  "remove",
-  "revoke",
-  "send",
-  "update",
+const GENERIC_LOOKUP_STARTERS = new Set([
+  "are",
+  "describe",
+  "did",
+  "do",
+  "does",
+  "explain",
+  "how",
+  "is",
+  "list",
+  "show",
+  "tell",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
 ]);
+const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -424,16 +437,23 @@ function requestedServices(tokens) {
 }
 
 function classifyActionRequest(tokens) {
-  const prefixIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
-  const operationStart = prefixIndex === -1 ? 0 : prefixIndex + 1;
-  const operation = firstActionTerm(tokens, operationStart);
-  if (!operation) return { supported: prefixIndex === -1 };
-
-  if (prefixIndex !== -1 || SUPPORTED_ACTION_TERMS.has(operation) || UNSUPPORTED_IMPERATIVE_ACTION_TERMS.has(operation)) {
-    return { supported: SUPPORTED_ACTION_TERMS.has(operation) };
+  const intentIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
+  if (intentIndex !== -1) {
+    const operation = firstActionTerm(tokens, intentIndex + 1);
+    return { supported: Boolean(operation && SUPPORTED_ACTION_TERMS.has(operation)) };
   }
 
-  return { supported: true };
+  const howToOperation = actionInHowToQuestion(tokens);
+  if (howToOperation) return { supported: SUPPORTED_ACTION_TERMS.has(howToOperation) };
+
+  const firstTerm = firstActionTerm(tokens, 0);
+  if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
+  return { supported: SUPPORTED_ACTION_TERMS.has(firstTerm) };
+}
+
+function actionInHowToQuestion(tokens) {
+  if (tokens[0] !== "how" || !["do", "to"].includes(tokens[1])) return null;
+  return firstActionTerm(tokens, 2);
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -879,6 +899,30 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(bareImperativeDeletion, "bare imperative deletion operation");
+
+    const unsupportedEncryption = await runAgent({
+      storePath: resolve(directory, "unsupported-encryption-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Encrypt checkout customer data.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(unsupportedEncryption, "unsupported encryption operation");
+
+    const intentPrefixedDeletion = await runAgent({
+      storePath: resolve(directory, "intent-prefixed-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "I need to delete checkout customer data.",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(intentPrefixedDeletion, "intent-prefixed deletion operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),
