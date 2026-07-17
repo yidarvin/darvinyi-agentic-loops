@@ -520,8 +520,14 @@ function actionInGenericInterrogativeQuestion(tokens) {
   const genericSubjectIndex = tokens.findIndex(
     (term, index) => index === 0 && ["who", "which"].includes(term),
   );
-  if (genericSubjectIndex === -1) return null;
-  return predicateAfterGenericSubject(tokens, genericSubjectIndex);
+  if (genericSubjectIndex !== -1) return predicateAfterGenericSubject(tokens, genericSubjectIndex);
+
+  return actionInWhatSubjectPredicateQuestion(tokens);
+}
+
+function actionInWhatSubjectPredicateQuestion(tokens) {
+  if (tokens[0] !== "what" || !isPotentialThirdPersonPredicate(tokens[2])) return null;
+  return normalizeThirdPersonPredicate(tokens[2]);
 }
 
 function predicateAfterGenericSubject(tokens, genericSubjectIndex) {
@@ -532,10 +538,17 @@ function predicateAfterGenericSubject(tokens, genericSubjectIndex) {
   const predicate = tokens.find(
     (term, index) =>
       index > genericSubjectIndex + 1 &&
+      isPotentialThirdPersonPredicate(term),
+  );
+  return normalizeThirdPersonPredicate(predicate || null);
+}
+
+function isPotentialThirdPersonPredicate(term) {
+  return Boolean(
+    term &&
       (SUPPORTED_ACTION_TERMS.has(term) ||
         (term.length > 3 && (term.endsWith("s") || term.endsWith("ed")))),
   );
-  return normalizeThirdPersonPredicate(predicate || null);
 }
 
 function normalizeThirdPersonPredicate(term) {
@@ -1104,6 +1117,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       thirdPersonDepartmentPastDeletion,
       "third-person department past-tense deletion operation",
+    );
+
+    const whatDepartmentDeletion = await runAgent({
+      storePath: resolve(directory, "what-department-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What department deletes checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      whatDepartmentDeletion,
+      "what-headed department deletion operation",
     );
 
     const passiveSafetyDeletion = await runAgent({
