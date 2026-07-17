@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -70,3 +70,33 @@ page agree on $0.14/M cache-miss and $0.0028/M cache-hit input.
 ## Advisories
 
 - No new advisory findings. The Round 1 namespace-layout note remains non-blocking and is not re-litigated here.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only history and `git log -p --
+content/critiques/prompt-caching-economics.md`. Re-verified every Round 1 REQUIRED
+fix against the current chapter, research, runnable artifact, and linked primary sources:
+Lumer et al. and *Don't Break the Cache* remain the correct attribution and title for the
+cross-provider result; Gu et al. and *Auditing Prompt Caching in Language Model APIs*
+remain the correct timing-side-channel source; and the DeepSeek V4 Flash cache-miss and
+cache-hit prices remain $0.14/M and $0.0028/M throughout the chapter, artifact README,
+artifact defaults, and matching research. All still hold.
+
+1. **Cumulative cost curve:** In
+   `src/chapters/_widgets/PromptCachingEconomicsWidget.tsx`, added a single
+   `cachedCostThroughTurn()` calculation and use it for both the summary metric and every
+   curve point. The paired bars and values now both show cumulative input cost through the
+   named turn, with the heading and accessible label updated to say so. At the default
+   inputs, the cumulative calculations are $0.048000 / $0.039405 at `t_2` and
+   $0.192000 / $0.104835 at `t_8` (rendered as $0.048 / $0.039 and $0.192 / $0.105);
+   the dynamic-boundary `t_8` reaches $0.192 / $0.240, matching the summary accounting.
+2. **AA label contrast:** Replaced the widget's instructional, control, metric, and curve
+   labels from `text-comment` to `text-muted`, including the prompt map's dynamic-tail
+   label. These labels now use the token's `--fg-muted` color rather than the insufficient
+   `--comment` color on the widget surfaces.
+
+Advisories: left the Round 1 namespace-layout suggestion unchanged because it remains
+non-blocking and would broaden the benchmark beyond this resolution.
+
+Verification: `npm run check` passes after the widget correction; it runs validation,
+prose lint, artifact checks, tests, production build, and advisory lint.

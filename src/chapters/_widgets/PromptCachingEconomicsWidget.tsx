@@ -42,27 +42,26 @@ export function PromptCachingEconomicsWidget() {
   const cacheableTokens = boundary === "stable" ? stablePrefix : stablePrefix + variableTail;
   const cacheReadTokens = cacheableTokens * (turns - 1) * realizedHitRate;
   const cacheWriteTokens = cacheableTokens * (1 + (turns - 1) * (1 - realizedHitRate));
-  const variableFullPriceTokens = boundary === "stable" ? variableTail * turns : 0;
   const uncachedTokens = (stablePrefix + variableTail) * turns;
   const uncachedCost = (uncachedTokens * BASE_INPUT_PRICE) / 1_000_000;
-  const cachedCost =
-    (variableFullPriceTokens * BASE_INPUT_PRICE) / 1_000_000 +
-    (cacheWriteTokens * BASE_INPUT_PRICE * pricing.writeMultiplier) / 1_000_000 +
-    (cacheReadTokens * BASE_INPUT_PRICE * READ_MULTIPLIER) / 1_000_000;
+  const cachedCostThroughTurn = (turn: number) => {
+    const reads = cacheableTokens * (turn - 1) * realizedHitRate;
+    const writes = cacheableTokens * (1 + (turn - 1) * (1 - realizedHitRate));
+    const variableTokens = boundary === "stable" ? variableTail * turn : 0;
+    return (
+      (variableTokens * BASE_INPUT_PRICE) / 1_000_000 +
+      (writes * BASE_INPUT_PRICE * pricing.writeMultiplier) / 1_000_000 +
+      (reads * BASE_INPUT_PRICE * READ_MULTIPLIER) / 1_000_000
+    );
+  };
+  const cachedCost = cachedCostThroughTurn(turns);
   const savings = uncachedCost - cachedCost;
   const savingsPercent = uncachedCost === 0 ? 0 : (savings / uncachedCost) * 100;
 
   const curve = Array.from({ length: turns }, (_, index) => {
     const turn = index + 1;
     const uncached = turn * (stablePrefix + variableTail) * BASE_INPUT_PRICE / 1_000_000;
-    const cachedPerTurn =
-      boundary === "stable"
-        ? (variableTail * BASE_INPUT_PRICE) / 1_000_000 +
-          (stablePrefix * BASE_INPUT_PRICE *
-            (turn === 1 ? pricing.writeMultiplier : realizedHitRate * READ_MULTIPLIER + (1 - realizedHitRate) * pricing.writeMultiplier)) /
-            1_000_000
-        : ((stablePrefix + variableTail) * BASE_INPUT_PRICE * pricing.writeMultiplier) / 1_000_000;
-    return { turn, uncached, cached: cachedPerTurn };
+    return { turn, uncached, cached: cachedCostThroughTurn(turn) };
   });
   const maxCurveValue = Math.max(...curve.flatMap((point) => [point.uncached, point.cached]));
 
@@ -73,7 +72,7 @@ export function PromptCachingEconomicsWidget() {
 
   return (
     <div className="font-sans">
-      <div className="rounded border border-border bg-surface-2 p-3 font-mono text-xs leading-relaxed text-comment">
+      <div className="rounded border border-border bg-surface-2 p-3 font-mono text-xs leading-relaxed text-muted">
         <span className="text-fg/90">system + tools + stable reference</span>
         <span className="mx-2 text-accent">→</span>
         <span className="text-fg/90">cache seam</span>
@@ -82,7 +81,7 @@ export function PromptCachingEconomicsWidget() {
       </div>
 
       <fieldset className="mt-5">
-        <legend className="font-mono text-[0.7rem] text-comment">// place the cache boundary</legend>
+        <legend className="font-mono text-[0.7rem] text-muted">// place the cache boundary</legend>
         <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Choose cache boundary placement">
           <button
             type="button"
@@ -156,7 +155,7 @@ export function PromptCachingEconomicsWidget() {
       </div>
 
       <fieldset className="mt-5">
-        <legend className="font-mono text-[0.7rem] text-comment">// cache-write terms</legend>
+        <legend className="font-mono text-[0.7rem] text-muted">// cache-write terms</legend>
         <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Choose cache write pricing">
           {pricingModes.map((item) => {
             const selected = item.id === pricing.id;
@@ -177,7 +176,7 @@ export function PromptCachingEconomicsWidget() {
             );
           })}
         </div>
-        <p className="mt-2 font-mono text-[0.7rem] text-comment">// {pricing.detail}; reads modelled at 0.1x input</p>
+        <p className="mt-2 font-mono text-[0.7rem] text-muted">// {pricing.detail}; reads modelled at 0.1x input</p>
       </fieldset>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3" aria-live="polite">
@@ -198,14 +197,14 @@ export function PromptCachingEconomicsWidget() {
 
       <section className="mt-5 rounded border border-border bg-surface-2 p-4" aria-label="Cost curve by agent turn">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="font-mono text-[0.7rem] uppercase tracking-wide text-comment">cost per turn</p>
-          <p className="font-mono text-[0.7rem] text-comment">example base input price: ${BASE_INPUT_PRICE.toFixed(2)}/M</p>
+          <p className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">cumulative input cost through turn</p>
+          <p className="font-mono text-[0.7rem] text-muted">example base input price: ${BASE_INPUT_PRICE.toFixed(2)}/M</p>
         </div>
         <div className="mt-3 space-y-2">
           {curve.map((point) => (
             <div key={point.turn} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2 font-mono text-[0.7rem]">
-              <span className="text-comment">t_{point.turn}</span>
-              <div className="space-y-1" aria-label={`Turn ${point.turn} cost comparison`}>
+              <span className="text-muted">t_{point.turn}</span>
+              <div className="space-y-1" aria-label={`Cumulative input cost through turn ${point.turn}`}>
                 <div className="h-1.5 overflow-hidden rounded bg-border">
                   <div className="h-full rounded bg-fg-muted/70" style={{ width: `${(point.uncached / maxCurveValue) * 100}%` }} />
                 </div>
@@ -217,12 +216,12 @@ export function PromptCachingEconomicsWidget() {
                 </div>
               </div>
               <span className="text-muted">
-                {money(point.uncached)} <span className="text-comment">/</span> {money(point.cached)}
+                {money(point.uncached)} <span className="text-muted">/</span> {money(point.cached)}
               </span>
             </div>
           ))}
         </div>
-        <p className="mt-3 font-mono text-[0.7rem] leading-relaxed text-comment">
+        <p className="mt-3 font-mono text-[0.7rem] leading-relaxed text-muted">
           <span className="text-fg-muted">upper bar</span> uncached <span className="mx-1 text-accent">/</span>
           <span className={savings >= 0 ? "text-accent" : "text-danger"}>lower bar</span> cache-aware
         </p>
@@ -259,7 +258,7 @@ function RangeControl({
 }) {
   return (
     <label htmlFor={id} className={`block ${disabled ? "opacity-50" : ""}`}>
-      <span className="flex items-baseline justify-between gap-3 font-mono text-[0.7rem] text-comment">
+      <span className="flex items-baseline justify-between gap-3 font-mono text-[0.7rem] text-muted">
         <span>{label}</span>
         <output htmlFor={id} className="text-accent">
           {valueLabel}
@@ -296,7 +295,7 @@ function Metric({
   const valueColor = danger ? "text-danger" : accent ? "text-accent" : "text-fg";
   return (
     <section className="rounded border border-border bg-surface-2 p-3">
-      <p className="font-mono text-[0.7rem] uppercase tracking-wide text-comment">{label}</p>
+      <p className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">{label}</p>
       <p className={`mt-1 font-mono text-lg ${valueColor}`}>{value}</p>
       <p className="mt-1 font-mono text-[0.7rem] leading-relaxed text-muted">{detail}</p>
     </section>
