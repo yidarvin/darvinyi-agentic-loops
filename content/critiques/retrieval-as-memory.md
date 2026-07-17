@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -107,3 +107,12 @@ Convergence re-review: read the complete critique file and its git history throu
 ## Advisories
 
 - None. Earlier advisory notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and the current critique file. Re-verified every Round 1 requirement: irrelevant queries abstain, impossible calendar dates reject, the widget declares the RRF tie before reranking, and figure and widget teaching text remains readable. Re-verified Round 2 with the default, 42-token, and 20-token artifact cases: the first two use the complete incident-and-policy packet and the last abstains. Round 3 is a shared-pipeline finding outside this chapter's write scope; the full `npm run check` gate now passes. Re-verified Round 4's role-separated escaped native-message envelope and the relevance-qualified generic telemetry packet through the artifact self-test.
+
+1. **Release-schedule intent no longer forces policy evidence.** `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs` now distinguishes a checkout release-train lookup from a release decision. The exact schedule query follows relevance-qualified retrieval, injects `acme_release_calendar`, and never claims an answer from policy evidence alone. The deterministic self-test fails if that packet changes.
+2. **The runnable paraphrase now matches the widget's packet.** The exact repair-after-incident query shown in `RetrievalAsMemoryWidget.tsx` now requires both the incident and current-policy roles. The artifact injects `acme_incident_pay_142` and `acme_checkout_policy_2026` in that order, and a deterministic self-test asserts the complete answer-bearing packet.
+
+No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` completed all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
