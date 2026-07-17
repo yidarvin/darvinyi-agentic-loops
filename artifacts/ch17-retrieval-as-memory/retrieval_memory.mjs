@@ -87,7 +87,6 @@ const GENERIC_LOOKUP_STARTERS = new Set([
   "why",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
-const UNSUPPORTED_DESTRUCTIVE_ACTION_TERMS = new Set(["delete", "deleting", "deletion"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -438,10 +437,6 @@ function requestedServices(tokens) {
 }
 
 function classifyActionRequest(tokens) {
-  if (tokens.some((term) => UNSUPPORTED_DESTRUCTIVE_ACTION_TERMS.has(term))) {
-    return { supported: false };
-  }
-
   const intentIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
   if (intentIndex !== -1) {
     const operation = firstActionTerm(tokens, intentIndex + 1);
@@ -453,6 +448,12 @@ function classifyActionRequest(tokens) {
 
   const infinitiveOperation = actionAfterInfinitiveCue(tokens);
   if (infinitiveOperation) return { supported: SUPPORTED_ACTION_TERMS.has(infinitiveOperation) };
+
+  const requirementOperation = actionInRequirementQuestion(tokens);
+  if (requirementOperation) return { supported: SUPPORTED_ACTION_TERMS.has(requirementOperation) };
+
+  const safetyOperation = actionInSafetyQuestion(tokens);
+  if (safetyOperation) return { supported: SUPPORTED_ACTION_TERMS.has(safetyOperation) };
 
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
@@ -473,6 +474,25 @@ function actionAfterInfinitiveCue(tokens) {
   );
   if (cueIndex === -1) return null;
   return firstActionTerm(tokens, cueIndex + 2);
+}
+
+function actionInRequirementQuestion(tokens) {
+  const questionVerbIndex = tokens.findIndex(
+    (term, index) =>
+      ["what", "how"].includes(tokens[index - 1]) &&
+      ["do", "does", "did"].includes(term) &&
+      tokens.slice(index + 1).some((candidate) => ["need", "needed", "require", "required", "requires"].includes(candidate)),
+  );
+  if (questionVerbIndex === -1) return null;
+  return firstActionTerm(tokens, questionVerbIndex + 1);
+}
+
+function actionInSafetyQuestion(tokens) {
+  const predicateIndex = tokens.findIndex(
+    (term, index) => term === "is" && tokens.slice(index + 1).includes("safe"),
+  );
+  if (predicateIndex === -1) return null;
+  return firstActionTerm(tokens, predicateIndex + 1);
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -1002,6 +1022,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(gerundDeletion, "gerund deletion operation");
+
+    const requirementPurging = await runAgent({
+      storePath: resolve(directory, "requirement-purging-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What does purging checkout customer data require?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(requirementPurging, "question-form purging operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),
