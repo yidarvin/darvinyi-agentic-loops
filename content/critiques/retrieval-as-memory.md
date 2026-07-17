@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -256,3 +256,15 @@ No advisory was taken: the prior README fence formatting, illustrative token-dis
 Final verification: `npm run check` passed all seven stages with `CHECK OK`, including the pipeline state-machine tests, artifact gate, 38 Vitest tests, production build, and lint.
 
 Post-audit regression extension: the artifact self-test also rejects the imperative form `Delete checkout customer data after ERR-PAY-142.` with zero evidence and the clarification/new-query decision. The subsequent repository-wide `npm run check` again passed all seven stages with `CHECK OK`.
+
+## Round 12 review (2026-07-17)
+
+Convergence re-review: read the complete append-only critique and git history through Round 11; the current MDX chapter, exact figure, exact widget, research backbone, build notes, fixture, README, checker, and complete runnable artifact. Re-verified every settled REQUIRED result against the current source and artifact self-test: invalid dates and irrelevant queries abstain; the RRF tie and readable teaching text remain intact; complete-or-abstain deployment packets, role-separated escaped native messages, telemetry, release-schedule, and widget-paraphrase reads work; and the unsupported-service, unknown-identifier, compound-identifier, mixed-service, dense-only irrelevant, and Round 11 modal or ID-bearing unsupported-action paths remain covered by deterministic checks. Ran `npm run check` to exit 0 and `CHECK OK` across all seven stages. Checked the research backbone and linked primary or official sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, OpenAI embeddings, and RAGAS; the chapter's consequential claims remain supported. I also ran the unsupported non-modal imperative below against an isolated store.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:257-330,407-418` --- an unsupported imperative action without an incident ID falls through to generic retrieval and is falsely declared answerable.** From the artifact directory, `node retrieval_memory.mjs --reset --store /tmp/retrieval-memory-audit/delete.json --question 'Delete checkout customer data.' --json` currently returns `evidenceCount: 1`, `usedTokens: 21`, and `decision: "answer with bounded evidence packet"`, injecting `acme_checkout_policy_2026`. That record only authorizes checkout deployment approval and migration verification; it cannot answer or authorize a customer-data deletion. `classifyActionRequest()` returns supported when no modal prefix is present, while `unsupportedIncidentAction` only catches the ID-bearing variant, so this input reaches generic selection. This is distinct from Round 11's settled modal and incident-ID deletion cases, and contradicts the README's fail-closed contract at lines 66-68 for unsupported explicit actions. Recognize unsupported imperative actions before generic selection, or conservatively require a positively recognized supported operation; add a deterministic assertion that this exact input emits zero evidence, uses zero tokens, and takes the clarification/new-query decision.
+
+## Advisories
+
+- No new advisories. Earlier README-formatting, illustrative token-display, and optional rank-grid table-semantics notes remain non-blocking.
