@@ -294,14 +294,32 @@ run_validation() {
   return 77
 }
 
+run_stage_guard() {
+  local stage="$1" slug="$2" label="$3" log rc
+  shift 3
+  log="$ROOT/.pipeline/contract-${stage}-${slug}-${label}-$(date +%Y%m%d-%H%M%S).log"
+  set +e
+  "$GUARD" --repo "$ROOT" "$@" >"$log" 2>&1
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    cat "$log"
+    return 0
+  fi
+  cat "$log" >&2
+  record_validation_failure stage-validation "$stage" "$slug" "$log" "$rc"
+  echo "run.sh: stage contract '$label' failed; preserving output for scoped repair" >&2
+  return 77
+}
+
 commit_stage() {
   local stage="$1" slug="$2" num="$3" message="$4" lease_stage lease_slug lease_num lease_state
   read -r lease_stage lease_slug lease_num lease_state < <("$GUARD" --repo "$ROOT" lease-verify)
   [[ "$lease_stage $lease_slug $lease_num" == "$stage $slug $num" ]] || die "active lease does not match $stage $slug $num"
-  "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num"
+  run_stage_guard "$stage" "$slug" scope scope "$stage" "$slug" "$num" || return $?
   record_approved_critique "$stage" "$slug"
+  run_stage_guard "$stage" "$slug" outcome outcome "$stage" "$slug" || return $?
   run_validation "$stage" "$slug" || return $?
-  "$GUARD" --repo "$ROOT" outcome "$stage" "$slug"
   "$GUARD" --repo "$ROOT" branch >/dev/null
   "$GIT_HELPER" --repo "$ROOT" add -A
   "$GUARD" --repo "$ROOT" scope "$stage" "$slug" "$num" >/dev/null
@@ -335,7 +353,6 @@ PY
     return $?
   fi
   [[ "$kind" == stage-validation ]] || die "unknown validation failure kind '$kind'"
-  "$GUARD" --repo "$ROOT" scope "$lease_stage" "$lease_slug" "$lease_num" >/dev/null
   prompt="You are repairing a failed validation for the active $lease_stage stage of chapter '$lease_slug'. Read $failure_log and the current uncommitted diff. Fix only the concrete failures caused by this chapter stage. Preserve all valid work and stay inside the original role scope. Do not edit pipeline code, configuration, other chapters, or unrelated files. Run focused checks as useful, but do not commit or push; the parent will run the full gate."
   log="$ROOT/.pipeline/repair-${lease_stage}-${lease_slug}-$(date +%Y%m%d-%H%M%S).log"
   set +e

@@ -625,6 +625,52 @@ registry.write_text(json.dumps(data), encoding='utf-8')
         shutil.rmtree(home)
 
 
+def test_driver_repairs_an_incomplete_stage_outcome() -> None:
+    fake_codex = """#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+counter = pathlib.Path(os.environ['MODEL_CALLS'])
+count = int(counter.read_text(encoding='utf-8')) + 1 if counter.exists() else 1
+counter.write_text(str(count), encoding='utf-8')
+args = sys.argv[1:]
+root = pathlib.Path(args[args.index('-C') + 1])
+(root / 'src/chapters/one.mdx').write_text(f'# Built one, pass {count}\\n', encoding='utf-8')
+if count > 1:
+    registry = root / 'content/registry.json'
+    data = json.loads(registry.read_text(encoding='utf-8'))
+    data['chapters'][0]['status'] = 'draft'
+    registry.write_text(json.dumps(data), encoding='utf-8')
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        tools = home / "bin"
+        tools.mkdir()
+        npm = tools / "npm"
+        npm.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        npm.chmod(0o755)
+        env.update({
+            "HOME": str(home),
+            "PATH": f"{tools}:{env['PATH']}",
+            "MODEL_CALLS": str(home / "model-calls"),
+            "PIPELINE_REPAIR_ATTEMPTS_PER_RUN": "1",
+            "PIPELINE_WATCHDOG_POLL_SECONDS": "0.03",
+        })
+        result = run("./run.sh", "next", cwd=work, env=env, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (home / "model-calls").read_text(encoding="utf-8") == "2"
+        assert "stage contract 'outcome' failed" in result.stderr
+        assert run("git", "log", "-1", "--format=%s", cwd=work).stdout.strip() == (
+            "build(one): Terra stage"
+        )
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
 def test_validation_timeout_preserves_the_stage_without_model_recovery() -> None:
     fake_codex = """#!/usr/bin/env python3
 import json
@@ -1127,6 +1173,7 @@ def main() -> int:
         test_driver_retains_lease_for_delayed_output()
         test_driver_commits_valid_stage_once()
         test_driver_repairs_a_normal_validation_failure()
+        test_driver_repairs_an_incomplete_stage_outcome()
         test_validation_timeout_preserves_the_stage_without_model_recovery()
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
