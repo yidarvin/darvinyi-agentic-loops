@@ -1,0 +1,60 @@
+{
+  "collection": "agent-memory",
+  "records": [
+    {
+      "id": "acme_checkout_policy_2026",
+      "tenant": "acme",
+      "memoryType": "semantic",
+      "provenance": "policy/2026-04",
+      "validFrom": "2026-04-01",
+      "tags": ["checkout", "deployment", "approval", "migration"],
+      "text": "For Acme checkout deployments, an on-call approver and a green migration verification are required before production release."
+    },
+    {
+      "id": "acme_checkout_policy_2025",
+      "tenant": "acme",
+      "memoryType": "semantic",
+      "provenance": "policy/2025-10",
+      "validFrom": "2025-10-01",
+      "validTo": "2026-03-31",
+      "tags": ["checkout", "deployment", "approval"],
+      "text": "For Acme checkout deployments, QA approval is sufficient before production release."
+    },
+    {
+      "id": "acme_incident_pay_142",
+      "tenant": "acme",
+      "memoryType": "episodic",
+      "provenance": "run/2026-05-28",
+      "validFrom": "2026-05-28",
+      "tags": ["checkout", "payments", "ERR-PAY-142", "retry"],
+      "text": "ERR-PAY-142: checkout retry workers saturated after duplicate suppression changed. Confirm the migration gate before a repair deploy."
+    },
+    {
+      "id": "acme_checkout_telemetry",
+      "tenant": "acme",
+      "memoryType": "semantic",
+      "provenance": "runbook/observability",
+      "validFrom": "2026-03-12",
+      "tags": ["checkout", "telemetry", "dashboards"],
+      "text": "Checkout telemetry is sampled at one percent during ordinary traffic and at ten percent during a declared incident."
+    },
+    {
+      "id": "acme_release_calendar",
+      "tenant": "acme",
+      "memoryType": "semantic",
+      "provenance": "calendar/2026-q2",
+      "validFrom": "2026-05-01",
+      "tags": ["release", "calendar", "checkout"],
+      "text": "The checkout release train normally leaves on Tuesday and Thursday after the production readiness review."
+    },
+    {
+      "id": "globex_incident_pay_142",
+      "tenant": "globex",
+      "memoryType": "episodic",
+      "provenance": "run/2026-05-29",
+      "validFrom": "2026-05-29",
+      "tags": ["checkout", "payments", "ERR-PAY-142"],
+      "text": "ERR-PAY-142 at Globex was caused by a payment gateway certificate rotation. Do not copy this diagnosis into another tenant."
+    }
+  ]
+}

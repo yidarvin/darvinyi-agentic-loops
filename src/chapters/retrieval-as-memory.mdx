@@ -1,0 +1,176 @@
+import { RetrievalAsMemoryFigure } from "./_figures/RetrievalAsMemoryFigure";
+import { RetrievalAsMemoryWidget } from "./_widgets/RetrievalAsMemoryWidget";
+
+Retrieval is the read path of an agent's long-term memory. It decides which persistent
+facts, episodes, and documents deserve a place in a finite working context for this one
+turn. The objective is not to retrieve the most text. It is to inject the smallest
+authorized, current, answer-bearing evidence set that lets the agent act correctly.
+
+[The Memory Taxonomy](/memory-taxonomy) separated working, episodic, semantic, and
+procedural memory. Retrieval is the bridge from the durable stores to working memory.
+It is a selection policy with a hard context budget, not a synonym for a vector database
+or a document question-answering feature.
+
+## Recall competes with the window
+
+A million-token context window does not turn an enterprise corpus into a prompt. The
+corpus still changes, access controls still apply, and marginally relevant passages make
+the model's job harder. [Liu et al. showed](https://arxiv.org/abs/2307.03172) that models
+often lose accuracy when relevant material moves into the middle of a long input. The
+failure is structural: an agent needs evidence that is easy to find and easy to use, not
+an undifferentiated archive.
+
+That puts two errors in tension. A narrow search misses the record that changes the
+answer. A wide search returns distractors that consume the same scarce attention. The
+memory read should therefore separate **candidate recall** from **context precision**:
+cast a wider net outside the prompt, then send only a compact evidence packet to the
+model.
+
+<Figure id="17.1" caption="Retrieval is a narrowing read pipeline. Durable stores feed a broad, permission-aware candidate search. Fusion and reranking turn that candidate set into a bounded evidence packet, appended at the dynamic end of the prompt. A controller can take another bounded read, but it replaces weak evidence instead of accumulating it forever.">
+  <RetrievalAsMemoryFigure />
+</Figure>
+
+## Build recall in layers
+
+Start with a simple baseline you can measure: recursively split documents near 512 tokens
+with modest overlap, embed the chunks, use cosine search over an HNSW index, and collect a
+labeled question set from the corpus you actually operate. Semantic chunking is useful in
+some corpora, but it is not a default win. Small chunks improve pinpoint recall and risk
+cutting an answer across a boundary. Parent-document retrieval and sentence windows solve
+that trade by retrieving a precise child and returning its useful neighborhood.
+
+Dense vectors are good at paraphrase. Sparse retrieval is good at identifiers, error
+strings, product codes, names, and rare jargon. Use both when those query shapes exist.
+[Reciprocal Rank Fusion](https://dl.acm.org/doi/10.1145/1571941.1572114) combines their
+ranks without pretending their scores share a scale: `RRF(d) = sum_r 1 / (k + rank_r(d))`.
+`k = 60` is conventional, though a tiny corpus may need a smaller value so the rank
+differences remain meaningful.
+
+Then retrieve broadly and rerank narrowly. A first stage can return 50 to 200 candidates;
+a cross-encoder or late-interaction reranker reads each query and candidate together, then
+keeps three to ten. This is where topical similarity becomes answerability. Treat the
+reranker as a measurable precision correction, not an oracle. Code and identifier-heavy
+queries can favor sparse or late-interaction retrieval instead.
+
+Product example: OpenAI's [embeddings guide](https://platform.openai.com/docs/guides/embeddings)
+documents a family of embedding models and dimension controls. The architectural choice is
+vendor-neutral. Pick the model, dimensionality, index, and reranker by recall, precision,
+latency, and cost on your corpus rather than a general leaderboard.
+
+## Inspect the packet, not only the rank
+
+The rank list is intermediate state. What the model receives is the evidence packet after
+tenant scope, permissions, time validity, provenance, reranking, and a token budget have
+all had their say. Filtering after retrieval is too late if an unauthorized record entered
+the model context. Freshness is also a filter, not a footnote. A policy invalidated last
+quarter must lose to its successor even if its wording matches the query more closely.
+
+<Widget name="retrieval_inspector" hint="Issue a query, or select an identifier, freshness, or paraphrase probe. Read across each candidate: dense and sparse ranks form the recall set, RRF merges them, the reranker orders the survivors, and only injected rows reach the dynamic prompt tail.">
+  <RetrievalAsMemoryWidget />
+</Widget>
+
+The packet belongs at the end of the prompt, after the stable system instructions, tools,
+and cacheable reference material. That preserves the stable prefix described in
+[Prompt Caching and the Economics of Remembering](/prompt-caching-economics). It also makes
+the retrieval boundary auditable: log the query, filters, candidates, selected records,
+token count, and the exact packet shown to the model.
+
+## Let the agent earn another read
+
+One-shot retrieval is often enough for a direct lookup. Agentic retrieval earns its extra
+latency only when the task is multi-hop, ambiguous, freshness-sensitive, or visibly
+under-supported. The controller needs four decisions: retrieve or answer, transform or
+decompose the query, retrieve again or stop, and judge whether the answer is grounded.
+[Self-RAG](https://arxiv.org/abs/2310.11511) and
+[Corrective RAG](https://arxiv.org/abs/2401.15884) are useful reference designs for those
+decisions.
+
+Put both a step budget and an evidence budget around that loop. Do not append every pass to
+the prompt. Replace the weakest evidence when a later query finds something better. This
+prevents context dilution and keeps the failure mode observable: either the answer lacks a
+needed fact, or the controller has spent its search budget and should ask for clarification
+or report uncertainty.
+
+Not every memory question wants vector search. Structured filters or text-to-SQL fit
+constraint questions. Graph retrieval earns its indexing cost when a query needs
+relationships, corpus-level synthesis, or many hops. A temporal graph earns its cost when
+"what was true then" is central. Microsoft's [GraphRAG documentation](https://microsoft.github.io/graphrag/)
+and the [Graphiti paper](https://arxiv.org/abs/2501.13956) show two distinct ways to add
+structure. Use neither as a default substitute for a measured vector baseline.
+
+For a small, stable body of knowledge, cache-augmented generation can be the simpler read
+path: preload the corpus and reuse its prefix state. Anthropic suggests a rough boundary of
+about 200,000 stable tokens as one workload heuristic, not a universal threshold. RAG wins
+when the corpus is larger, changes frequently, needs filters, or benefits from selecting a
+small answer set. [Anthropic's contextual retrieval report](https://www.anthropic.com/news/contextual-retrieval)
+is a product example of adding document context before indexing. Its reported gains are
+corpus-specific, so validate the same choice against your own questions.
+
+## Run a persistent memory read
+
+The artifact is a no-dependency, file-backed vector store with exact cosine search. It
+persists deterministic vectors, queries that store during an agent run, fuses dense and
+BM25 ranks with RRF, filters by tenant and valid time before ranking, and emits the bounded
+packet appended to the prompt. Exact search is intentional for this small lab. Swap the
+`PersistentVectorStore` implementation for Qdrant, pgvector, or another ANN engine when
+the corpus makes an exact scan impractical.
+
+<RunnableArtifact
+  name="persistent_retrieval_memory"
+  path="artifacts/ch17-retrieval-as-memory/"
+  runtime="node 18+"
+  run={["cd artifacts/ch17-retrieval-as-memory", "node retrieval_memory.mjs --reset", "bash check.sh"]}>
+A self-contained memory read layer. It performs actual vector retrieval from a persistent
+local collection, exposes every intermediate rank, and validates tenant isolation,
+freshness filtering, hybrid retrieval, token budgeting, and dynamic-tail prompt placement.
+It needs no API key, network connection, or service.
+</RunnableArtifact>
+
+## Measure the read separately from the answer
+
+An answer can fail because retrieval missed evidence, because the context included too much
+noise, or because the generator ignored good evidence. Keep those diagnoses separate.
+Measure recall@k, precision@k, MRR, or NDCG for the search layer. For an end-to-end system,
+measure context recall and context precision alongside faithfulness and answer quality.
+[RAGAS](https://arxiv.org/abs/2309.15217) provides a useful vocabulary for that split, but
+its LLM-judge scores are directional and sensitive to judge choice and prompts. Pair them
+with labeled questions and an A/B harness from the real workload.
+
+## Exercises
+
+<ExerciseCard n="01" title="Run a 30-question read evaluation">
+Take a small labeled slice of a corpus you own. Compare dense-only top ten with hybrid RRF
+plus reranking. Record recall@k, context precision, p95 latency, and injected-token count.
+Choose one metric that blocks rollout, then explain why a score improvement elsewhere cannot
+override it.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Filter a changing fact before ranking">
+Model a user's changing deployment window and one record another tenant must never see.
+Specify namespace, authorization predicate, valid-time interval, transaction time,
+provenance, and deletion path. Put each predicate at the earliest point it can run, then
+show how post-retrieval filtering could leak the forbidden record.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Bound a multi-hop retrieval controller">
+Implement a three-step controller for a question that requires an incident, a policy, and a
+service owner. Give it a fixed evidence budget. At every step, log the query, selected
+records, discarded records, and stop decision. Replace the weakest packet entry instead of
+concatenating a new one.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Choose the read path for a mixed corpus">
+Design a read path for a 150,000-token stable handbook plus a daily-changing incident
+archive. Choose RAG, cache-augmented generation, or a hybrid. Defend the choice with update
+rate, cache reuse, access filtering, context cost, and the failure you expect to observe
+first.
+</ExerciseCard>
+
+## Sources
+
+- [Cormack, Clarke, and Buettcher, "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods"](https://dl.acm.org/doi/10.1145/1571941.1572114), for rank fusion across dense and sparse retrieval.
+- [Liu et al., "Lost in the Middle: How Language Models Use Long Contexts"](https://arxiv.org/abs/2307.03172), for position-sensitive failures in long inputs.
+- [Asai et al., "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"](https://arxiv.org/abs/2310.11511) and [Yan et al., "Corrective Retrieval Augmented Generation"](https://arxiv.org/abs/2401.15884), for retrieval decisions, correction, and groundedness checks.
+- [Anthropic, "Introducing Contextual Retrieval"](https://www.anthropic.com/news/contextual-retrieval), a product example and corpus-specific report on contextualized chunks, hybrid retrieval, and reranking.
+- [Edge et al., "From Local to Global: A Graph RAG Approach to Query-Focused Summarization"](https://arxiv.org/abs/2404.16130) and [Rasmussen et al., "Zep: A Temporal Knowledge Graph Architecture for Agent Memory"](https://arxiv.org/abs/2501.13956), for graph and temporal-memory retrieval.
+- [Es et al., "RAGAS: Automated Evaluation of Retrieval Augmented Generation"](https://arxiv.org/abs/2309.15217), for context precision, context recall, and faithfulness.
