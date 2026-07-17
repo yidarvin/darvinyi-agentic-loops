@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -116,3 +116,15 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 2. **The runnable paraphrase now matches the widget's packet.** The exact repair-after-incident query shown in `RetrievalAsMemoryWidget.tsx` now requires both the incident and current-policy roles. The artifact injects `acme_incident_pay_142` and `acme_checkout_policy_2026` in that order, and a deterministic self-test asserts the complete answer-bearing packet.
 
 No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` completed all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 6 review (2026-07-17)
+
+Convergence re-review: read the complete critique and git history through Rounds 1 to 5, the current MDX chapter, exact figure and widget, build notes, research backbone, and the complete runnable artifact, fixture, README, and checker. Ran npm run check to CHECK OK across all seven sections, and ran bash artifacts/ch17-retrieval-as-memory/check.sh, which passes. Re-verified every settled requirement: irrelevant queries abstain, impossible dates reject, the widget declares the RRF tie, teaching labels remain readable, the default, 42-token, and 20-token cases retain the complete-or-abstain rule, the native message envelope preserves untrusted data boundaries, generic telemetry retrieval works, the release-schedule lookup selects its calendar, and the widget paraphrase selects its incident-and-policy packet. Source-checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page remains unavailable to this fetcher, so RRF was checked against the authors' primary paper copy.
+
+## Required fixes
+
+1. **artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:210-257: a deployment query for an unsupported service is falsely marked answerable from checkout-only evidence.** In an isolated store, node retrieval_memory.mjs --reset --store <temp>/memory.json --question "Can I deploy billing after ERR-PAY-142?" --json returns decision "answer with bounded evidence packet" and injects only acme_incident_pay_142. That record explicitly says it is about checkout retry workers, and the fixture contains no billing policy or other billing evidence. deriveAnswerPlan treats the identifier as a sufficient generic incident role without binding it to the queried service, then selectEvidence treats that one role as a complete answer. This is a concrete unsafe false positive in the advertised --question TEXT path and contradicts the chapter's answer-bearing-packet thesis. Bind the plan to the requested service and action, and abstain whenever the retrieved records cannot cover that scope. Add a deterministic regression assertion that this billing query emits no evidence and the clarification/new-query decision.
+
+## Advisories
+
+- None. Earlier README-formatting and widget-table-semantic notes remain non-blocking.
