@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -137,3 +137,17 @@ Regression gate: read the complete `git log -p -- content/critiques/retrieval-as
 2. **The unsupported-service regression is deterministic.** The artifact self-test now runs `Can I deploy billing after ERR-PAY-142?` and fails unless it emits zero evidence, uses zero evidence tokens, and takes the clarification/new-query decision.
 
 No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 7 review (2026-07-17)
+
+Convergence review: read the complete critique history and `git log -p -- content/critiques/retrieval-as-memory.md` through Rounds 1 to 6; the current MDX chapter, exact figure and widget, build notes, research backbone, and the complete artifact, fixture, README, and checker. Re-verified the settled artifact behavior: irrelevant queries abstain; impossible dates reject; the widget declares the RRF tie; the readable semantic labels remain at the resolved sizes and colors; default, 42-token, and 20-token deployment packets remain complete-or-abstain; untrusted query and record content remain escaped data in native messages; telemetry, release-schedule, widget-paraphrase, and unsupported-service cases retain their settled results. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes. I read the linked primary and official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings; they support the chapter's consequential claims. `npm run check` failed at stage 3 of 7 in the watchdog pipeline test. A direct `python3 scripts/test_pipeline.py` rerun passed, confirming the gate is intermittent rather than complete.
+
+## Required fixes
+
+1. **`scripts/test_pipeline.py:424-446` and `scripts/process_watchdog.py:156-191` --- Round 3's resolved mechanical-gate failure has materially regressed.** The current `npm run check` run passed validation and prose lint, then `test_watchdog_allows_a_command_that_keeps_making_progress` failed at line 443 because its watchdog returned 124 with `maximum runtime exceeded (5s)`. That child prints 30 progress lines with 0.05-second pauses, so this is the test's declared healthy case. The direct pipeline rerun passing afterward makes the required gate nondeterministic, not healthy. Round 3 was resolved only by observing a later successful run; the current failure proves that result did not hold. Make the watchdog progress test and its runtime budget scheduler-tolerant or otherwise deterministic, then demonstrate reliable full `CHECK OK` runs.
+
+2. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:210-267,361-368` --- an unknown incident identifier is accepted as the known incident and produces an unsafe deployment answer.** In an isolated store, `node retrieval_memory.mjs --reset --store /tmp/retrieval-as-memory-unknown-id.json --question 'Can I deploy checkout after ERR-PAY-999?' --json` returns `decision: "answer with bounded evidence packet"` and injects `acme_incident_pay_142` plus the current policy. The selected incident explicitly concerns `ERR-PAY-142`, not the queried `ERR-PAY-999`. `deriveAnswerPlan()` reduces every `ERR-PAY-*` term to a generic `incident` role, while `recordMatchesPlanRole()` checks only role, service, and action. A deployment packet can therefore substitute facts from another incident and claim it is answer-bearing. Preserve the requested identifier in the plan, require an exact normalized identifier match in the incident record, and add a deterministic self-test that `ERR-PAY-999` injects zero evidence and takes the clarification/new-query decision.
+
+## Advisories
+
+- No new advisories. The previously noted escaped README fences and optional rank-grid table semantics remain non-blocking.
