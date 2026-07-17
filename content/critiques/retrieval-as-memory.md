@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -419,3 +419,12 @@ Independent convergence review: read `prompts/critique-rubric.md`, the complete 
 ## Advisories
 
 - No new advisories. Existing settled advisories remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and this append-only critique file, then re-verified every REQUIRED fix from Rounds 1 through 18. Rounds 1 and 2 still reject irrelevant or invalid inputs, preserve the RRF tie and readable teaching text, and keep deployment packets complete-or-abstain at the default, 42-token, and 20-token budgets. Rounds 3, 7, 11, and 14 shared-pipeline requirements were re-proven by the full repository gate. Round 4 still separates escaped untrusted native messages and preserves qualified telemetry retrieval; Round 5 still selects the release calendar and the widget's incident-and-policy packet. Rounds 6 through 10 still fail closed for unsupported or mixed service scope, unknown or compound incident identifiers, common-word input, and dense-only collisions. Rounds 11 through 17 still fail closed for every previously covered explicit action form. Round 18 still requires query-specific generic evidence and rejects the retention query.
+
+1. **Generic interrogative actions now reach the positive operation grammar.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `actionInGenericInterrogativeQuestion()` recognizes an interrogative followed by `do`, `does`, or `did` and an actor pronoun before the generic-lookup fallback. It extracts the requested operation and permits only the established deployment, release, and ship terms. `Where do I delete checkout telemetry data?` therefore becomes an unsupported request rather than sending telemetry evidence to the model.
+2. **Round 19 is deterministic.** The artifact `--self-test` now runs that exact query against a fresh persistent store and requires zero evidence, zero used tokens, and the clarification-or-new-query decision. The existing successful telemetry lookup remains covered by its prior assertion.
+
+No advisories were taken. `node retrieval_memory.mjs --self-test`, `bash artifacts/ch17-retrieval-as-memory/check.sh`, and `npm run check` passed; the full gate completed all seven stages with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.

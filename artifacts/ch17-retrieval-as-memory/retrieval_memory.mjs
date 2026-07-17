@@ -463,6 +463,11 @@ function classifyActionRequest(tokens) {
   const safetyOperation = actionInSafetyQuestion(tokens);
   if (safetyOperation) return { supported: SUPPORTED_ACTION_TERMS.has(safetyOperation) };
 
+  const genericInterrogativeOperation = actionInGenericInterrogativeQuestion(tokens);
+  if (genericInterrogativeOperation) {
+    return { supported: SUPPORTED_ACTION_TERMS.has(genericInterrogativeOperation) };
+  }
+
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
   return { supported: SUPPORTED_ACTION_TERMS.has(firstTerm) };
@@ -501,6 +506,17 @@ function actionInSafetyQuestion(tokens) {
   );
   if (predicateIndex === -1) return null;
   return firstActionTerm(tokens, predicateIndex + 1);
+}
+
+function actionInGenericInterrogativeQuestion(tokens) {
+  const auxiliaryIndex = tokens.findIndex(
+    (term, index) =>
+      GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
+      ["do", "does", "did"].includes(term) &&
+      ["i", "we", "you"].includes(tokens[index + 1]),
+  );
+  if (auxiliaryIndex === -1) return null;
+  return firstActionTerm(tokens, auxiliaryIndex + 1);
 }
 
 function firstActionTerm(tokens, startIndex) {
@@ -994,6 +1010,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(questionHowToDeletion, "question-form how-to deletion operation");
+
+    const genericInterrogativeDeletion = await runAgent({
+      storePath: resolve(directory, "generic-interrogative-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Where do I delete checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(genericInterrogativeDeletion, "generic-interrogative deletion operation");
 
     const passiveSafetyDeletion = await runAgent({
       storePath: resolve(directory, "passive-safety-deletion-memory.json"),
