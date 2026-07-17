@@ -464,7 +464,7 @@ function actionInHowToQuestion(tokens) {
 
 function actionAfterInfinitiveCue(tokens) {
   const cueIndex = tokens.findIndex(
-    (term, index) => ["needed", "required"].includes(term) && tokens[index + 1] === "to",
+    (term, index) => ["needed", "required", "safe"].includes(term) && tokens[index + 1] === "to",
   );
   if (cueIndex === -1) return null;
   return firstActionTerm(tokens, cueIndex + 2);
@@ -961,6 +961,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(questionHowToDeletion, "question-form how-to deletion operation");
+
+    const passiveSafetyDeletion = await runAgent({
+      storePath: resolve(directory, "passive-safety-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Is it safe to delete checkout customer data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(passiveSafetyDeletion, "passive safety deletion operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),
