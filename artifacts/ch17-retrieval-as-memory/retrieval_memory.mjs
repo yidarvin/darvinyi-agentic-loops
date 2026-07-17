@@ -208,7 +208,8 @@ function retrieve(collection, store, question, filter, rrfK) {
 }
 
 function deriveAnswerPlan(question) {
-  const terms = new Set(tokenize(question));
+  const tokens = tokenize(question);
+  const terms = new Set(tokens);
   const repairAfterIncident =
     terms.has("ship") && terms.has("repair") && terms.has("incident");
   const mentionsIncident = [...terms].some((term) => term.startsWith("err-pay-")) || repairAfterIncident;
@@ -216,19 +217,23 @@ function deriveAnswerPlan(question) {
     terms.has("checkout") &&
     terms.has("release") &&
     ["calendar", "day", "schedule", "train", "when"].some((term) => terms.has(term));
-  const needsCheckoutDecision =
-    terms.has("checkout") &&
+  const needsDeploymentDecision =
     !asksReleaseSchedule &&
     ["approval", "deploy", "deployment", "release"].some((term) => terms.has(term));
   const requiredRoles = [];
   if (mentionsIncident) requiredRoles.push("incident");
-  if (needsCheckoutDecision || repairAfterIncident) requiredRoles.push("current-policy");
-  return { requiredRoles };
+  if (needsDeploymentDecision || repairAfterIncident) requiredRoles.push("current-policy");
+  return {
+    requiredRoles,
+    scope: {
+      service: requestedService(tokens),
+      action: needsDeploymentDecision ? "deployment" : null,
+    },
+  };
 }
 
 function answerabilityScore(record, plan) {
-  const roles = record.answerRoles || [];
-  return plan.requiredRoles.some((role) => roles.includes(role)) ? 1 : 0;
+  return plan.requiredRoles.some((role) => recordMatchesPlanRole(record, plan, role)) ? 1 : 0;
 }
 
 function selectEvidence(candidates, budget, answerPlan) {
@@ -237,7 +242,7 @@ function selectEvidence(candidates, budget, answerPlan) {
     ? answerPlan.requiredRoles.map((role) =>
         candidates.find(
           (candidate) =>
-            candidate.answerRoles.includes(role) &&
+            recordMatchesPlanRole(candidate.record, answerPlan, role) &&
             candidate.hasRelevanceSignal &&
             candidate.rerankScore >= 0.3,
         ),
@@ -248,7 +253,12 @@ function selectEvidence(candidates, budget, answerPlan) {
     ...new Map(selectedByRole.filter(Boolean).map((candidate) => [candidate.record.id, candidate])).values(),
   ];
   const genericSelected = !hasRequiredRoles
-    ? candidates.find((candidate) => candidate.hasRelevanceSignal && candidate.rerankScore >= 0.3)
+    ? candidates.find(
+        (candidate) =>
+          recordMatchesPlanScope(candidate.record, answerPlan) &&
+          candidate.hasRelevanceSignal &&
+          candidate.rerankScore >= 0.3,
+      )
     : undefined;
   const selected = hasRequiredRoles ? roleSelected : genericSelected ? [genericSelected] : [];
   const requiredTokens = selected.reduce((total, candidate) => total + estimateTokens(evidenceText(candidate.record)), 0);
@@ -309,6 +319,53 @@ function selectEvidence(candidates, budget, answerPlan) {
     };
   });
   return { candidates: annotated, evidence, usedTokens, answerable };
+}
+
+function requestedService(tokens) {
+  const deploymentIndex = tokens.findIndex((term) => term === "deploy" || term === "deployment");
+  if (deploymentIndex !== -1) {
+    const afterDeployment = tokens.slice(deploymentIndex + 1).find(isServiceTerm);
+    if (afterDeployment) return afterDeployment;
+    const beforeDeployment = [...tokens.slice(0, deploymentIndex)].reverse().find(isServiceTerm);
+    if (beforeDeployment) return beforeDeployment;
+  }
+
+  const forIndex = tokens.lastIndexOf("for");
+  if (forIndex !== -1) {
+    const afterFor = tokens.slice(forIndex + 1).find(isServiceTerm);
+    if (afterFor) return afterFor;
+  }
+
+  return tokens.includes("checkout") ? "checkout" : null;
+}
+
+function isServiceTerm(term) {
+  return ![
+    "a",
+    "an",
+    "the",
+    "after",
+    "before",
+    "can",
+    "for",
+    "i",
+    "is",
+    "of",
+    "on",
+    "required",
+    "to",
+    "with",
+  ].includes(term) && !term.startsWith("err-pay-");
+}
+
+function recordMatchesPlanRole(record, plan, role) {
+  return (record.answerRoles || []).includes(role) && recordMatchesPlanScope(record, plan, role);
+}
+
+function recordMatchesPlanScope(record, plan, role) {
+  const tags = new Set(record.tags || []);
+  if (plan.scope.service && !tags.has(plan.scope.service)) return false;
+  return !(role === "current-policy" && plan.scope.action && !tags.has(plan.scope.action));
 }
 
 function rankByRrf(candidates, id) {
@@ -584,6 +641,18 @@ async function selfTest() {
       throw new Error("an undersized budget claimed to answer without the complete evidence packet");
     }
 
+    const unsupportedBilling = await runAgent({
+      storePath: resolve(directory, "unsupported-billing-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy billing after ERR-PAY-142?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedServiceAbstains(unsupportedBilling);
+
     const irrelevant = await runAgent({
       storePath: resolve(directory, "irrelevant-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -715,6 +784,15 @@ function assertCompleteDeploymentPacket(result, label) {
     if (!candidate || candidate.status !== "held-not-answer-bearing") {
       throw new Error(label + " injected or misclassified a topical distractor: " + id);
     }
+  }
+}
+
+function assertUnsupportedServiceAbstains(result) {
+  if (result.evidence.length !== 0 || result.usedTokens !== 0) {
+    throw new Error("unsupported-service deployment query injected checkout-only evidence");
+  }
+  if (result.decision !== "ask for clarification or retrieve with a new query") {
+    throw new Error("unsupported-service deployment query claimed to have answer-bearing evidence");
   }
 }
 

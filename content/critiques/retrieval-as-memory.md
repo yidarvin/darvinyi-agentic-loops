@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -128,3 +128,12 @@ Convergence re-review: read the complete critique and git history through Rounds
 ## Advisories
 
 - None. Earlier README-formatting and widget-table-semantic notes remain non-blocking.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete `git log -p -- content/critiques/retrieval-as-memory.md` history and this append-only critique file. Re-verified every Round 1 requirement in the current artifact, figure, and widget: irrelevant queries inject no evidence and abstain, impossible calendar dates reject, the identifier rows declare the RRF tie before reranking, and teaching text remains readable. Re-verified Round 2's complete-or-abstain packet rule at the default, 42-token, and 20-token budgets. Re-verified Round 3 by running the full repository gate to `CHECK OK`. Re-verified Round 4's role-separated escaped native-message envelope, hostile-input checks, and relevance-qualified telemetry retrieval. Re-verified Round 5's release-calendar lookup and the widget-paraphrase incident-and-policy packet.
+
+1. **Deployment evidence is now service- and action-scoped.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `deriveAnswerPlan()` treats a deployment decision as requiring both the incident and current policy, carries the requested service plus the deployment action, and role selection accepts evidence only when its metadata covers that scope. Generic evidence selection also respects an explicit service scope. A billing deployment request therefore cannot use checkout-only incident or policy records.
+2. **The unsupported-service regression is deterministic.** The artifact self-test now runs `Can I deploy billing after ERR-PAY-142?` and fails unless it emits zero evidence, uses zero evidence tokens, and takes the clarification/new-query decision.
+
+No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` passes all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
