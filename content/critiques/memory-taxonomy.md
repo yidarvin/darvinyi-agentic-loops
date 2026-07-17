@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 
@@ -58,3 +58,26 @@ research backbone.
 
 No advisories were present or taken. `bash artifacts/ch15-memory-taxonomy/check.sh`
 and `npm run check` pass.
+
+## Round 2 review (2026-07-16)
+
+Fresh-eyes re-review: read `prompts/critique-rubric.md`, the full append-only
+critique file, and `git log -p --follow -- content/critiques/memory-taxonomy.md`.
+Read the current chapter, exact figure and widget source, every artifact file, and
+the chapter research backbone. Ran `npm run check` (passes),
+`node memory_harness.mjs --compare`, `bash check.sh`, and the unsupported-regime
+path (clear usage, exit 2). Checked CoALA, Generative Agents, MemGPT, LongMemEval,
+Mem0, Zep, and MINJA against their linked primary sources, plus WCAG 2.2 contrast
+guidance. Re-verified every Round 1 requirement from the current artifacts: working
+memory remains a cross-call state with a per-call projection; parametric procedural
+memory has its direct path; the SVG has readable, high-contrast structural labels;
+and the MINJA claim remains linked and correctly scoped. None has regressed.
+
+## Required fixes
+
+1. **`artifacts/ch15-memory-taxonomy/README.md`, `memory_harness.mjs`, and Exercise 03 in `src/chapters/memory-taxonomy.mdx` --- the advertised real-trace customization path does not change the harness behavior.** The README says the harness derives records from the fixed interaction (line 20) and tells readers to replace only the three `transcript` strings (lines 49-52); Exercise 03 then tells them to rerun the five regimes. In the executable, however, `transcript` is consumed only by `printStores()` (lines 102-109). `--compare` instead prints regimes built from independent hard-coded `stores` (lines 14-21) and hard-coded `questions[].answer` values (lines 54-85). Replacing the advertised trace therefore leaves the Mira/migration comparison unchanged, so the runnable design probe fails its promised adaptation path. Either derive the typed records and answers from an editable structured trace, or clearly label the fixture static and update the README and exercise with the exact additional stores and expected answers a reader must edit together. If customization remains a documented behavior, make `check.sh` exercise it.
+2. **`src/chapters/_widgets/MemoryTaxonomyWidget.tsx` --- key explanatory text in the signature teaching mechanism fails normal-text contrast.** The selected `consulted:` path and the `// missing` interpretation at lines 125 and 127-129 use `text-comment` at `0.7rem` (11.2px). `src/styles/tokens.css` defines that color as `#55707b`; it yields about 3.44:1 on `--surface` and 3.25:1 on `--surface-2`, below [WCAG 2.2 SC 1.4.3's 4.5:1 requirement for normal text](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Those lines explain why a selected regime produces its answer and what it cannot retain, so they are teaching content rather than decorative code-comment framing. Use `text-muted` or `text-fg` for meaningful labels and explanations, reserving `text-comment` for non-semantic framing. This is separate from, and does not reopen, the resolved SVG-label contrast finding.
+
+## Advisories
+
+- Add a direct LoCoMo source link to the Sources list. Its brief mention is accurate, but a direct primary link would complete the benchmark attribution.
