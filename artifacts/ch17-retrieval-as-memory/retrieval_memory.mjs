@@ -87,6 +87,7 @@ const GENERIC_LOOKUP_STARTERS = new Set([
   "why",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
+const UNSUPPORTED_DESTRUCTIVE_ACTION_TERMS = new Set(["delete", "deleting", "deletion"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -437,6 +438,10 @@ function requestedServices(tokens) {
 }
 
 function classifyActionRequest(tokens) {
+  if (tokens.some((term) => UNSUPPORTED_DESTRUCTIVE_ACTION_TERMS.has(term))) {
+    return { supported: false };
+  }
+
   const intentIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
   if (intentIndex !== -1) {
     const operation = firstActionTerm(tokens, intentIndex + 1);
@@ -973,6 +978,30 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(passiveSafetyDeletion, "passive safety deletion operation");
+
+    const nominalizedDeletion = await runAgent({
+      storePath: resolve(directory, "nominalized-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Is deletion of checkout customer data safe?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(nominalizedDeletion, "nominalized deletion operation");
+
+    const gerundDeletion = await runAgent({
+      storePath: resolve(directory, "gerund-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What does deleting checkout customer data require?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(gerundDeletion, "gerund deletion operation");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),
