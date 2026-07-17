@@ -298,6 +298,13 @@ def test_synchronized_branch_does_not_push() -> None:
         shutil.rmtree(home)
 
 
+def test_chapter_runtime_memory_is_ignored() -> None:
+    runtime_store = "artifacts/ch17-retrieval-as-memory/.memory/memories.json"
+    ignored = run("/usr/bin/git", "check-ignore", runtime_store, cwd=ROOT)
+    assert ignored.returncode == 0, ignored.stdout + ignored.stderr
+    assert ignored.stdout.strip() == runtime_store
+
+
 def test_watchdog_terminates_a_silent_process_group() -> None:
     assert WATCHDOG.exists(), "stage process watchdog must exist"
     work = Path(tempfile.mkdtemp())
@@ -343,24 +350,24 @@ def test_watchdog_allows_a_command_that_keeps_making_progress() -> None:
     try:
         command = (
             "import time\n"
-            "for index in range(6):\n"
+            "for index in range(30):\n"
             " print(index, flush=True)\n"
-            " time.sleep(0.08)\n"
+            " time.sleep(0.05)\n"
         )
         result = run(
             str(WATCHDOG),
             "--log", str(work / "stage.log"),
-            "--idle-timeout", "0.2",
-            "--max-runtime", "3",
+            "--idle-timeout", "1",
+            "--max-runtime", "5",
             "--term-grace", "0.2",
-            "--poll-interval", "0.03",
+            "--poll-interval", "0.05",
             "--",
             "python3", "-c", command,
             cwd=work,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert (work / "stage.log").read_text(encoding="utf-8").splitlines() == [
-            "0", "1", "2", "3", "4", "5"
+            str(index) for index in range(30)
         ]
     finally:
         shutil.rmtree(work)
@@ -556,6 +563,79 @@ exit 1
         assert model_calls.read_text(encoding="utf-8").splitlines() == ["model"]
         status = (work / ".pipeline/queue-worker.status").read_text(encoding="utf-8")
         assert "stage is still settling; launchd will resume automatically" in status
+    finally:
+        shutil.rmtree(work)
+        shutil.rmtree(home)
+
+
+def test_worker_backs_off_no_progress_then_retries_automatically() -> None:
+    fake_codex = """#!/bin/bash
+printf 'model\n' >>"$MODEL_CALLS"
+exit 1
+"""
+    work, env = driver_fixture(fake_codex)
+    home = Path(tempfile.mkdtemp())
+    try:
+        model_calls = home / "model-calls"
+        env.update({
+            "HOME": str(home),
+            "MODEL_CALLS": str(model_calls),
+            "PIPELINE_LOCK_FILE": str(home / "no-progress-worker.lock"),
+            "PIPELINE_NO_PROGRESS_BACKOFF_BASE_SECONDS": "60",
+            "PIPELINE_NO_PROGRESS_BACKOFF_CAP_SECONDS": "120",
+            "QUEUE_ASYNC_GRACE_SECONDS": "1",
+            "QUEUE_STAGES_PER_TICK": "1",
+        })
+        assert guard(work, "lease-create", "build", "one", "01").returncode == 0
+        assert guard(work, "lease-update", "awaiting-output").returncode == 0
+        lease_path = work / ".pipeline/active-stage.json"
+        lease = json.loads(lease_path.read_text(encoding="utf-8"))
+        lease["updated_at"] = int(time.time()) - 10
+        lease_path.write_text(json.dumps(lease), encoding="utf-8")
+
+        expired = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert expired.returncode == 0, (
+            expired.stdout + expired.stderr
+            + (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert not model_calls.exists(), "an expired no-progress lease must not relaunch immediately"
+        retry_path = work / ".pipeline/no-progress-retry"
+        stage, slug, count, not_before = retry_path.read_text(encoding="utf-8").split()
+        assert (stage, slug, count) == ("build", "one", "1")
+        assert int(not_before) > int(time.time())
+
+        backed_off = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert backed_off.returncode == 0
+        assert not model_calls.exists(), "backoff must suppress model relaunches"
+
+        retry_path.write_text(f"{stage} {slug} {count} 0\n", encoding="utf-8")
+        resumed = run("./scripts/queue-worker.sh", cwd=work, env=env)
+        assert resumed.returncode == 0, (
+            resumed.stdout + resumed.stderr
+            + (work / ".pipeline/queue-worker.log").read_text(encoding="utf-8")
+        )
+        assert model_calls.read_text(encoding="utf-8").splitlines() == ["model"]
+        assert "stage is still settling; launchd will resume automatically" in (
+            work / ".pipeline/queue-worker.status"
+        ).read_text(encoding="utf-8")
+
+        for expected_count in (2, 3):
+            lease = json.loads(lease_path.read_text(encoding="utf-8"))
+            lease["updated_at"] = int(time.time()) - 10
+            lease_path.write_text(json.dumps(lease), encoding="utf-8")
+            delayed = run("./scripts/queue-worker.sh", cwd=work, env=env)
+            assert delayed.returncode == 0
+            stage, slug, count, not_before = retry_path.read_text(encoding="utf-8").split()
+            assert int(count) == expected_count
+            remaining = int(not_before) - int(time.time())
+            assert 115 <= remaining <= 120, remaining
+            assert model_calls.read_text(encoding="utf-8").splitlines() == ["model"] * (
+                expected_count - 1
+            )
+            retry_path.write_text(f"{stage} {slug} {count} 0\n", encoding="utf-8")
+            resumed = run("./scripts/queue-worker.sh", cwd=work, env=env)
+            assert resumed.returncode == 0
+        assert model_calls.read_text(encoding="utf-8").splitlines() == ["model"] * 3
     finally:
         shutil.rmtree(work)
         shutil.rmtree(home)
@@ -784,6 +864,7 @@ def main() -> int:
         test_service_git_plan_is_pinned_and_shimmed()
         test_git_shim_and_parent_helper_pin_apple_git()
         test_synchronized_branch_does_not_push()
+        test_chapter_runtime_memory_is_ignored()
         test_watchdog_terminates_a_silent_process_group()
         test_watchdog_allows_a_command_that_keeps_making_progress()
         test_driver_retains_lease_for_delayed_output()
@@ -791,6 +872,7 @@ def main() -> int:
         test_driver_records_critic_approval_if_model_omits_mark_step()
         test_worker_waits_on_existing_lease_and_refuses_unleased_changes()
         test_worker_expires_a_stale_running_lease_without_resetting_its_age()
+        test_worker_backs_off_no_progress_then_retries_automatically()
         test_worker_defers_intermediate_push_and_publishes_approval()
         test_three_sync_failures_never_invoke_model_recovery()
         test_normal_model_failure_keeps_existing_delayed_recovery_path()

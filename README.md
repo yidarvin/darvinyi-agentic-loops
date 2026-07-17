@@ -49,6 +49,12 @@ Valid edits are still validated and committed if the model exits abnormally. Ove
 the bounds for a manual run with `TERRA_IDLE_TIMEOUT_SECONDS` and
 `TERRA_MAX_RUNTIME_SECONDS`.
 
+A model that exits without edits keeps the short delayed-output grace period. If no
+output arrives, the worker records a persisted exponential backoff instead of launching
+the same stage immediately. It retries automatically from 60 seconds up to a capped
+15-minute interval and clears the retry state as soon as a stage commits or the queue
+decision changes.
+
 On macOS, the persistent LaunchAgent runs directly from this checkout. The service
 pins `/usr/bin/git`, prepends `scripts/service-bin` so child agents resolve the same
 Apple Git identity, and routes parent Git calls through a neutral-cwd helper. Run

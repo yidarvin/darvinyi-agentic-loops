@@ -12,9 +12,12 @@ LOG="$ROOT/.pipeline/queue-worker.log"
 STATUS="$ROOT/.pipeline/queue-worker.status"
 LOCK="${PIPELINE_LOCK_FILE:-/private/tmp/com.darvin.agentic-loops-queue.lock}"
 SYNC_RETRY_FILE="$ROOT/.pipeline/sync-retry"
+NO_PROGRESS_RETRY_FILE="$ROOT/.pipeline/no-progress-retry"
 PUBLISH_READY="$ROOT/.pipeline/publish-ready"
 SYNC_BACKOFF_BASE_SECONDS="${PIPELINE_SYNC_BACKOFF_BASE_SECONDS:-60}"
 SYNC_BACKOFF_CAP_SECONDS="${PIPELINE_SYNC_BACKOFF_CAP_SECONDS:-900}"
+NO_PROGRESS_BACKOFF_BASE_SECONDS="${PIPELINE_NO_PROGRESS_BACKOFF_BASE_SECONDS:-60}"
+NO_PROGRESS_BACKOFF_CAP_SECONDS="${PIPELINE_NO_PROGRESS_BACKOFF_CAP_SECONDS:-900}"
 ASYNC_GRACE_SECONDS="${QUEUE_ASYNC_GRACE_SECONDS:-180}"
 STAGES_PER_TICK="${QUEUE_STAGES_PER_TICK:-6}"
 LEASE_CONTINUE=0
@@ -58,6 +61,54 @@ has_changes() {
 
 clear_sync_backoff() {
   rm -f "$SYNC_RETRY_FILE"
+}
+
+clear_no_progress_backoff() {
+  rm -f "$NO_PROGRESS_RETRY_FILE"
+}
+
+schedule_no_progress_retry() {
+  local stage="$1" slug="$2" saved_stage='' saved_slug='' count=0 ignored=0
+  local exponent delay now not_before temp i
+  if [[ -f "$NO_PROGRESS_RETRY_FILE" ]]; then
+    read -r saved_stage saved_slug count ignored <"$NO_PROGRESS_RETRY_FILE" || count=0
+    if [[ "$saved_stage $saved_slug" != "$stage $slug" || ! "$count" =~ ^[0-9]+$ ]]; then
+      count=0
+    fi
+  fi
+  ((count += 1))
+  exponent=$((count - 1))
+  (( exponent > 10 )) && exponent=10
+  delay=$NO_PROGRESS_BACKOFF_BASE_SECONDS
+  for ((i=0; i<exponent; i++)); do delay=$((delay * 2)); done
+  (( delay > NO_PROGRESS_BACKOFF_CAP_SECONDS )) && delay=$NO_PROGRESS_BACKOFF_CAP_SECONDS
+  now="$(date +%s)"
+  not_before=$((now + delay))
+  temp="$NO_PROGRESS_RETRY_FILE.$$.tmp"
+  printf '%s %s %s %s\n' "$stage" "$slug" "$count" "$not_before" >"$temp"
+  mv "$temp" "$NO_PROGRESS_RETRY_FILE"
+  report_status "no-progress attempt $count for $stage $slug; retrying automatically in ${delay}s"
+}
+
+no_progress_backoff_active() {
+  local stage="$1" slug="$2" saved_stage saved_slug count not_before now remaining
+  [[ -f "$NO_PROGRESS_RETRY_FILE" ]] || return 1
+  if ! read -r saved_stage saved_slug count not_before <"$NO_PROGRESS_RETRY_FILE" \
+    || [[ ! "$count" =~ ^[0-9]+$ || ! "$not_before" =~ ^[0-9]+$ ]]; then
+    clear_no_progress_backoff
+    return 1
+  fi
+  if [[ "$saved_stage $saved_slug" != "$stage $slug" ]]; then
+    clear_no_progress_backoff
+    return 1
+  fi
+  now="$(date +%s)"
+  if (( now < not_before )); then
+    remaining=$((not_before - now))
+    report_status "no-progress backoff for $stage $slug (${remaining}s); no model will run"
+    return 0
+  fi
+  return 1
 }
 
 schedule_sync_retry() {
@@ -148,6 +199,7 @@ handle_existing_lease() {
     recover_rc=$?
     set -e
     if (( recover_rc == 0 )); then
+      clear_no_progress_backoff
       report_status 'asynchronous Terra stage recovered; chapter-boundary publication policy applied'
       LEASE_CONTINUE=1
       return 0
@@ -174,13 +226,18 @@ handle_existing_lease() {
     return 0
   fi
   "$GUARD" --repo "$ROOT" lease-clear
-  report_status "no output arrived for $stage $slug; lease expired and a fresh attempt is eligible"
-  LEASE_CONTINUE=1
+  if [[ "$state" == running ]]; then
+    report_status "abandoned running lease expired for $stage $slug; a fresh attempt is eligible"
+    LEASE_CONTINUE=1
+  else
+    schedule_no_progress_retry "$stage" "$slug"
+    LEASE_CONTINUE=0
+  fi
   return 0
 }
 
 run_worker() {
-  local next run_rc active_rc sync_rc
+  local next next_stage next_slug ignored run_rc active_rc sync_rc
   date '+%Y-%m-%dT%H:%M:%S%z queue worker tick'
   "$GUARD" --repo "$ROOT" branch >/dev/null
 
@@ -226,12 +283,17 @@ run_worker() {
       report_status 'queue validation failed; stopping'
       return 1
     fi
+    read -r ignored next_stage next_slug ignored <<<"$next"
+    if no_progress_backoff_active "$next_stage" "$next_slug"; then
+      return 0
+    fi
     report_status "launching ${next#NEXT }"
     set +e
     TERRA_SANDBOX=danger-full-access "$ROOT/run.sh" next --push-on-done
     run_rc=$?
     set -e
     if (( run_rc == 0 )); then
+      clear_no_progress_backoff
       report_status 'stage committed; approved chapters publish with accumulated commits'
       continue
     fi
