@@ -1,25 +1,25 @@
 import { MemoryTaxonomyFigure } from "./_figures/MemoryTaxonomyFigure";
 import { MemoryTaxonomyWidget } from "./_widgets/MemoryTaxonomyWidget";
 
-An agent has no memory in the way a process has memory. Each model call sees only the
-context its harness supplies. Durable behavior begins when the harness persists useful
-state outside that window, retrieves a small relevant slice, and puts that slice back into
-the next call. The taxonomy matters because working, episodic, semantic, and procedural
-memory solve different failures. Treating them as one generic vector store produces stale
-context, unsafe writes, and agents that remember the wrong thing.
+Each model call sees only the context its harness supplies. An agent can still maintain
+active state across calls, persist durable records outside that state, and select useful
+material for the next call. The taxonomy matters because working, episodic, semantic, and
+procedural memory solve different failures. Treating them as one generic vector store
+produces stale context, unsafe writes, and agents that remember the wrong thing.
 
-## Working memory is the live context
+## Working memory is active agent state
 
-Working memory is the current context window: the active conversation, recent tool
-results, task state, and retrieved material. It is immediately available because it is
-already in the request. It is also ephemeral, token-expensive, and bounded. When the
-session ends or the harness compacts history, that working set is gone unless something
-was written elsewhere.
+The context window is a projection of working memory, not working memory itself. In
+CoALA, working memory is the agent's active state across its decision loop: active goals,
+variables, recent tool results, and retrieved material. It can persist across several LLM
+calls. For each call, the harness synthesizes a context projection from the relevant
+subset. A session boundary can reset or compact that state, but a model call is not its
+natural lifetime.
 
 This continues the constraint from [Context-Window Economics](/context-window-economics).
-The window is not a durable database with a generous cache policy. Every extra memory
-record competes with instructions, evidence, tools, and output space. A long context full
-of weakly relevant recollections can perform worse than a short one with the right records.
+The per-call projection is bounded and token-expensive. Every extra memory record competes
+with instructions, evidence, tools, and output space. A long context full of weakly
+relevant recollections can perform worse than a short one with the right records.
 
 Do not confuse parametric knowledge with agent memory. Model weights may contain broad,
 static knowledge learned during training. Agent memory is dynamic external state for this
@@ -30,23 +30,25 @@ the weights.
 ## Four stores answer four questions
 
 CoALA gives the useful map: one short-term working store and three long-term stores. The
-boundaries are engineering boundaries, not a claim that cognition has four sealed boxes.
-An episode can become a fact through consolidation, and a fact can later shape a rule. The
-questions below expose the distinction that matters when designing reads and writes.
-Here, short-term and working memory are two names for the same context-window layer.
-Long-term means the persistent stores outside it.
+working store holds active agent state, while a context window is the per-call projection
+of that state. The boundaries are engineering boundaries, not a claim that cognition has
+four sealed boxes. An episode can become a fact through consolidation, and a fact can later
+shape a rule. The questions below expose the distinction that matters when designing reads
+and writes. Long-term means information retained beyond the active working state.
 
-- **Working memory** answers: what is active in this call? It is the context window and
-  its scratch state.
+- **Working memory** answers: what is active in this decision loop? It carries goals,
+  variables, tool results, and retrieved material across calls. Each call sees a synthesized
+  context projection, not the whole working state.
 - **Episodic memory** answers: what happened? It keeps dated interactions, trajectories,
   tool outcomes, and successful examples with their original circumstances.
 - **Semantic memory** answers: what is true? It holds decontextualized facts, profiles,
   preferences, and durable knowledge.
-- **Procedural memory** answers: how do we act? It lives primarily in system prompts,
-  skills, code, tests, and model weights. A portable skill is explicit procedural memory,
-  not a record waiting in a similarity index.
+- **Procedural memory** answers: how do we act? It includes implicit model weights and
+  explicit system prompts, skills, code, and tests. Weights shape every generation without
+  retrieval. An explicit skill can be selected or densely retrieved from a code library,
+  then added to the context projection or executed by the harness.
 
-<Figure id="15.1" caption="Working memory is the context-window hub. Episodic, semantic, and procedural stores persist outside it, but only a selected retrieval changes the next generation. Consolidation turns a dated episode into a compact fact; procedural rules enter the window as instructions, skills, or code.">
+<Figure id="15.1" caption="Working memory is active agent state that can persist across calls; each LLM call receives a context projection synthesized from it. Episodic and semantic records, plus explicit code-based skills, enter that state when selected. Procedural weights influence every generation directly. Consolidation turns a dated episode into a compact fact.">
   <MemoryTaxonomyFigure />
 </Figure>
 
@@ -60,9 +62,10 @@ can change future behavior for everyone.
 
 ## Memory is a lifecycle, not a database choice
 
-Every design has the same movement: encode a candidate, store it with metadata, retrieve
-it into working memory, then update, forget, or consolidate it. The hard decision is not
-where to put text. It is which candidate deserves a future context slot.
+Every design has the same movement: encode a candidate, store it with metadata, select or
+retrieve an external record into working memory, then update, forget, or consolidate it.
+The hard decision is not where to put text. It is which candidate deserves a future context
+slot.
 
 Write records with a type, scope, provenance, timestamp, and retention rule. Scope is
 usually per user or per session. Shared multi-agent memory needs an explicit owner and
@@ -85,10 +88,11 @@ management or direct retrieval from an existing source of truth. Add long-term m
 when cross-session continuity, personalization, or long-horizon learning needs it.
 
 <Callout>
-Persistent memory is a security boundary. Namespace it per user, restrict who can write,
-keep provenance, and filter sensitive fields before storage. Memory poisoning survives the
-turn that introduced it, so a permissive write path can turn an untrusted sentence into a
-future instruction.
+Persistent memory is a security boundary. [Dong et al.'s MINJA attack](https://arxiv.org/abs/2503.03704)
+shows that an attacker can inject malicious records through query-only interaction. In a
+design that writes untrusted interaction and later retrieves those records, the poison can
+influence future behavior. Namespace memory per user, restrict who can write, keep
+provenance, and filter sensitive fields before storage.
 </Callout>
 
 ## Product examples are implementations, not the taxonomy
@@ -108,11 +112,12 @@ memory policy against the agent's own tasks.
 
 ## Switch the regime
 
-The same conversation can produce different future behavior depending on what survives the
-session boundary. Select a regime below. The readout shows the retained representation, the
-question it can answer, and the information it deliberately leaves behind.
+The same conversation can produce different future behavior depending on what survives a
+reset of active working state. Select a regime below. In a continuing run, working memory
+can carry goals and results across calls. This demonstration begins a new session, so its
+context projection contains only the current request unless a durable record was selected.
 
-<Widget name="memory_taxonomy" hint="Switch among working, episodic, semantic, procedural, and combined regimes. Watch the same prior interaction become unavailable, a dated trace, a compact fact, a release rule, or a coordinated set of all four.">
+<Widget name="memory_taxonomy" hint="Switch among a fresh working state, episodic, semantic, procedural, and combined regimes. Watch the same prior interaction become unavailable, a dated trace, a compact fact, a release rule, or a coordinated set of all four.">
   <MemoryTaxonomyWidget />
 </Widget>
 
@@ -170,3 +175,4 @@ agent.
 - [Packer et al., "MemGPT: Towards LLMs as Operating Systems"](https://arxiv.org/abs/2310.08560), for the context-window and external-store hierarchy.
 - [Wu et al., "LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory"](https://arxiv.org/abs/2410.10813), for the evaluation dimensions and sustained-interaction challenge.
 - [Chhikara et al., "Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory"](https://arxiv.org/abs/2504.19413) and [Rasmussen et al., "Zep: A Temporal Knowledge Graph Architecture for Agent Memory"](https://arxiv.org/abs/2501.13956), for representative product-oriented memory designs and their vendor-reported evaluation results.
+- [Dong et al., "Memory Injection Attacks on LLM Agents via Query-Only Interaction"](https://arxiv.org/abs/2503.03704), for the query-only injection threat to memory systems that later retrieve untrusted records.

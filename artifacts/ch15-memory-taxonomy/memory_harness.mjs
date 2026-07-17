@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-// A deterministic lab model. It holds a prior interaction fixed and changes only the
-// memory regime available after the session boundary. No network or model API is used.
+// A deterministic lab model. It holds a prior interaction fixed, resets active working
+// state at a session boundary, and changes only the durable records available afterward.
+// The current request is a context projection, not the whole definition of working memory.
+// No network or model API is used.
 
 const transcript = [
   "09:10 Mira: I eat vegetarian food.",
@@ -20,9 +22,12 @@ const stores = {
 
 const regimes = {
   working: {
-    label: "working only",
-    consulted: "context window from the new session",
-    records: ["New request: plan dinner after a deployment incident."],
+    label: "fresh working state",
+    consulted: "reset working state; current context projection",
+    records: [
+      "Active goal: plan dinner after a deployment incident.",
+      "Context projection: current request only.",
+    ],
   },
   episodic: {
     label: "episodic",
@@ -36,12 +41,12 @@ const regimes = {
   },
   procedural: {
     label: "procedural",
-    consulted: "release skill",
+    consulted: "explicit selected release skill",
     records: stores.procedural,
   },
   all: {
     label: "combined",
-    consulted: "typed retrieval across all stores",
+    consulted: "typed selected records plus an explicit release skill",
     records: [...stores.episodic, ...stores.semantic, ...stores.procedural],
   },
 };
@@ -50,20 +55,20 @@ const questions = [
   {
     prompt: "What did Mira say about dinner?",
     answer: {
-      working: "Unknown. The old session is not in this context window.",
+      working: "Unknown. The active working state was reset, so the old session is absent from this context projection.",
       episodic: "At 09:10, Mira said she eats vegetarian food.",
       semantic: "Mira's profile says: vegetarian.",
-      procedural: "Unknown. The release skill contains no user preference.",
+      procedural: "Unknown. The explicit release skill contains no user preference.",
       all: "Mira's profile says vegetarian; the episode preserves the original statement.",
     },
   },
   {
     prompt: "What happened in the previous deployment?",
     answer: {
-      working: "Unknown. The prior trajectory was not persisted.",
+      working: "Unknown. The active working state was reset and the prior trajectory was not persisted.",
       episodic: "At 16:40, production failed after a migration mismatch.",
       semantic: "The current fact is that migration verification is required; the detailed event is absent.",
-      procedural: "The skill knows the guardrail, not the incident chronology.",
+      procedural: "The explicit skill knows the guardrail, not the incident chronology.",
       all: "The episode reports a migration mismatch; the fact and rule preserve the remediation.",
     },
   },

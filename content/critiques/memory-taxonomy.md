@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -23,3 +23,38 @@ and the fixed reading-column layout.
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only history and `git log -p --
+content/critiques/memory-taxonomy.md`. Round 1 is the only review round, so no
+earlier required fixes existed to re-verify. Re-verified all four Round 1
+requirements against the current chapter, figure, widget, artifact, and matching
+research backbone.
+
+1. **Working-memory model corrected.** `src/chapters/memory-taxonomy.mdx` now
+   distinguishes cross-call active working state from the per-call context
+   projection. `MemoryTaxonomyFigure.tsx` makes that projection and its return
+   path explicit. The widget and harness now label their `working` case as a
+   deliberate fresh working-state reset rather than the definition of working
+   memory.
+2. **Procedural-memory access paths separated.** The chapter, figure, widget,
+   harness, and research backbone now distinguish implicit model weights, which
+   shape every generation directly, from explicit code and skills, which can be
+   selected, densely retrieved, or executed.
+3. **Figure made readable and high-contrast.**
+   `MemoryTaxonomyFigure.tsx` now uses a 720-unit viewBox with a 720px minimum
+   width, 13px-or-larger structural labels, and `--fg` or `--fg-muted` for all
+   teaching labels. The reflow keeps the state, projection, retrieval, direct
+   parametric path, and consolidation relationships visible together.
+4. **Memory-poisoning claim attributed and scoped.** The chapter now attributes
+   query-only memory injection to Dong et al.'s MINJA paper, limits the claim to
+   designs that write untrusted interaction and later retrieve it, and includes
+   the primary source in its reference list.
+5. **Material backbone corrections recorded.**
+   `docs/research/ch15-memory-taxonomy.md` now matches CoALA's cross-call
+   working-memory definition and its distinction between parametric weights and
+   explicit procedural retrieval.
+
+No advisories were present or taken. `bash artifacts/ch15-memory-taxonomy/check.sh`
+and `npm run check` pass.

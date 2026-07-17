@@ -14,11 +14,15 @@ interface Regime {
 const regimes: Regime[] = [
   {
     id: "working",
-    label: "working only",
-    retained: ["The current request: plan dinner after a deployment incident."],
-    consulted: "context window only",
-    answer: "I need the user to restate a preference and the incident details.",
-    missing: "The prior session ended, so its history is absent.",
+    label: "fresh working state",
+    retained: [
+      "Active goal: plan dinner after a deployment incident.",
+      "Context projection: the current request only.",
+    ],
+    consulted: "reset working state and its current context projection",
+    answer:
+      "This new working state has no prior preference or incident. In a continuing run, it could retain goals and tool results across calls.",
+    missing: "The session boundary reset active state. Working memory is not limited to one LLM call.",
   },
   {
     id: "episodic",
@@ -42,10 +46,11 @@ const regimes: Regime[] = [
   {
     id: "procedural",
     label: "procedural",
-    retained: ["Release skill: block production deployment until migration verification passes."],
-    consulted: "skill and enforcement rule",
+    retained: ["Explicit release skill: block production deployment until migration verification passes."],
+    consulted: "explicit selected skill; weights are not modeled",
     answer: "Run migration verification before the production deployment.",
-    missing: "The rule changes behavior, but it does not know Mira's preference or explain the incident.",
+    missing:
+      "The explicit skill changes behavior, but it does not know Mira's preference or explain the incident. Implicit weights would affect every generation without retrieval.",
   },
   {
     id: "combined",
@@ -55,7 +60,7 @@ const regimes: Regime[] = [
       "Fact: Mira is vegetarian.",
       "Procedure: verify migrations before production deployment.",
     ],
-    consulted: "typed retrieval chosen for this request",
+    consulted: "typed selected records plus an explicit release skill",
     answer: "Plan a vegetarian dinner, cite the migration mismatch if asked, and enforce verification before release.",
     missing: "Nothing relevant is missing, but every retrieved record still spends context budget.",
   },
@@ -72,11 +77,11 @@ export function MemoryTaxonomyWidget() {
         <span className="mx-2 text-accent">-&gt;</span>
         Mira states a dietary preference. A deployment later fails after a migration mismatch.
         <span className="mx-2 text-accent">-&gt;</span>
-        <span className="text-fg/90">new session</span>
+        <span className="text-fg/90">new session: active state resets</span>
       </div>
 
       <div className="mt-4" role="group" aria-label="Select a memory regime">
-        <p className="font-mono text-[0.7rem] text-comment">// choose what survives the session boundary</p>
+        <p className="font-mono text-[0.7rem] text-comment">// choose what survives a fresh working-state reset</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {regimes.map((item) => {
             const selected = item.id === regime.id;

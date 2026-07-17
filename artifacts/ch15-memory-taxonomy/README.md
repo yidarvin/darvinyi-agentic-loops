@@ -2,7 +2,9 @@
 
 This small offline harness runs one fixed interaction under five memory regimes. It makes
 the taxonomy concrete without calling a model: the prior conversation stays constant while
-the store available after a new-session boundary changes.
+the state available after a new-session boundary changes. The harness deliberately begins
+with active working state reset, then shows which durable records are selected for the new
+session's context projection.
 
 ## Run it
 
@@ -26,10 +28,17 @@ node memory_harness.mjs --show-stores
 
 ## What the comparison means
 
-`working` starts a new session with only the current request. `episodic` keeps the dated
-events. `semantic` keeps the distilled preference and release fact. `procedural` keeps the
-release rule. `all` selects from all three persistent stores. The output reports the
-consulted store, retained records, and answers to the same three questions for every regime.
+`working` starts a new session with reset active working state, so its context projection
+contains only the current request. This is a fresh-session case, not a definition of
+working memory: in a continuing decision loop, active working state can persist across
+LLM calls. `episodic` keeps the dated events. `semantic` keeps the distilled preference and
+release fact. `procedural` keeps an explicit release skill. `all` selects from all three
+persistent stores. The output reports the consulted store, retained records, and answers to
+the same three questions for every regime.
+
+The procedural regime models a selected explicit code or prompt skill. It does not model
+parametric procedural memory in the model weights, which conditions every generation without
+a retrieval step.
 
 This is a deterministic design harness, not an LLM benchmark or a production memory
 framework. Its value is the controlled contrast: a raw event, a generalized fact, and an
@@ -48,6 +57,6 @@ decision. A database backend can come later.
 bash check.sh
 ```
 
-The check executes the comparison and asserts that working memory forgets the old session,
-episodic memory retains the incident, semantic memory retains the profile, and procedural
-memory enforces the release guardrail.
+The check executes the comparison and asserts that the fresh working-state case excludes the
+old session, episodic memory retains the incident, semantic memory retains the profile, and
+an explicit procedural skill enforces the release guardrail.

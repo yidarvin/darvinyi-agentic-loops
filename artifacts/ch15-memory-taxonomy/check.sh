@@ -11,8 +11,8 @@ fi
 
 comparison="$(node memory_harness.mjs --compare)"
 
-grep -Fq "=== REGIME: working (working only) ===" <<<"$comparison"
-grep -Fq "Unknown. The old session is not in this context window." <<<"$comparison"
+grep -Fq "=== REGIME: working (fresh working state) ===" <<<"$comparison"
+grep -Fq "Unknown. The active working state was reset, so the old session is absent from this context projection." <<<"$comparison"
 grep -Fq "=== REGIME: episodic (episodic) ===" <<<"$comparison"
 grep -Fq "production failed after a migration mismatch" <<<"$comparison"
 grep -Fq "=== REGIME: semantic (semantic) ===" <<<"$comparison"
