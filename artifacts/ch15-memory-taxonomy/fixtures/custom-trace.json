@@ -1,0 +1,28 @@
+{
+  "working": {
+    "goal": "prepare an allergy-safe lunch after a rollout incident",
+    "request": "the current request only"
+  },
+  "preference": {
+    "time": "08:15",
+    "person": "Noor",
+    "topic": "lunch",
+    "statement": "I avoid peanuts",
+    "value": "peanut-free"
+  },
+  "incident": {
+    "time": "14:20",
+    "actor": "Rollout",
+    "subject": "rollout",
+    "description": "staging rolled back after a schema mismatch",
+    "fact": "schema validation is required"
+  },
+  "procedure": {
+    "time": "14:35",
+    "actor": "Team",
+    "statement": "add schema validation before the next rollout",
+    "policy": "deployment",
+    "target": "next rollout",
+    "skill": "Run schema validation and block rollout until it passes"
+  }
+}

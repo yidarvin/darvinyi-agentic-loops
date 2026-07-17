@@ -156,9 +156,11 @@ overwrite, append, or invalidate.
 </ExerciseCard>
 
 <ExerciseCard n="03" title="Run a failed trace through the taxonomy">
-Run the harness, replace its deployment incident with a real failed task trace, and rerun
-the five regimes. Decide which parts should remain as episodes, consolidate into facts,
-become a tested procedure, or be discarded. Defend the procedural write especially.
+Copy `artifacts/ch15-memory-taxonomy/trace.json`, replace its `preference`, `incident`, and
+`procedure` objects with a real failed task trace, then run the five regimes with
+`node memory_harness.mjs --trace my-failed-trace.json --compare`. Decide which parts should
+remain as episodes, consolidate into facts, become a tested procedure, or be discarded.
+Defend the procedural write especially.
 </ExerciseCard>
 
 <ExerciseCard n="04" title="Put a fence around shared memory">

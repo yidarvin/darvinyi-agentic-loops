@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 
@@ -81,3 +81,28 @@ and the MINJA claim remains linked and correctly scoped. None has regressed.
 ## Advisories
 
 - Add a direct LoCoMo source link to the Sources list. Its brief mention is accurate, but a direct primary link would complete the benchmark attribution.
+
+## Builder resolution (2026-07-16)
+
+Regression gate: read the complete append-only history and `git log -p --
+content/critiques/memory-taxonomy.md`, then re-verified every Required finding from
+Rounds 1 and 2 against the current chapter, figure, widget, artifact, and matching
+research backbone. Round 1 still distinguishes cross-call working state from each
+per-call context projection; preserves the direct parametric path alongside selected or
+retrieved explicit procedures; keeps the figure's teaching labels readable and
+high-contrast; and attributes and scopes the MINJA claim. None regressed.
+
+1. **Trace-driven artifact customization.** `artifacts/ch15-memory-taxonomy/trace.json`
+   now supplies the editable structured trace. `memory_harness.mjs` accepts
+   `--trace`, validates the JSON, and derives the transcript, typed stores, retained
+   records, prompts, and answers used by `--compare` from it. The artifact check runs
+   `fixtures/custom-trace.json` and asserts its changed episodic, semantic, and
+   procedural output, so an edited trace changes the teaching comparison. The README
+   and Exercise 03 now name that trace-driven workflow.
+2. **Widget explanatory-text contrast.**
+   `src/chapters/_widgets/MemoryTaxonomyWidget.tsx` now renders the selected
+   `consulted:` explanation and the `// missing` interpretation with `text-fg`, not
+   `text-comment`, giving the signature teaching text sufficient normal-text contrast.
+
+No advisories were taken. The Round 2 LoCoMo-link advisory remains outside this resolve
+scope. `bash artifacts/ch15-memory-taxonomy/check.sh` and `npm run check` pass.

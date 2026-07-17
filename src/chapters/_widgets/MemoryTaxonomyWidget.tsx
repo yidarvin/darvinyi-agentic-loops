@@ -122,9 +122,9 @@ export function MemoryTaxonomyWidget() {
           <p className="mt-2 font-mono text-xs leading-relaxed text-fg/90">
             plan dinner, explain the incident if needed, and prepare the next release.
           </p>
-          <p className="mt-4 font-mono text-[0.7rem] text-comment">consulted: {regime.consulted}</p>
+          <p className="mt-4 font-mono text-[0.7rem] text-fg">consulted: {regime.consulted}</p>
           <p className="mt-1 font-sans text-sm leading-relaxed text-fg">{regime.answer}</p>
-          <p className="mt-4 border-t border-border pt-3 font-mono text-[0.7rem] leading-relaxed text-comment">
+          <p className="mt-4 border-t border-border pt-3 font-mono text-[0.7rem] leading-relaxed text-fg">
             {`// ${regime.missing}`}
           </p>
         </section>

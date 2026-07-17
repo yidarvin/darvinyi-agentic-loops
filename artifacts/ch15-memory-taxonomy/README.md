@@ -17,7 +17,7 @@ node memory_harness.mjs --compare
 - **Dependencies:** none.
 - **Network and API key:** neither is required.
 
-To inspect one regime or the records that the harness derives from the fixed interaction:
+To inspect one regime or the records that the harness derives from the default structured trace:
 
 ```sh
 node memory_harness.mjs --regime episodic
@@ -46,10 +46,21 @@ executable rule have different future behavior even when they come from the same
 
 ## Adapt it to a real agent
 
-Replace the three strings in `transcript` with a short trace from an agent you operate.
-Then decide which records should remain as episodes, which can be consolidated into facts,
-and which deserve a tested procedure. Keep the typed stores separate while you make that
-decision. A database backend can come later.
+`trace.json` is the source of truth for the comparison. Copy it, then edit its four
+objects to describe a short trace from an agent you operate:
+
+```sh
+cp trace.json my-failed-trace.json
+# edit working, preference, incident, and procedure in my-failed-trace.json
+node memory_harness.mjs --trace my-failed-trace.json --compare
+```
+
+The harness derives the displayed interaction, typed episodic/semantic/procedural stores,
+retained records, question prompts, and answers from that JSON. `preference` supplies a
+dated statement and consolidated profile value. `incident` supplies a dated event and its
+current fact. `procedure` supplies the originating instruction and explicit skill. Keep
+those types separate while deciding what should survive, consolidate, become a tested
+procedure, or be discarded. A database backend can come later.
 
 ## Verify it
 
@@ -57,6 +68,7 @@ decision. A database backend can come later.
 bash check.sh
 ```
 
-The check executes the comparison and asserts that the fresh working-state case excludes the
-old session, episodic memory retains the incident, semantic memory retains the profile, and
-an explicit procedural skill enforces the release guardrail.
+The check executes the default comparison and a second structured trace in
+`fixtures/custom-trace.json`. It asserts that the fresh working-state case excludes the old
+session, the default typed records produce their expected behavior, and custom trace values
+change the episodic, semantic, and procedural comparison output.

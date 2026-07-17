@@ -1,0 +1,28 @@
+{
+  "working": {
+    "goal": "plan dinner after a deployment incident",
+    "request": "the current request only"
+  },
+  "preference": {
+    "time": "09:10",
+    "person": "Mira",
+    "topic": "dinner",
+    "statement": "I eat vegetarian food",
+    "value": "vegetarian"
+  },
+  "incident": {
+    "time": "16:40",
+    "actor": "Deploy",
+    "subject": "deployment",
+    "description": "production failed after a migration mismatch",
+    "fact": "migration verification is required"
+  },
+  "procedure": {
+    "time": "16:55",
+    "actor": "Team",
+    "statement": "add migration verification before the next production deploy",
+    "policy": "release",
+    "target": "next production release",
+    "skill": "Run migration verification and block production deployment until it passes"
+  }
+}
