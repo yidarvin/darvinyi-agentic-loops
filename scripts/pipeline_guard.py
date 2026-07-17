@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -201,6 +202,20 @@ def verdict(repo: Path, slug: str) -> str | None:
     return first.removeprefix("verdict:").strip() if first.startswith("verdict:") else None
 
 
+def critique_rounds(repo: Path, slug: str) -> int:
+    chapter(repo, slug)
+    path = repo / f"content/critiques/{slug}.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return 0
+    except OSError as exc:
+        raise GuardError(f"cannot read critique history for {slug}: {exc}") from exc
+    return len(
+        re.findall(r"^## Round [0-9]+ review(?:[ \t].*)?$", text, flags=re.MULTILINE)
+    )
+
+
 def require_outcome(repo: Path, stage: str, slug: str) -> None:
     item, _ = validate_target(repo, stage, slug)
     state = item.get("status")
@@ -342,6 +357,8 @@ def parser() -> argparse.ArgumentParser:
     outcome = sub.add_parser("outcome")
     outcome.add_argument("stage")
     outcome.add_argument("slug")
+    rounds = sub.add_parser("critique-rounds")
+    rounds.add_argument("slug")
     create = sub.add_parser("lease-create")
     create.add_argument("stage")
     create.add_argument("slug")
@@ -371,6 +388,8 @@ def main(argv: list[str]) -> int:
                 print(path)
         elif args.command == "outcome":
             require_outcome(repo, args.stage, args.slug)
+        elif args.command == "critique-rounds":
+            print(critique_rounds(repo, args.slug))
         elif args.command == "lease-create":
             create_lease(repo, args.stage, args.slug, args.num)
         elif args.command == "lease-show":

@@ -527,6 +527,42 @@ def driver_fixture(
     return work, env
 
 
+def test_critique_round_count_does_not_depend_on_external_rg() -> None:
+    work, env = driver_fixture(
+        "#!/bin/bash\nexit 0\n", initial_status="draft", verdict="resolved"
+    )
+    try:
+        critique = work / "content/critiques/one.md"
+        critique.write_text(
+            "verdict: resolved\n\n"
+            + "\n".join(
+                f"## Round {number} review (2026-07-{number:02d})\n\nReview {number}."
+                for number in range(1, 6)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        rg_marker = work / "external-rg-was-called"
+        fake_rg = work / "fake-bin/rg"
+        fake_rg.write_text(
+            "#!/bin/bash\n"
+            "touch \"$RG_MARKER\"\n"
+            "exit 126\n",
+            encoding="utf-8",
+        )
+        fake_rg.chmod(0o755)
+        env["RG_MARKER"] = str(rg_marker)
+
+        result = run("./run.sh", "next", "--dry-run", "--no-check", cwd=work, env=env)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "already had 5 review round(s)" in result.stdout
+        assert "critique history for one has 5 round(s)" in result.stderr
+        assert not rg_marker.exists(), "critique convergence must not invoke external rg"
+    finally:
+        shutil.rmtree(work)
+
+
 def test_driver_retains_lease_for_delayed_output() -> None:
     work, env = driver_fixture("#!/bin/bash\nexit 0\n")
     try:
@@ -1170,6 +1206,7 @@ def main() -> int:
         test_watchdog_terminates_a_silent_process_group()
         test_watchdog_allows_a_command_that_keeps_making_progress()
         test_watchdog_persists_an_owned_process_heartbeat()
+        test_critique_round_count_does_not_depend_on_external_rg()
         test_driver_retains_lease_for_delayed_output()
         test_driver_commits_valid_stage_once()
         test_driver_repairs_a_normal_validation_failure()

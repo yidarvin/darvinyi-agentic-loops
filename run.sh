@@ -139,9 +139,7 @@ PY
 }
 
 critique_rounds() {
-  local file="content/critiques/$1.md"
-  [[ -f "$file" ]] || { echo 0; return; }
-  rg -c '^## Round [0-9]+ review' "$file" 2>/dev/null || echo 0
+  "$GUARD" --repo "$ROOT" critique-rounds "$1"
 }
 
 prompt_for() {
@@ -157,6 +155,7 @@ EOF
       ;;
     critique)
       rounds="$(critique_rounds "$slug")"
+      echo "run.sh: critique history for $slug has $rounds round(s)" >&2
       cat <<EOF
 You are the independent adversarial critic for draft chapter '$slug'. A wrong approval is worse than a concise required correction, but endless polish is also a failure. Read prompts/critique-rubric.md, the complete existing critique history, the current chapter, exact figure and widget, artifact, research file, and linked primary sources. Run npm run check.
 
