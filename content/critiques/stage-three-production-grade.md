@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -179,3 +179,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state the actual single-process custom-server contract and the combined fork prohibition plus process-group cleanup boundary.
 
 No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
+
+## Round 9 review (2026-07-18)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, full Chapter 21 artifact, README, check script, policy, demo server, research backbone, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` and `bash artifacts/ch21-stage-three-production-grade/check.sh`, both passing. Re-verified every Round 1 through Round 8 REQUIRED fix in the current artifacts: no public sandbox bypass; contained memory roots and host writes; policy before MCP launch; host-owned definition locks; a narrow child environment; static and post-open workspace-symlink containment; a reviewed non-PATH Seatbelt executable; bounded host reads and MCP frames; process-group lifecycle cleanup; the corrected independent-seam figure; the workspace-local custom-server contract; and the fork plus `setsid()` containment rule. I then exercised the actual public macOS Seatbelt path with an approved workspace-local MCP server that attempted to read a denied secret file.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/policy.json` and `stage_three_agent.py` --- an approved custom MCP server can read and persist workspace secrets despite the explicit deny policy.** `policy.json` lines 2-12 declares `.env*` and `secrets/**` outside the agent trust boundary, while the chapter says to deny secret reads (`src/chapters/stage-three-production-grade.mdx:40`). But `ProductionHarness.run()` evaluates policy only for the server launch and exposed tool name (`stage_three_agent.py:919-928`), and `MacOSSandbox._profile()` grants `file-read*` to the complete workspace (`stage_three_agent.py:500-520`). In a disposable workspace containing `.env.production` with `DEMO_SECRET=do-not-expose`, I ran the public parser with the documented `python3 ./secret_reader.py` custom-server contract and explicit server, tool, and verification approvals. The real Seatbelt demo exited 0 and the server wrote that exact secret to `mcp-observed-secret.txt`. This is not a test-launcher seam: the public path constructs `MacOSSandbox` at lines 2144-2157 and invokes the reviewed `/usr/bin/sandbox-exec`. An approved but untrusted server can therefore copy a denied secret into its tool result or a later host-readable workspace file, so the declared deny rule does not protect the boundary it teaches. Enforce those secret exclusions in the actual server boundary, for example by granting the server only a non-sensitive read root or by compiling the deny patterns into the Seatbelt profile, and add a real-Seatbelt public-demo regression proving an approved workspace-local server cannot read `.env.production` or `secrets/**` or write their contents elsewhere.
+
+## Advisories
+
+- None.
