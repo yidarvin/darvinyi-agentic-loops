@@ -460,6 +460,11 @@ function classifyActionRequest(tokens) {
   const requirementOperation = actionInRequirementQuestion(tokens);
   if (requirementOperation) return { supported: SUPPORTED_ACTION_TERMS.has(requirementOperation) };
 
+  const auxiliaryRequirementOperation = actionInAuxiliaryRequirementQuestion(tokens);
+  if (auxiliaryRequirementOperation) {
+    return { supported: SUPPORTED_ACTION_TERMS.has(auxiliaryRequirementOperation) };
+  }
+
   const safetyOperation = actionInSafetyQuestion(tokens);
   if (safetyOperation) return { supported: SUPPORTED_ACTION_TERMS.has(safetyOperation) };
 
@@ -498,6 +503,14 @@ function actionInRequirementQuestion(tokens) {
   );
   if (questionVerbIndex === -1) return null;
   return firstActionTerm(tokens, questionVerbIndex + 1);
+}
+
+function actionInAuxiliaryRequirementQuestion(tokens) {
+  if (!["do", "does", "did"].includes(tokens[0])) return null;
+  if (!tokens.slice(2).some((term) => ["need", "needed", "require", "required", "requires"].includes(term))) {
+    return null;
+  }
+  return firstActionTerm(tokens, 1);
 }
 
 function actionInSafetyQuestion(tokens) {
@@ -1197,6 +1210,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(gerundDeletion, "gerund deletion operation");
+
+    const authorizationDeletion = await runAgent({
+      storePath: resolve(directory, "authorization-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Does deleting checkout telemetry data require approval?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(authorizationDeletion, "authorization deletion operation");
 
     const requirementPurging = await runAgent({
       storePath: resolve(directory, "requirement-purging-memory.json"),
