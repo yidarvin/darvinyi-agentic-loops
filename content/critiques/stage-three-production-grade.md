@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -125,3 +125,13 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and git log -p -- content/critiques/stage-three-production-grade.md. Re-verified every REQUIRED fix from Rounds 1 through 5 against the current chapter artifact and its deterministic regressions: the public parser still has no sandbox bypass; escaping memory roots are rejected; MCP launch policy runs before popen; definition locks remain host-owned outside the writable workspace; the child environment remains a narrow allowlist; static and post-open workspace symlink reads stay contained; the reviewed Seatbelt executable is not resolved through PATH; FIFO and oversized host reads fail safely; and malformed, partial, or oversized MCP frames close and reap their child.
+
+1. Updated artifacts/ch21-stage-three-production-grade/stage_three_agent.py so both public and private test MCP launchers create a dedicated process group. StdioMcpClient now sends termination to that group on every normal close and abort, escalates to a bounded group kill when necessary, reaps the direct child, and fails if the group survives.
+2. Replaced SafeMemory pathname writes with descriptor-relative, no-follow operations rooted in a verified memory directory descriptor. SafeMemory now creates nested directories through verified descriptors, stages and atomically publishes regular files without following a target link, and seeds project.md with guarded exclusive creation. Updated the artifact README to describe the actual memory-write and process-group boundaries.
+3. Added deterministic public-demo coverage for an approved custom MCP server that forks a descendant prepared to replace the next run's memory file. The regression proves the descendant is gone before and after the later demo, the outside sentinel is unchanged, and the later memory file remains contained. It also injects a post-root-open symlink swap into SafeMemory.write and proves the descriptor-relative writer fails closed without changing the outside target.
+
+No advisories were taken. python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test, bash artifacts/ch21-stage-three-production-grade/check.sh, and npm run check pass.

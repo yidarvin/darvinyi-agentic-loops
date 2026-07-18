@@ -57,10 +57,9 @@ process starts. There is no global bypass-permissions flag.
 
 ## What the harness actually exercises
 
-1. `stage_three_agent.py` establishes the project-memory root with
-   `Path.resolve()` plus `relative_to()` containment checks, then reads
-   host-controlled files through descriptor-relative no-follow, regular-file
-   validation with a byte cap before decoding.
+1. `stage_three_agent.py` establishes the project-memory root and performs host
+   memory reads and writes through descriptor-relative, no-follow operations.
+   It validates regular files before use and caps reads before decoding.
 2. It displays the exact MCP server command and evaluates a distinct launch policy
    before `popen`. The bundled read-only server is reviewed; a custom command needs a
    matching policy rule or one task-scoped approval. The automatic demo-tool allowance
@@ -69,6 +68,8 @@ process starts. There is no global bypass-permissions flag.
 3. It starts an approved `mcp_demo_server.py` inside Seatbelt, performs `initialize`,
    discovers `tools/list`, maps the tool to `mcp__demo__read_project_brief`, and pins
    its normalized definition hash in host-owned state outside the server workspace.
+   The client starts the server in its own process group and terminates and reaps that
+   group on close or protocol abort.
 4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
 5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
