@@ -41,6 +41,7 @@ const QUERY_FUNCTION_WORDS = new Set([
   "why",
   "with",
 ]);
+const GENERIC_ANSWER_CUE_TERMS = new Set(["use", "used", "uses"]);
 const ACTION_REQUEST_PREFIXES = new Set([
   "can",
   "could",
@@ -66,6 +67,7 @@ const ACTION_REQUEST_FILLERS = new Set([
   "to",
   "we",
   "you",
+  "someone",
 ]);
 const GENERIC_LOOKUP_STARTERS = new Set([
   "are",
@@ -87,20 +89,7 @@ const GENERIC_LOOKUP_STARTERS = new Set([
   "why",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
-const UNREPRESENTABLE_ACTION_TERMS = new Set([
-  "delete",
-  "deleting",
-  "deletion",
-  "purge",
-  "purges",
-  "purged",
-  "purging",
-  "remove",
-  "removes",
-  "removed",
-  "removing",
-  "removal",
-]);
+const ACTION_CLAUSE_CONNECTORS = new Set(["after", "before", "then", "while"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -265,7 +254,10 @@ function retrieve(collection, store, question, filter, rrfK) {
   const queryTerms = new Set(tokenize(question));
   const meaningfulQueryTerms = new Set([...queryTerms].filter(isMeaningfulQueryTerm));
   const querySpecificTerms = new Set(
-    [...meaningfulQueryTerms].filter((term) => !answerPlan.scope.services.includes(term)),
+    [...meaningfulQueryTerms]
+      .filter((term) => !answerPlan.scope.services.includes(term))
+      .filter((term) => !GENERIC_ANSWER_CUE_TERMS.has(term))
+      .map(normalizeGenericTerm),
   );
   const candidates = [...byId.values()]
     .map((item) => {
@@ -273,14 +265,17 @@ function retrieve(collection, store, question, filter, rrfK) {
         (item.denseRank ? 1 / (rrfK + item.denseRank) : 0) +
         (item.sparseRank ? 1 / (rrfK + item.sparseRank) : 0);
       const documentTerms = tokenize(documentText(item.record));
+      const genericDocumentTerms = new Set(documentTerms.map(normalizeGenericTerm));
       const overlap = lexicalOverlap(queryTerms, documentTerms);
       const meaningfulOverlap = lexicalOverlap(meaningfulQueryTerms, documentTerms);
-      const querySpecificOverlap = lexicalOverlap(querySpecificTerms, documentTerms);
+      const querySpecificMatchCount = lexicalMatchCount(querySpecificTerms, genericDocumentTerms);
+      const requiredGenericSupport = Math.min(2, querySpecificTerms.size);
       const freshness = freshnessScore(item.record.validFrom, filter.asOf);
       const answerability = answerabilityScore(item.record, answerPlan);
       const rerankScore = 0.35 * (rrf * rrfK) + 0.5 * overlap + 0.15 * freshness + 0.6 * answerability;
       const hasRelevanceSignal = meaningfulOverlap > 0 || answerability > 0;
-      const hasQuerySpecificRelevance = querySpecificOverlap > 0;
+      const hasQuerySpecificRelevance =
+        querySpecificTerms.size > 0 && querySpecificMatchCount >= requiredGenericSupport;
       return {
         ...item,
         answerability,
@@ -288,7 +283,8 @@ function retrieve(collection, store, question, filter, rrfK) {
         rrf,
         overlap,
         meaningfulOverlap,
-        querySpecificOverlap,
+        querySpecificMatchCount,
+        requiredGenericSupport,
         freshness,
         rerankScore,
         hasRelevanceSignal,
@@ -459,41 +455,55 @@ function requestedServices(tokens) {
 }
 
 function classifyActionRequest(tokens) {
-  // Inspect the full request before accepting any supported operation. A later
-  // destructive clause must not inherit authorization from an earlier deploy.
-  if (tokens.some((term) => UNREPRESENTABLE_ACTION_TERMS.has(term))) return { supported: false };
-
-  const intentIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
-  if (intentIndex !== -1) {
-    const operation = firstActionTerm(tokens, intentIndex + 1);
-    return { supported: Boolean(operation && SUPPORTED_ACTION_TERMS.has(operation)) };
-  }
-
-  const howToOperation = actionInHowToQuestion(tokens);
-  if (howToOperation) return { supported: SUPPORTED_ACTION_TERMS.has(howToOperation) };
-
-  const infinitiveOperation = actionAfterInfinitiveCue(tokens);
-  if (infinitiveOperation) return { supported: SUPPORTED_ACTION_TERMS.has(infinitiveOperation) };
-
-  const requirementOperation = actionInRequirementQuestion(tokens);
-  if (requirementOperation) return { supported: SUPPORTED_ACTION_TERMS.has(requirementOperation) };
-
-  const auxiliaryRequirementOperation = actionInAuxiliaryRequirementQuestion(tokens);
-  if (auxiliaryRequirementOperation) {
-    return { supported: SUPPORTED_ACTION_TERMS.has(auxiliaryRequirementOperation) };
-  }
-
-  const safetyOperation = actionInSafetyQuestion(tokens);
-  if (safetyOperation) return { supported: SUPPORTED_ACTION_TERMS.has(safetyOperation) };
-
-  const genericInterrogativeOperation = actionInGenericInterrogativeQuestion(tokens);
-  if (genericInterrogativeOperation) {
-    return { supported: SUPPORTED_ACTION_TERMS.has(genericInterrogativeOperation) };
-  }
+  // Collect every action clause before accepting a request. The allow-list is the
+  // contract: a later operation cannot inherit support from an earlier deployment.
+  const operations = actionOperations(tokens);
+  if (operations.length) return { supported: operations.every((operation) => SUPPORTED_ACTION_TERMS.has(operation)) };
 
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
   return { supported: SUPPORTED_ACTION_TERMS.has(firstTerm) };
+}
+
+function actionOperations(tokens) {
+  const operations = [];
+  const add = (operation) => {
+    if (operation) operations.push(operation);
+  };
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (ACTION_REQUEST_PREFIXES.has(tokens[index])) add(firstActionTerm(tokens, index + 1));
+  }
+  add(actionInHowToQuestion(tokens));
+  add(actionAfterInfinitiveCue(tokens));
+  add(actionInRequirementQuestion(tokens));
+  add(actionInAuxiliaryRequirementQuestion(tokens));
+  add(actionInSafetyQuestion(tokens));
+  add(actionInGenericInterrogativeQuestion(tokens));
+  for (const operation of actionTermsAfterClauseConnector(tokens)) add(operation);
+
+  return [...new Set(operations)];
+}
+
+function actionTermsAfterClauseConnector(tokens) {
+  const operations = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!ACTION_CLAUSE_CONNECTORS.has(tokens[index])) continue;
+    let expectsOperation = true;
+    for (let cursor = index + 1; cursor < tokens.length; cursor += 1) {
+      const term = tokens[cursor];
+      if (isIncidentIdentifier(term) || ACTION_REQUEST_FILLERS.has(term)) continue;
+      if (term === "and") {
+        expectsOperation = true;
+        continue;
+      }
+      if (expectsOperation) {
+        operations.push(term);
+        expectsOperation = false;
+      }
+    }
+  }
+  return operations;
 }
 
 function actionInHowToQuestion(tokens) {
@@ -545,9 +555,10 @@ function actionInGenericInterrogativeQuestion(tokens) {
 
   const auxiliaryIndex = tokens.findIndex(
     (term, index) =>
-      GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]) &&
+      index > 0 &&
+      ["where", "which", "who"].includes(tokens[0]) &&
       ["do", "does", "did"].includes(term) &&
-      ["i", "we", "you"].includes(tokens[index + 1]),
+      GENERIC_LOOKUP_STARTERS.has(tokens[index - 1]),
   );
   if (auxiliaryIndex !== -1) return firstActionTerm(tokens, auxiliaryIndex + 1);
 
@@ -821,10 +832,20 @@ function cosine(left, right) {
 
 function lexicalOverlap(queryTerms, documentTerms) {
   if (!queryTerms.size) return 0;
+  return lexicalMatchCount(queryTerms, documentTerms) / queryTerms.size;
+}
+
+function lexicalMatchCount(queryTerms, documentTerms) {
   const documentSet = new Set(documentTerms);
   let matches = 0;
   for (const term of queryTerms) if (documentSet.has(term)) matches += 1;
-  return matches / queryTerms.size;
+  return matches;
+}
+
+function normalizeGenericTerm(term) {
+  if (term.length > 5 && term.endsWith("ing")) return term.slice(0, -3);
+  if (term.length > 4 && term.endsWith("ed")) return term.slice(0, -2);
+  return term;
 }
 
 function freshnessScore(validFrom, asOf) {
@@ -1298,6 +1319,21 @@ async function selfTest() {
       "mixed supported and removal action request",
     );
 
+    const mixedSupportedAndErasureAction = await runAgent({
+      storePath: resolve(directory, "mixed-supported-erasure-action-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "How do I deploy checkout after erasing telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      mixedSupportedAndErasureAction,
+      "mixed supported and erasure action request",
+    );
+
     const thirdPersonPurgingLookup = await runAgent({
       storePath: resolve(directory, "third-person-purging-lookup-memory.json"),
       fixturesPath: resolve("fixtures/memories.json"),
@@ -1432,6 +1468,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertGenericQueryAbstains(unsupportedRetention, "checkout data-retention query");
+
+    const unsupportedTelemetryEncryption = await runAgent({
+      storePath: resolve(directory, "unsupported-telemetry-encryption-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What telemetry encryption algorithm is used for checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertGenericQueryAbstains(unsupportedTelemetryEncryption, "telemetry encryption algorithm query");
 
     let invalidDateRejected = false;
     try {
