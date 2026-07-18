@@ -25,6 +25,7 @@ import sys
 import tempfile
 import time
 from typing import Any, Callable, Protocol
+from unittest.mock import patch
 
 
 MAX_FILE_CHARS = 10_000
@@ -207,19 +208,28 @@ class WorkspaceTools:
             raise ToolFailure("search path is not a directory: {}".format(path))
         matches: list[str] = []
         for candidate in sorted(directory.rglob("*")):
-            if ".git" in candidate.parts or not candidate.is_file():
+            if ".git" in candidate.parts:
                 continue
             try:
-                lines = candidate.read_text(encoding="utf-8").splitlines()
-            except UnicodeDecodeError:
+                resolved_candidate = candidate.resolve(strict=True)
+                resolved_candidate.relative_to(self.workspace)
+            except (OSError, ValueError):
+                continue
+            if not resolved_candidate.is_file():
+                continue
+            try:
+                lines = resolved_candidate.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
                 continue
             for line_number, line in enumerate(lines, start=1):
                 if query in line:
                     relative = candidate.relative_to(self.workspace)
                     matches.append("{}:{}:{}".format(relative, line_number, line))
                     if len(matches) == MAX_LIST_RESULTS:
-                        return "\n".join(matches) + "\n[search truncated at {} matches]".format(MAX_LIST_RESULTS)
-        return "\n".join(matches) if matches else "no matches for {!r}".format(query)
+                        matches.append("[search truncated at {} matches]".format(MAX_LIST_RESULTS))
+                        return middle_clip("\n".join(matches), self.max_output_chars)
+        rendered = "\n".join(matches) if matches else "no matches for {!r}".format(query)
+        return middle_clip(rendered, self.max_output_chars)
 
     def replace_once(self, path: str, old_str: str, new_str: str) -> str:
         if not isinstance(old_str, str) or not isinstance(new_str, str):
@@ -269,6 +279,14 @@ class WorkspaceTools:
 
         try:
             output, _ = process.communicate(timeout=self.shell_timeout_seconds)
+        except KeyboardInterrupt:
+            self._stop_process_group(process)
+            output, _ = process.communicate()
+            raise ToolFailure(
+                "[Request interrupted by user] command interrupted; its process group was terminated\n{}".format(
+                    middle_clip(output or "", self.max_output_chars)
+                )
+            )
         except subprocess.TimeoutExpired:
             self._stop_process_group(process)
             output, _ = process.communicate()
@@ -574,7 +592,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "search_files",
-        "description": "Search UTF-8 workspace files and return matching lines with file paths and line numbers.",
+        "description": "Search UTF-8 workspace files and return capped matching lines with file paths and line numbers.",
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}, "path": {"type": "string"}},
@@ -800,10 +818,16 @@ def self_test() -> None:
     silent = lambda _kind, _message: None
     no_sleep = lambda _delay: None
 
-    with tempfile.TemporaryDirectory(prefix="stage-two-self-test-") as raw_workspace:
+    with tempfile.TemporaryDirectory(prefix="stage-two-self-test-") as raw_workspace, tempfile.TemporaryDirectory(
+        prefix="stage-two-outside-"
+    ) as raw_outside:
         workspace = Path(raw_workspace)
+        outside = Path(raw_outside)
         (workspace / "config.py").write_text("DEBUG = True\nDEBUG = True\n", encoding="utf-8")
         (workspace / "notes.txt").write_text("alpha\nbeta\n", encoding="utf-8")
+        outside_secret = outside / "audit-secret.txt"
+        outside_secret.write_text("audit-secret\n", encoding="utf-8")
+        (workspace / "linked.txt").symlink_to(outside_secret)
         tools = WorkspaceTools(
             workspace,
             max_file_chars=80,
@@ -815,6 +839,12 @@ def self_test() -> None:
         assert "config.py" in listing and "notes.txt" in listing
         assert "1\talpha" in tools.read_file("notes.txt")
         assert "notes.txt:2:beta" in tools.search_files("beta")
+        assert "linked.txt" not in tools.search_files("audit-secret")
+
+        (workspace / "long-match.txt").write_text("needle " + "x" * 400 + "\n", encoding="utf-8")
+        capped_search = tools.search_files("needle")
+        assert "[... middle truncated by harness ...]" in capped_search
+        assert len(capped_search) <= tools.max_output_chars
 
         ambiguous = run_tool_safely(
             tools,
@@ -856,6 +886,60 @@ def self_test() -> None:
         )
         assert timeout_result.is_error and "process group was terminated" in timeout_result.content
         assert timeout_result.tool_use_id == "timeout_01"
+
+        interrupt_marker = workspace / "interrupted-marker.txt"
+        interrupt_command = "{} -c {}".format(
+            shlex.quote(sys.executable),
+            shlex.quote(
+                "from pathlib import Path; import time; "
+                "time.sleep(0.2); Path('interrupted-marker.txt').write_text('unexpected')"
+            ),
+        )
+        interrupt_provider = ScriptedProvider(transient_failures=0)
+        interrupt_provider.turns = [
+            _tool_turn(
+                "run a cancellable child",
+                ToolCall("interrupt_01", "run_shell", {"command": interrupt_command}),
+            ),
+            ProviderTurn(
+                content=[{"type": "text", "text": "interrupted shell result received"}],
+                calls=[],
+                stop_reason="end_turn",
+            ),
+        ]
+        original_communicate = subprocess.Popen.communicate
+        interrupted_once = {"value": False}
+
+        def interrupt_first_communicate(process: Any, *args: Any, **kwargs: Any) -> Any:
+            if not interrupted_once["value"]:
+                interrupted_once["value"] = True
+                raise KeyboardInterrupt
+            return original_communicate(process, *args, **kwargs)
+
+        with patch.object(subprocess.Popen, "communicate", new=interrupt_first_communicate):
+            interrupted_report = run_agent(
+                interrupt_provider,
+                tools,
+                PermissionGate("dangerously-skip-permissions", interactive=False),
+                ContextManager("interrupt a shell child", clear_at_chars=10_000, compact_at_chars=20_000),
+                "Run a cancellable shell command.",
+                emit=silent,
+                sleep_fn=no_sleep,
+                max_steps=2,
+            )
+        time.sleep(0.3)
+        interrupted_result = interrupted_report.tool_results[0]
+        assert interrupted_report.completed and interrupted_result.tool_use_id == "interrupt_01"
+        assert interrupted_result.is_error and "[Request interrupted by user]" in interrupted_result.content
+        recorded_results = [
+            message["content"]
+            for message in interrupted_report.history
+            if message.get("role") == "user" and isinstance(message.get("content"), list)
+        ]
+        assert len(recorded_results) == 1
+        assert recorded_results[0][0]["tool_use_id"] == "interrupt_01"
+        assert recorded_results[0][0]["is_error"] is True
+        assert not interrupt_marker.exists()
 
     attempts = {"count": 0}
 

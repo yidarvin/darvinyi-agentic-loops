@@ -27,7 +27,8 @@ That mode is intentionally named as a warning. It is acceptable only for the art
 - list_files, read_file, search_files, and replace_once operate on a selected workspace.
 - File paths resolve inside that workspace or return a model-visible error result.
 - replace_once rejects absent and ambiguous text with corrective messages.
-- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips ANTHROPIC_API_KEY from its child environment, caps output in the middle, and kills the full process group on timeout.
+- search_files and run_shell enforce aggregate character caps with a visible middle-truncation marker.
+- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips ANTHROPIC_API_KEY from its child environment, and kills the full process group on timeout or interruption.
 - Every tool call produces a result with its original identifier. Errors and permission denials use the same result path.
 - Context management first clears stale tool bodies while retaining call identifiers. Its demonstration compaction produces a structured continuation summary.
 
@@ -57,7 +58,7 @@ The program exits with a clear setup error if the package, key, model, task, or 
 bash check.sh
 ~~~
 
-The check is offline and credential-free. It verifies syntax, file reads, search, path-traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, shell timeout recovery, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
+The check is offline and credential-free. It verifies syntax, file reads, bounded search output, symlink and traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, shell timeout and interruption recovery, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
 
 ## Design boundary
 

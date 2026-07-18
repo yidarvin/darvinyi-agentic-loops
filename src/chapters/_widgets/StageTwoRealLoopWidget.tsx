@@ -11,16 +11,6 @@ type TraceStep = {
 
 const steps: TraceStep[] = [
   {
-    channel: "plan",
-    title: "The model proposes a bounded plan",
-    transcript: [
-      "assistant: inspect config, make one exact edit, run a check",
-      "tool_use read_01 -> read_file({ path: config.py })",
-    ],
-    explanation: "Planning belongs to the model turn. The harness records the request, streams the response, and prepares to dispatch only a valid call.",
-    invariant: "The plan is an observation, not a hard-coded workflow.",
-  },
-  {
     channel: "retry",
     title: "A transient request failure stays outside history",
     transcript: [
@@ -33,14 +23,23 @@ const steps: TraceStep[] = [
     isError: true,
   },
   {
-    channel: "tool",
+    channel: "plan",
+    title: "The model proposes a bounded plan",
+    transcript: [
+      "assistant: inspect config, make one exact edit, run a check",
+      "tool_use read_01 -> read_file({ path: config.py })",
+    ],
+    explanation: "Planning belongs to the completed model turn. The harness records it and prepares to dispatch only a valid call.",
+    invariant: "The plan is an observation, not a hard-coded workflow.",
+  },
+  {
+    channel: "result",
     title: "A read turns the workspace into ground truth",
     transcript: [
-      "tool: read_file(config.py)",
-      "result read_01: 1  DEBUG = True",
+      "tool_result(tool_use_id=read_01): 1  DEBUG = True",
     ],
     explanation: "The model receives line-numbered local state before it changes anything. Read operations are low risk and do not need a write approval.",
-    invariant: "Tool output is capped before it joins the transcript.",
+    invariant: "The matching result closes read_01 before the next tool call.",
   },
   {
     channel: "tool",
@@ -75,14 +74,31 @@ const steps: TraceStep[] = [
     invariant: "Errors are data for the model, not exceptions for the host process.",
   },
   {
+    channel: "result",
+    title: "The corrective read closes before editing",
+    transcript: [
+      "tool_result(tool_use_id=read_03): 1  DEBUG = True",
+    ],
+    explanation: "The reread result completes the read_03 pair before the model requests another action. The new value is now grounded in the current file.",
+    invariant: "Every tool_use receives exactly one matching tool_result before the next tool call.",
+  },
+  {
     channel: "tool",
     title: "The approved edit executes once",
     transcript: [
       "tool_use edit_04 -> replace_once(DEBUG = True -> DEBUG = False)",
-      "result edit_04: updated config.py",
     ],
     explanation: "An exact-one edit protects against silent multi-match changes. A basic permission gate can allow this write in an accept-edits mode.",
     invariant: "Approval changes who may act. It does not create a sandbox.",
+  },
+  {
+    channel: "result",
+    title: "The edit returns its matching result",
+    transcript: [
+      "tool_result(tool_use_id=edit_04): updated config.py",
+    ],
+    explanation: "The successful edit closes edit_04 before the harness moves to context management or another model turn.",
+    invariant: "The identifier survives success and failure paths alike.",
   },
   {
     channel: "context",
@@ -99,10 +115,18 @@ const steps: TraceStep[] = [
     title: "Verification runs behind a gate",
     transcript: [
       "tool_use check_05 -> run_shell(python3 -c ...)",
-      "result check_05: exit 0",
     ],
     explanation: "Shell execution gets a timeout, combined output, and a character cap. In a default permission mode this step returns a denial result until a human approves it.",
     invariant: "A timed-out command must terminate its process group and return an error result.",
+  },
+  {
+    channel: "result",
+    title: "The focused check returns its result",
+    transcript: [
+      "tool_result(tool_use_id=check_05): exit 0",
+    ],
+    explanation: "The shell result closes check_05 before the final assistant response. A denial or interruption would use the same identifier with is_error: true.",
+    invariant: "Every dispatched tool call closes with one result, including interrupted work.",
   },
   {
     channel: "final",

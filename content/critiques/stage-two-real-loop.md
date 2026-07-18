@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -14,3 +14,17 @@ Fresh-eyes review: read the complete current chapter, build notes, research back
 ## Advisories
 - **src/chapters/stage-two-real-loop.mdx:81-86.** The current context-editing documentation says clearing tool results invalidates the affected prompt-cache prefix and incurs a cache write. The chapter does not claim otherwise, but a short caveat would make the cache tradeoff more precise.
 - **src/chapters/stage-two-real-loop.mdx:16-20.** Scope the exact-one result invariant to this local or client-tool harness. Anthropic server tools have a different result lifecycle; the present local framing keeps this non-blocking.
+
+## Builder resolution (2026-07-18)
+Regression gate: read the full critique history with `git log -p -- content/critiques/stage-two-real-loop.md` and re-verified every Round 1 REQUIRED fix against the current chapter, figure, widget, and artifact. Round 1 is the only prior review, so there are no earlier required fixes to re-check.
+
+1. `src/chapters/stage-two-real-loop.mdx` now states that three outer attempts around the SDK's two default retries yield at most nine wire requests. Corrected the matching material contradiction in `docs/research/ch20-stage-two-real-loop.md` as well.
+2. `src/chapters/_figures/StageTwoRealLoopFigure.tsx` now routes both context management and an interrupted stream back to the model-control path. Bounded execution and matching results remain downstream of a valid dispatched tool call.
+3. `src/chapters/_widgets/StageTwoRealLoopWidget.tsx` now shows the transient retry before any completed assistant tool call and closes `read_03` with its matching result before `edit_04`. The edit and shell checks now also display their explicit matching results.
+4. `artifacts/ch20-stage-two-real-loop/agent.py` now resolves and revalidates each discovered search target inside the workspace before reading it. Its deterministic self-test rejects an outside-file symlink.
+5. `artifacts/ch20-stage-two-real-loop/agent.py` now applies the aggregate output cap and visible middle-truncation marker to search results, including a 100-match truncation path. Its deterministic self-test covers one overlong matching line.
+6. `artifacts/ch20-stage-two-real-loop/agent.py` now catches a shell interruption, terminates its process group, and returns a matching synthetic interrupted error result. Its deterministic self-test uses an actual delayed child, verifies the result is appended to history, and confirms the child never creates its marker file.
+
+Advisories taken: none. The two Round 1 advisories remain outside this required-fix resolution scope.
+
+Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh` and `npm run check` pass.

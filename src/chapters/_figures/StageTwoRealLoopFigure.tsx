@@ -136,7 +136,7 @@ export function StageTwoRealLoopFigure() {
         files keep durable state outside the window
       </text>
       <path d="M220 261 V450" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
-      <path d="M320 491 H367 V412" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
+      <path d="M320 491 H340 V280 H367 V261" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
 
       <rect x="375" y="450" width="244" height="82" rx="8" fill="var(--surface)" stroke="var(--border)" />
       <text x="393" y="478" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
@@ -149,7 +149,7 @@ export function StageTwoRealLoopFigure() {
         close unresolved calls with an error result
       </text>
       <path d="M456 261 V450" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
-      <path d="M619 491 H667 V412" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
+      <path d="M497 450 V430 H620 V280 H430 V261" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
 
       <rect x="674" y="450" width="224" height="82" rx="8" fill="var(--surface)" stroke="var(--border)" />
       <text x="692" y="478" fontFamily="var(--font-mono)" fontSize="11" fill="var(--comment)">
