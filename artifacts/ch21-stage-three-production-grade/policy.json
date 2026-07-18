@@ -1,0 +1,38 @@
+{
+  "deny": [
+    {
+      "tool": "*",
+      "target": ".env*",
+      "reason": "environment files are outside the agent trust boundary"
+    },
+    {
+      "tool": "*",
+      "target": "secrets/**",
+      "reason": "secret material is never agent-readable"
+    },
+    {
+      "tool": "shell",
+      "target": "*rm -rf*",
+      "reason": "destructive shell pattern"
+    },
+    {
+      "tool": "network",
+      "target": "*",
+      "reason": "the demo has no network egress"
+    }
+  ],
+  "ask": [
+    {
+      "tool": "shell",
+      "target": "*",
+      "reason": "process execution requires a task-scoped approval"
+    }
+  ],
+  "allow": [
+    {
+      "tool": "mcp__demo__read_project_brief",
+      "target": "MCP tool invocation",
+      "reason": "the local demo tool is read-only"
+    }
+  ]
+}
