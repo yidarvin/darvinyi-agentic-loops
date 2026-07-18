@@ -8,7 +8,7 @@ The implementation is a **product example: Anthropic Messages API**. The central
 
 The run_bash tool executes shell commands with your user privileges. The file tools reject paths outside the selected workspace, but shell commands are not sandboxed and can still read, write, or reach the network outside it.
 
-The parent REPL needs `ANTHROPIC_API_KEY`, but it removes that variable from every shell child it starts. This closes one avoidable path for a model-controlled command to read the key. It is not a sandbox: commands can still reach other user-accessible environment variables, files, credentials, and the network.
+The parent REPL constructs its SDK client with `ANTHROPIC_API_KEY`, then removes that variable from its own environment and every shell child it starts. This narrows one avoidable credential-exposure path, but it is not a sandbox: commands can still reach other user-accessible environment variables, files, credentials, and the network.
 
 Run this only under close supervision in a disposable or otherwise contained repository. Do not expose other secrets, production credentials, untrusted instructions, or permission to operate unattended.
 
@@ -41,7 +41,7 @@ The REPL prints every tool call. It keeps the full conversation in memory for th
 bash check.sh
 ~~~
 
-The check compiles the program and exercises file reading, overlapping exact-match rejection, path containment, error results, a local shell command, API-key removal from shell children, and truncated-response handling. It does not import the SDK, require an API key, or make a network call.
+The check compiles the program and exercises file reading, overlapping exact-match rejection, path containment, error results, a local shell command, API-key removal from the parent REPL and shell children, and truncated-response handling. It does not import the SDK, require an API key, or make a network call.
 
 ## What this stage intentionally omits
 

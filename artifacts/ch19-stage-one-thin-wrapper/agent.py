@@ -208,7 +208,12 @@ def create_client() -> Any:
         import anthropic
     except ImportError as error:
         raise RuntimeError("Missing SDK. Run: python3 -m pip install -r requirements.txt") from error
-    return anthropic.Anthropic(api_key=api_key)
+    try:
+        return anthropic.Anthropic(api_key=api_key)
+    finally:
+        # The SDK client has the explicit key. Do not leave it visible through the
+        # long-lived REPL process that model-controlled shell commands can inspect.
+        os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
 def print_assistant_text(response: Any) -> None:
@@ -349,6 +354,21 @@ def run_self_test() -> None:
         assert "agent-check" in command_output
 
         fixture_key = "self-test-key-must-not-reach-shell"
+
+        class OfflineAnthropic:
+            def __init__(self, api_key: str) -> None:
+                self.api_key = api_key
+
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
+            with patch.dict(sys.modules, {"anthropic": SimpleNamespace(Anthropic=OfflineAnthropic)}):
+                offline_client = create_client()
+            assert offline_client.api_key == fixture_key
+            assert "ANTHROPIC_API_KEY" not in os.environ
+
+            parent_tools = WorkspaceTools(workspace)
+            parent_environment_output = parent_tools.run_bash('ps eww -p "$PPID"')
+            assert fixture_key not in parent_environment_output
+
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
             credential_tools = WorkspaceTools(workspace)
             credential_output = credential_tools.run_bash("printf '%s' \"$ANTHROPIC_API_KEY\"")

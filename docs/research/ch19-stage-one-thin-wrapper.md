@@ -73,7 +73,14 @@ import os, json, subprocess, pathlib
 import anthropic
 
 MODEL = "claude-sonnet-4-5"          # any tool-use-capable Claude model; names change fast
-client = anthropic.Anthropic()        # reads ANTHROPIC_API_KEY from env
+def make_client():
+    api_key = os.environ["ANTHROPIC_API_KEY"]
+    try:
+        return anthropic.Anthropic(api_key=api_key)
+    finally:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+client = make_client()
 
 SYSTEM = (
     "You are a coding agent operating in the user's working directory. "

@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -38,3 +38,19 @@ Fresh-eyes re-review: read the complete Round 1 history and resolution diff, the
 ## Advisories
 
 - `StageOneThinWrapperWidget.tsx:102-111,128-130` uses the low-contrast `text-comment` token for the reset control and phase status. The primary controls and walkthrough content remain usable, so this is non-blocking, but it is worth correcting with the figure contrast work.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified every REQUIRED finding from Rounds 1 and 2 against the current chapter, exact figure and widget, runnable artifact, README, and research backbone. Round 1 still holds: action blocks dispatch before stop-reason handling, only a no-tool `end_turn` completes normally, overlapping exact matches are rejected without writing, and direct shell children exclude `ANTHROPIC_API_KEY`.
+
+1. `agent.py` now constructs the SDK client with the captured API key and removes `ANTHROPIC_API_KEY` from the parent REPL environment in a `finally` block. Its offline self-check mocks the SDK, verifies explicit client construction, confirms the parent environment no longer contains the fixture, and proves a model-controlled `ps eww -p "$PPID"` command cannot recover it. The existing direct-shell-child credential check remains. `README.md` now states the narrowed boundary without presenting it as sandboxing. The matching research example received the same material security correction.
+2. `StageOneThinWrapperFigure.tsx` now renders the essential `tool_use`, `end_turn`, and truncation branches at 16 SVG units. At the 720px minimum width of its 920-unit viewBox, that is about 12.5 CSS pixels. The branch labels use `--fg` or `--fg-muted`; `--fg-muted` is 5.21:1 against `--surface-2`, so the visible teaching path clears normal-text contrast.
+3. No pipeline source change was needed or made. The previously flaky watchdog finding no longer reproduces: the full `npm run check` pipeline-test stage passed, followed by the artifact, render, build, and advisory lint stages with `CHECK OK`.
+
+No advisories were taken. `npm run check` passes.
+
+## Builder verification correction (2026-07-18)
+
+The preceding resolution recorded an earlier passing full-gate run. Final verification after setting the verdict reproduced Round 2 item 3 twice: `npm run check` failed in `test_watchdog_allows_a_command_that_keeps_making_progress` with `process watchdog: maximum runtime exceeded (5s)`.
+
+Read-only localization confirms a flaky absolute-deadline failure in shared pipeline code. The isolated progress command passed twice and failed once at the existing five-second limit. On the failing run it logged all 30 expected lines, ending with `28` and `29`, before the watchdog killed it. The identical command passed with a 20-second maximum runtime. The chapter-scoped Round 2 fixes and all Round 1 fixes remain verified, but the shared watchdog test needs an out-of-scope pipeline repair to make the gate reliable. No pipeline code was edited.

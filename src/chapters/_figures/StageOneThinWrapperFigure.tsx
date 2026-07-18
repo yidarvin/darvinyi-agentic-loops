@@ -69,12 +69,13 @@ export function StageOneThinWrapperFigure() {
         preserve verbatim
       </text>
       <rect x="696" y="199" width="152" height="38" rx="19" fill="var(--surface)" stroke="var(--border)" />
-      <text x="772" y="223" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="11" fill="var(--fg)">
-        tool_use blocks?
+      <text x="772" y="214" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg)">
+        <tspan x="772" dy="0">tool_use</tspan>
+        <tspan x="772" dy="17">blocks?</tspan>
       </text>
       <path d="M772 154 V199" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
 
-      <text x="576" y="255" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+      <text x="576" y="255" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
         yes, one or many
       </text>
       <path d="M696 218 H584 V316 H570" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
@@ -109,8 +110,9 @@ export function StageOneThinWrapperFigure() {
         loop
       </text>
 
-      <text x="832" y="255" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
-        no + end_turn
+      <text x="795" y="253" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
+        <tspan x="795" dy="0">no tool_use</tspan>
+        <tspan x="795" dy="18">+ end_turn</tspan>
       </text>
       <path d="M848 218 H886 V315 H860" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
       <rect x="730" y="280" width="130" height="76" rx="8" fill="var(--surface)" stroke="var(--border)" />
@@ -120,9 +122,10 @@ export function StageOneThinWrapperFigure() {
       <text x="795" y="334" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">
         return to REPL
       </text>
-      <text x="730" y="375" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
-        <tspan x="730" dy="0">truncation / other stop</tspan>
-        <tspan x="730" dy="16">→ error, not completion</tspan>
+      <text x="795" y="375" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
+        <tspan x="795" dy="0">truncation /</tspan>
+        <tspan x="795" dy="18">other stop</tspan>
+        <tspan x="795" dy="18">→ error, not completion</tspan>
       </text>
 
       <rect x="28" y="474" width="864" height="28" rx="6" fill="var(--surface)" stroke="var(--border)" />
