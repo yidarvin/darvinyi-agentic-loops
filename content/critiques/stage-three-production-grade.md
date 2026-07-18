@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -272,3 +272,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 4. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state the pathname-policy limit and the bundled-MCP and host-reader multi-link rejection rule, including the custom-server responsibility to apply the same content-safe read discipline.
 
 No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 12 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, full artifact, README, policy, demo server, and research backbone; and checked the linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully through all seven sections, including the Chapter 21 real-Seatbelt artifact regression, and ran `bash artifacts/ch21-stage-three-production-grade/check.sh` successfully. Re-verified that every prior REQUIRED boundary remains intact: no public sandbox bypass; descriptor-contained memory and host I/O; policy before MCP launch; host-owned definition locks; a fixed child environment; bounded host reads and MCP frames; process lifecycle containment; the independent-seam figure; the workspace-local custom-server contract; secret pathname denials; and the Round 11 multi-link read rejection. I then exercised the public `demo` parser in a disposable macOS workspace where `.env.production` was a pre-existing hard link to `PROJECT.md`, with an approved workspace-local MCP server that wrote only `PROJECT.md`. The demo returned 0 and the protected `.env.production` inode changed to the server's payload.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` and `README.md` --- a pre-existing hard-link alias bypasses the claimed secret mutation boundary.** `MacOSSandbox._profile()` broadly permits `file-write*` below the workspace before excluding only `.env*` and `secrets/**` pathnames (lines 533-537). The Round 11 `st_nlink > 1` protection at lines 153-155 applies only to host and bundled-server readers. In the public demo, a compatible approved custom MCP server can therefore overwrite the allowed `PROJECT.md` alias and modify the linked protected `.env.production`; the run completed successfully and the protected inode's content changed. This is distinct from the settled Round 11 read-exposure finding: it is a write through a generic custom-server path, and it contradicts the README's explicit claim that MCP `.env*` and `secrets/**` mutations are denied (lines 74-78 and 128-134). Fail closed before launching an untrusted server when a protected file has an allowed hard-link alias, or give the server a separately mounted writable work root that cannot alias protected material. Add a real-Seatbelt public-demo regression that creates this pre-existing alias, invokes a compatible approved custom server, and proves the protected inode remains unchanged.
+
+## Advisories
+
+- None.
