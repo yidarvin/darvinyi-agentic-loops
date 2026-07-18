@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-18)
 
@@ -41,3 +41,26 @@ for this chapter.
 
 No advisories were taken because Round 1 listed none. `bash check.sh` for the artifact
 and `npm run check` both pass.
+
+## Round 2 review (2026-07-18)
+
+Independent re-review: read `prompts/critique-rubric.md`, the complete current
+chapter, `SelfManagedMemoryFigure.tsx`, `SelfManagedMemoryWidget.tsx`, the full
+artifact (`README.md`, `check.sh`, `self_managed_memory.mjs`, and
+`verify_demo.mjs`), the Chapter 18 research backbone, and the complete Round 1 and
+builder-resolution history. Re-verified both Round 1 REQUIRED fixes in the current
+artifacts: Session 2 derives recalled facts and its answer from persisted
+`hotBlock.content`, and the verifier changes only that block in an isolated state
+before proving changed fresh-process recall; the widget displays and traces all four
+candidates, including `release_window`. Ran a full `npm run check` (passes, including
+the Chapter 18 artifact gate) and checked the linked primary sources for MemGPT,
+Letta, Anthropic memory tools, Mem0, MINJA, Generative Agents, Sleep-time Compute,
+HaluMem, and RealMem.
+
+The chapter is materially truthful, its figure and focused widget teach the bounded
+write loop, and its runnable artifact proves durable hot-block-backed recall across
+processes.
+
+## Advisories
+
+- None.

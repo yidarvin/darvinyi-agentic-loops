@@ -29,7 +29,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 15 | memory-taxonomy              | The Memory Taxonomy                             | DONE    |
 | 16 | prompt-caching-economics     | Prompt Caching and the Economics of Remembering | DONE    |
 | 17 | retrieval-as-memory          | Retrieval as Memory                             | DONE    |
-| 18 | self-managed-memory          | Self-Managed Memory                             | PENDING |
+| 18 | self-managed-memory          | Self-Managed Memory                             | DONE    |
 | 19 | stage-one-thin-wrapper       | Stage One: The Thin Wrapper                     | PENDING |
 | 20 | stage-two-real-loop          | Stage Two: The Real Loop                        | PENDING |
 | 21 | stage-three-production-grade | Stage Three: Production-Grade                   | PENDING |
