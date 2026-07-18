@@ -99,6 +99,13 @@ export function StageTwoRealLoopFigure() {
         timeout + output cap
       </text>
       <path d="M824 261 V319" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
+      <text x="860" y="294" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">
+        valid call
+      </text>
+      <path d="M780 261 V280 H630 V365 H595" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
+      <text x="685" y="275" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">
+        invalid or denied
+      </text>
 
       <rect x="352" y="319" width="243" height="93" rx="8" fill="var(--surface)" stroke="var(--accent-dim)" />
       <text x="370" y="350" fontFamily="var(--font-mono)" fontSize="13" fill="var(--accent)">

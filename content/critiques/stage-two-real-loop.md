@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -38,3 +38,14 @@ Fresh-eyes re-review: read the complete critique history, including `git log -p 
 
 ## Advisories
 - No new advisories. The Round 1 advisories remain settled.
+
+## Builder resolution (2026-07-18)
+Regression gate: read the complete append-only history with `git log -p -- content/critiques/stage-two-real-loop.md` and re-verified every REQUIRED fix from Rounds 1 and 2 against the current chapter, figure, widget, artifact, and research backbone. Round 1 remains intact: the chapter and research now use the nine-request retry maximum; the context and interrupted-stream figure paths return to model control; the widget keeps retry before a completed call and closes `read_03`; search revalidates symlink targets and caps aggregate output; and interrupted shells terminate their process group and append a matching error result.
+
+1. `src/chapters/_figures/StageTwoRealLoopFigure.tsx` now labels the validation-to-execution path as a valid call and adds a separate `invalid or denied` branch from validation directly to `matching tool_result`. Invalid schema, path, and permission checks therefore return an error result without being depicted as execution.
+2. `artifacts/ch20-stage-two-real-loop/agent.py` now compacts to a user-role harness continuation summary and preserves the final adjacent `assistant(tool_use) → user(tool_result)` pair only when that pair exists. `_assert_legal_anthropic_history` enforces user-first alternation and exact adjacent tool-result identifiers; the deterministic self-test now uses a legal compacted history and asserts the retained `read_large` pairing.
+3. `docs/research/ch20-stage-two-real-loop.md` corrects the surviving Round 1 retry-arithmetic contradiction from twelve requests to `3×(1+2)=9`, matching the chapter and the earlier research statement.
+
+Advisories taken: none. The settled Round 1 advisories remain outside this required-fix resolution scope.
+
+Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh`, both documented offline demo modes, and `npm run check` pass.

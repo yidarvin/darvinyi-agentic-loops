@@ -454,10 +454,22 @@ class ContextManager:
                 "next step: inspect the most recent result, preserve workspace facts, and continue without replaying old bulk",
             ]
         )
+        tail: list[dict[str, Any]] = []
+        if len(history) >= 2 and [message.get("role") for message in history[-2:]] == ["assistant", "user"]:
+            tail = history[-2:]
         compacted = [
-            {"role": "assistant", "content": [{"type": "text", "text": summary}]},
-            *history[-2:],
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Context continuation supplied by the harness:\n{}".format(summary),
+                    }
+                ],
+            },
+            *tail,
         ]
+        _assert_legal_anthropic_history(compacted)
         return compacted, "compacted {} local characters into a structured continuation summary".format(used)
 
 
@@ -465,6 +477,42 @@ def _contains_tool_result(content: Any) -> bool:
     return isinstance(content, list) and any(
         isinstance(block, dict) and block.get("type") == "tool_result" for block in content
     )
+
+
+def _assert_legal_anthropic_history(history: list[dict[str, Any]]) -> None:
+    """Assert the user-first, alternating client-tool history sent to Anthropic."""
+    assert history, "Anthropic history must contain at least one user message"
+    assert history[0].get("role") == "user", "Anthropic history must start with a user message"
+    previous_role: str | None = None
+    for index, message in enumerate(history):
+        role = message.get("role")
+        assert role in {"user", "assistant"}, "Anthropic history has an unsupported role"
+        assert role != previous_role, "Anthropic history roles must alternate"
+        previous_role = role
+
+        if role != "assistant":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        tool_use_ids = [
+            str(block.get("id", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_use"
+        ]
+        if not tool_use_ids:
+            continue
+        assert index + 1 < len(history), "assistant tool calls need a following user result message"
+        next_message = history[index + 1]
+        assert next_message.get("role") == "user", "tool results must immediately follow assistant tool calls"
+        result_content = next_message.get("content")
+        assert isinstance(result_content, list), "tool results must be content blocks"
+        tool_result_ids = [
+            str(block.get("tool_use_id", ""))
+            for block in result_content
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
+        assert tool_result_ids == tool_use_ids, "tool results must match the adjacent assistant tool calls"
 
 
 def invoke_with_retry(
@@ -962,6 +1010,12 @@ def self_test() -> None:
     large_history = [
         {"role": "user", "content": "retain task state"},
         {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "read_large", "name": "read_file", "input": {"path": "notes.txt"}}
+            ],
+        },
+        {
             "role": "user",
             "content": [
                 {
@@ -977,6 +1031,9 @@ def self_test() -> None:
     assert action and action.startswith("compacted")
     summary = compacted[0]["content"][0]["text"]
     assert "retain the task and next test" in summary and "read_large" in summary
+    assert [message["role"] for message in compacted] == ["user", "assistant", "user"]
+    _assert_legal_anthropic_history(compacted)
+    assert compacted[-2]["content"][0]["id"] == compacted[-1]["content"][0]["tool_use_id"] == "read_large"
 
     report = run_demo("dangerously-skip-permissions", emit=silent, sleep_fn=no_sleep)
     assert report.completed and report.retries == 1
