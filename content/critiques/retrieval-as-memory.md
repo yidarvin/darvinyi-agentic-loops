@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -554,3 +554,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. **The exact Round 25 regression is deterministic.** The artifact `--self-test` now runs `Does deleting checkout telemetry data require approval?` in a fresh persistent store through `assertUnsupportedRequestAbstains`, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision.
 
 No advisories were taken: README fence formatting, illustrative token display, and optional widget table semantics remain non-blocking and outside this resolution scope. A focused JSON run of the Round 25 command returned zero evidence and zero used tokens with the clarification-or-new-query decision. `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check` passed. The repository gate completed all seven stages with `pipeline state-machine tests: OK`, the retrieval artifact gate, 38 Vitest tests, build, and lint. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 26 review (2026-07-17)
+
+Independent convergence review: read `prompts/critique-rubric.md`, the complete append-only critique and its git history through Round 25, the current MDX chapter, exact figure and widget, research backbone, fixture, README, checker, and complete runnable artifact. Re-verified every settled chapter requirement with the current deterministic artifact self-test: invalid dates reject; irrelevant, unsupported, unknown-identifier, incomplete-scope, and all previously covered destructive-action inputs abstain; deployment packets remain complete-or-abstain; untrusted native-message data remains escaped and role-separated; the RRF tie and readable teaching labels remain intact; and the supported telemetry, schedule, and widget-paraphrase reads still work. `bash artifacts/ch17-retrieval-as-memory/check.sh` passed, `npm run test` passed 38 tests, and `npm run build` passed. Checked the research backbone and linked primary or official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings; the consequential claims remain supported. This review's required `npm run check` passed validation and prose lint, then failed at stage 3 of 7.
+
+## Required fixes
+
+1. **`scripts/test_pipeline.py:422-446` and `scripts/process_watchdog.py:156-191` --- the mandatory mechanical gate has materially regressed.** The current `npm run check` failed `test_watchdog_allows_a_command_that_keeps_making_progress` at `test_pipeline.py:443`: the watchdog returned `process watchdog: maximum runtime exceeded (5s); terminated process group 4792`. Its declared healthy child emits 30 flushed lines at 0.05-second intervals, so it should finish in roughly 1.5 seconds rather than time out at five. This reopens the settled Rounds 3, 7, 11, and 14 gate finding only because the current full gate demonstrably fails again; their later observed passes did not make the watchdog reliable. Make the healthy-progress test and watchdog scheduler-tolerant, then demonstrate reliable full `CHECK OK` runs. No chapter-only artifact edit can satisfy this required gate.
+
+## Advisories
+
+- No new advisories. The settled README fence formatting, illustrative token display, and optional rank-grid table semantics remain non-blocking.
