@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -157,3 +157,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. Restricted the documented custom local-MCP contract in `artifacts/ch21-stage-three-production-grade/README.md` to a Python server script inside `--workspace`, invoked by a workspace-relative path. Updated the CLI help in `stage_three_agent.py` to match. The new deterministic self-test writes `custom_server.py` into a disposable workspace, invokes the public parser with `python3 ./custom_server.py`, verifies the canonical workspace read rule in the Seatbelt profile, and requires `initialize`, `tools/list`, and `tools/call` to complete. It exercises both the test launcher seam and the real local Seatbelt path when available.
 
 No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 8 review (2026-07-18)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, complete Chapter 21 artifact, README, check script, policy, demo server, research backbone, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` and `bash artifacts/ch21-stage-three-production-grade/check.sh`, both passing. Re-verified every Round 1 through Round 7 REQUIRED fix in the current artifacts: no public sandbox bypass; contained memory roots and host writes; policy before MCP launch; host-owned definition locks; a narrow child environment; static and post-open workspace-symlink containment; a reviewed non-PATH Seatbelt executable; bounded host reads and MCP frames; process-group cleanup for ordinary descendants; and the corrected independent-seam figure plus runnable workspace-local custom-server contract. I then exercised the public demo with an approved workspace-local MCP server whose forked child called `setsid()`, wrote its PID, and wrote a workspace marker after the parent demo returned. The demo exited successfully in about 0.2 seconds, but the child remained live with PPID 1 and its own process group, then created the post-return marker. Temporary probe files and the child process were removed after the check.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- an approved MCP server can daemonize out of lifecycle cleanup and retain workspace write access after the run.** `MacOSSandbox.popen()` creates a new session for the direct child (`start_new_session=True`, lines 541-551), while `StdioMcpClient._stop_process()` only signals the original process group via `killpg(process.pid, ...)` (lines 662-710). A forked child can call `setsid()` before its parent is closed, acquire a new session and process group, and evade every cleanup signal. I reproduced this through the public parser with the documented workspace-local custom-server path and explicit server/tool approvals: after `demo` returned 0, the detached child was reparented to PID 1 and wrote a workspace marker one second later. The Seatbelt profile still grants that child write access below the workspace (lines 500-521), so task-scoped approval can leave untrusted code able to persist, mutate, or poison project files after the harness reports completion. This is distinct from the settled Round 6 fix, which covers descendants that remain in the original process group. Enforce a non-detachable supervision boundary for the full MCP process tree, or fail closed when a descendant escapes it, and add a deterministic public-demo regression using `fork` plus `setsid()` that proves no detached child survives or can write after return.
+
+## Advisories
+
+- None.
