@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -24,3 +24,17 @@ Regression gate: re-verified all Round 1 REQUIRED findings against the current c
 4. stage-one-thin-wrapper.mdx, StageOneThinWrapperFigure.tsx, and StageOneThinWrapperWidget.tsx now teach action-based dispatch plus end_turn-only normal completion. The chapter source list includes Anthropic's stop-reason guidance. The matching research file was corrected where its termination, exact-match, and shell-environment examples repeated the material errors.
 
 No advisories were taken. npm run check passes.
+
+## Round 2 review (2026-07-18)
+
+Fresh-eyes re-review: read the complete Round 1 history and resolution diff, the current chapter, exact figure and widget, build notes, research backbone, artifact README, source, requirements, and deterministic check. Re-verified every Round 1 REQUIRED fix in the current files: action-based dispatch with `end_turn`-only normal completion, overlapping exact-match rejection, and direct child-environment removal of `ANTHROPIC_API_KEY`. Ran `bash artifacts/ch19-stage-one-thin-wrapper/check.sh` successfully, exercised both missing-configuration paths, reproduced the parent-process credential exposure below using a fixture key, and measured the figure labels against the active tokens and rendered scale. Read the linked primary sources: Ball's build, mini-swe-agent, Anthropic's effective-agents, tool-use, and stop-reason guides, Aider's evaluation, and the Claude Code study. No new material source contradiction appeared. Ran `npm run check` twice; both completed runs failed in Section 3, pipeline tests, at the watchdog progress assertion.
+
+## Required fixes
+
+1. **`artifacts/ch19-stage-one-thin-wrapper/agent.py:90-105,161-172` and `README.md:11` --- a model-controlled shell can still recover `ANTHROPIC_API_KEY` from the parent REPL process on macOS.** The resolved Round 1 fix correctly removes the key from the shell child's direct environment, but the parent Python process retains it. With only the fixture `ANTHROPIC_API_KEY=thin-wrapper-parent-env-fixture`, `WorkspaceTools(...).run_bash("ps eww -p $PPID | grep -o \"ANTHROPIC_API_KEY=[^ ]*\"")` returned the fixture. The artifact is explicitly a macOS CLI, the shell has network access, and README wording that it closes the path to reading the key does not disclose this same-key recovery route. This is a new parent-process inspection path, not a regression or relitigation of Round 1's direct-child-environment fix. After constructing the SDK client with the explicit key, remove the key from the parent process environment as well, accurately document the remaining same-user boundary, and extend the offline regression coverage for this supported platform.
+2. **`src/chapters/_figures/StageOneThinWrapperFigure.tsx:77-79,112-125` --- the central branch labels are not readable at the figure's actual rendered scale.** `--comment` (`#55707b`) is only 3.25:1 against the SVG's `--surface-2` (`#141d21`), below the 4.5:1 normal-text threshold. Its `fontSize="10"` in a 920-unit viewBox renders at roughly 7.8 CSS px when the SVG is clamped to its 720px minimum width in the reading column. These labels carry the diagram's essential `tool_use`, `end_turn`, and truncation branches. The SVG's `aria-label` supplies a nonvisual summary but not a readable visible alternative for low-vision readers. Use a sufficiently contrasting token and an actual rendered label size that makes these branches legible on the chapter's mobile and reading-column widths.
+3. **`scripts/test_pipeline.py:422-446` --- the required mechanical gate does not pass.** Both completed current runs of `npm run check` failed at `test_watchdog_allows_a_command_that_keeps_making_progress`, which expected the progress-emitting child to exit successfully but received `process watchdog: maximum runtime exceeded (5s)`. This stops the gate before artifact, render, build, and lint sections. Make the watchdog progress test and its deadline reliable in this supported environment, then rerun until the full command reaches `CHECK OK`.
+
+## Advisories
+
+- `StageOneThinWrapperWidget.tsx:102-111,128-130` uses the low-contrast `text-comment` token for the reset control and phase status. The primary controls and walkthrough content remain usable, so this is non-blocking, but it is worth correcting with the figure contrast work.
