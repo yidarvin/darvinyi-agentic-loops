@@ -87,6 +87,7 @@ const GENERIC_LOOKUP_STARTERS = new Set([
   "why",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
+const UNREPRESENTABLE_ACTION_TERMS = new Set(["delete", "deleting", "deletion"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -472,6 +473,8 @@ function classifyActionRequest(tokens) {
   if (genericInterrogativeOperation) {
     return { supported: SUPPORTED_ACTION_TERMS.has(genericInterrogativeOperation) };
   }
+
+  if (tokens.some((term) => UNREPRESENTABLE_ACTION_TERMS.has(term))) return { supported: false };
 
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
@@ -1222,6 +1225,21 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(authorizationDeletion, "authorization deletion operation");
+
+    const nominalizedAuthorizationDeletion = await runAgent({
+      storePath: resolve(directory, "nominalized-authorization-deletion-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Is checkout telemetry deletion approved?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      nominalizedAuthorizationDeletion,
+      "nominalized authorization deletion operation",
+    );
 
     const requirementPurging = await runAgent({
       storePath: resolve(directory, "requirement-purging-memory.json"),
