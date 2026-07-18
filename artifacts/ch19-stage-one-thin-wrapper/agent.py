@@ -14,11 +14,15 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from typing import Any, Callable
+from unittest.mock import patch
 
 
 MAX_OUTPUT_CHARS = 10_000
 COMMAND_TIMEOUT_SECONDS = 120
+NORMAL_COMPLETION_STOP_REASON = "end_turn"
+TRUNCATED_STOP_REASONS = ("max_tokens", "model_context_window_exceeded")
 SYSTEM_PROMPT = (
     "You are a coding agent operating in the selected workspace. "
     "Use the available tools to inspect files, make careful changes, and verify them. "
@@ -86,13 +90,19 @@ class WorkspaceTools:
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace.resolve()
         self.command_environment = {
-            **os.environ,
-            "PAGER": "cat",
-            "GIT_PAGER": "cat",
-            "MANPAGER": "cat",
-            "PIP_PROGRESS_BAR": "off",
-            "TQDM_DISABLE": "1",
+            name: value
+            for name, value in os.environ.items()
+            if name != "ANTHROPIC_API_KEY"
         }
+        self.command_environment.update(
+            {
+                "PAGER": "cat",
+                "GIT_PAGER": "cat",
+                "MANPAGER": "cat",
+                "PIP_PROGRESS_BAR": "off",
+                "TQDM_DISABLE": "1",
+            }
+        )
 
     def resolve_path(self, raw_path: str) -> Path:
         requested = Path(raw_path).expanduser()
@@ -139,13 +149,13 @@ class WorkspaceTools:
             raise ValueError("old_str and new_str must differ")
 
         content = file_path.read_text(encoding="utf-8")
-        matches = content.count(old_str)
-        if matches == 0:
+        first_match = content.find(old_str)
+        if first_match == -1:
             raise ValueError("old_str was not found in {}".format(path))
-        if matches > 1:
-            raise ValueError("old_str matched {} times in {}; make it unique".format(matches, path))
+        if content.find(old_str, first_match + 1) != -1:
+            raise ValueError("old_str matched more than once in {}; make it unique".format(path))
 
-        file_path.write_text(content.replace(old_str, new_str), encoding="utf-8")
+        file_path.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
         return "Updated {}".format(path)
 
     def run_bash(self, command: str) -> str:
@@ -226,11 +236,23 @@ def run_agent(
             messages=messages,
         )
         messages.append({"role": "assistant", "content": response.content})
-        print_assistant_text(response)
 
         tool_uses = [block for block in response.content if getattr(block, "type", None) == "tool_use"]
         if not tool_uses:
-            return
+            stop_reason = getattr(response, "stop_reason", None)
+            if stop_reason == NORMAL_COMPLETION_STOP_REASON:
+                print_assistant_text(response)
+                return
+            if stop_reason in TRUNCATED_STOP_REASONS:
+                raise RuntimeError(
+                    "model response was truncated ({}) instead of completing the turn".format(stop_reason)
+                )
+            raise RuntimeError(
+                "model returned no tool use with stop_reason {!r}; "
+                "Stage One accepts only end_turn as a completed turn".format(stop_reason)
+            )
+
+        print_assistant_text(response)
 
         results: list[dict[str, Any]] = []
         for tool_use in tool_uses:
@@ -280,6 +302,17 @@ def run_repl(client: Any, model: str, tools: WorkspaceTools, max_steps: int) -> 
 
 
 def run_self_test() -> None:
+    class OfflineClient:
+        def __init__(self, responses: list[Any]) -> None:
+            self._responses = iter(responses)
+            self.messages = self
+
+        def create(self, **_: Any) -> Any:
+            return next(self._responses)
+
+    def fake_response(stop_reason: str, content: list[Any]) -> Any:
+        return SimpleNamespace(content=content, stop_reason=stop_reason)
+
     with tempfile.TemporaryDirectory(prefix="thin-wrapper-check-") as temporary_directory:
         workspace = Path(temporary_directory)
         tools = WorkspaceTools(workspace)
@@ -296,6 +329,17 @@ def run_self_test() -> None:
         assert is_error
         assert "not found" in error_text
 
+        overlap = workspace / "overlap.txt"
+        overlap.write_text("aaaa", encoding="utf-8")
+        overlap_error_text, overlap_is_error = dispatch(
+            tools,
+            "edit_file",
+            {"path": "overlap.txt", "old_str": "aaa", "new_str": "X"},
+        )
+        assert overlap_is_error
+        assert "more than once" in overlap_error_text
+        assert overlap.read_text(encoding="utf-8") == "aaaa"
+
         escape_text, escape_error = dispatch(tools, "read_file", {"path": "../outside.txt"})
         assert escape_error
         assert "inside the selected workspace" in escape_text
@@ -303,6 +347,54 @@ def run_self_test() -> None:
         command_output = tools.run_bash("printf 'agent-check'")
         assert "(exit 0)" in command_output
         assert "agent-check" in command_output
+
+        fixture_key = "self-test-key-must-not-reach-shell"
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
+            credential_tools = WorkspaceTools(workspace)
+            credential_output = credential_tools.run_bash("printf '%s' \"$ANTHROPIC_API_KEY\"")
+        assert fixture_key not in credential_output
+        assert credential_output == "(exit 0)\n"
+
+        for stop_reason in TRUNCATED_STOP_REASONS:
+            truncated_client = OfflineClient(
+                [
+                    fake_response(
+                        stop_reason,
+                        [SimpleNamespace(type="text", text="partial response")],
+                    )
+                ]
+            )
+            try:
+                run_agent(truncated_client, "offline-test-model", tools, [], max_steps=1)
+            except RuntimeError as error:
+                assert stop_reason in str(error)
+            else:
+                raise AssertionError("{} must fail loudly".format(stop_reason))
+
+        tool_then_complete_client = OfflineClient(
+            [
+                fake_response(
+                    "max_tokens",
+                    [
+                        SimpleNamespace(
+                            type="tool_use",
+                            id="toolu_offline_check",
+                            name="read_file",
+                            input={"path": "sample.txt"},
+                        )
+                    ],
+                ),
+                fake_response(
+                    NORMAL_COMPLETION_STOP_REASON,
+                    [SimpleNamespace(type="text", text="offline check complete")],
+                ),
+            ]
+        )
+        tool_history: list[dict[str, Any]] = []
+        run_agent(tool_then_complete_client, "offline-test-model", tools, tool_history, max_steps=2)
+        tool_result = tool_history[1]["content"][0]
+        assert tool_result["type"] == "tool_result"
+        assert tool_result["is_error"] is False
 
     print("self-check passed")
 

@@ -1,14 +1,16 @@
 # Stage One: The Thin Wrapper
 
-This is a supervised coding-agent REPL. It is deliberately small: a conversation list, four tools, one dispatch function, and a loop that continues until the model stops requesting tools.
+This is a supervised coding-agent REPL. It is deliberately small: a conversation list, four tools, one dispatch function, and a loop that runs while the model requests tools. A no-tool response is final only when it carries `end_turn`.
 
-The implementation is a **product example: Anthropic Messages API**. The central pattern is provider-neutral: preserve the assistant action blocks, return every tool result in the next user turn, and stop only when there are no more action blocks.
+The implementation is a **product example: Anthropic Messages API**. The central pattern is provider-neutral: preserve the assistant action blocks and return every tool result in the next user turn. Dispatch every action block even if a response reaches `max_tokens`. With no action block, this example accepts only `stop_reason == "end_turn"` as normal completion; it fails loudly on truncation or another unexpected stop reason.
 
 ## Safety boundary
 
 The run_bash tool executes shell commands with your user privileges. The file tools reject paths outside the selected workspace, but shell commands are not sandboxed and can still read, write, or reach the network outside it.
 
-Run this only under close supervision in a disposable or otherwise contained repository. Do not give it secrets, production credentials, untrusted instructions, or permission to operate unattended.
+The parent REPL needs `ANTHROPIC_API_KEY`, but it removes that variable from every shell child it starts. This closes one avoidable path for a model-controlled command to read the key. It is not a sandbox: commands can still reach other user-accessible environment variables, files, credentials, and the network.
+
+Run this only under close supervision in a disposable or otherwise contained repository. Do not expose other secrets, production credentials, untrusted instructions, or permission to operate unattended.
 
 ## Run it
 
@@ -39,7 +41,7 @@ The REPL prints every tool call. It keeps the full conversation in memory for th
 bash check.sh
 ~~~
 
-The check compiles the program and exercises file reading, exact string replacement, path containment, error results, and a local shell command. It does not import the SDK, require an API key, or make a network call.
+The check compiles the program and exercises file reading, overlapping exact-match rejection, path containment, error results, a local shell command, API-key removal from shell children, and truncated-response handling. It does not import the SDK, require an API key, or make a network call.
 
 ## What this stage intentionally omits
 

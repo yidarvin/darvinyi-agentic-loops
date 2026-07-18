@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -13,3 +13,14 @@ Fresh-eyes review: no prior critique history exists. Read the current chapter, e
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified all Round 1 REQUIRED findings against the current chapter, figure, widget, artifact, and research backbone. There are no earlier critique rounds or prior required fixes.
+
+1. agent.py now dispatches every detected tool_use block before evaluating a no-tool response. It accepts only end_turn as normal completion, fails loudly on max_tokens and model_context_window_exceeded, and its offline self-check covers both truncation states plus a tool_use response carrying max_tokens.
+2. agent.py now checks for a second match start position before writing, including overlaps. The offline self-check proves that replacing aaa in aaaa returns an error and leaves the file unchanged.
+3. WorkspaceTools removes ANTHROPIC_API_KEY from each shell child environment. The offline self-check injects a fixture key and proves a model-invoked shell cannot print it. README.md preserves the unsandboxed-shell warning and states that other user-accessible credentials and data remain exposed.
+4. stage-one-thin-wrapper.mdx, StageOneThinWrapperFigure.tsx, and StageOneThinWrapperWidget.tsx now teach action-based dispatch plus end_turn-only normal completion. The chapter source list includes Anthropic's stop-reason guidance. The matching research file was corrected where its termination, exact-match, and shell-environment examples repeated the material errors.
+
+No advisories were taken. npm run check passes.

@@ -9,7 +9,7 @@ A coding agent begins with a narrow contract: a REPL sends the current conversat
 
 ## Five pieces, no planner hidden in the harness
 
-The smallest useful wrapper has five moving parts. A model client makes a request. A plain message list carries the conversation. Tool schemas tell the model how it may act. A dispatcher maps requested tool names to local functions. A loop keeps circulating until the model emits text without a tool request.
+The smallest useful wrapper has five moving parts. A model client makes a request. A plain message list carries the conversation. Tool schemas tell the model how it may act. A dispatcher maps requested tool names to local functions. A loop keeps circulating while the model asks for action, then returns normally only after a no-action response ends with `end_turn`.
 
 The division of labor matters. The harness does not prescribe a plan such as “run tests, then read code, then edit.” It exposes a repo-sized action space and returns observations. A tool-use-trained model can choose that sequence itself. [Thorsten Ball’s compact build](https://ampcode.com/how-to-build-an-agent/) and the deliberately austere [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) make the point from different directions: the first useful agent does not need a framework-shaped architecture.
 
@@ -27,19 +27,23 @@ That assistant append must preserve the response blocks verbatim, including tool
   <StageOneThinWrapperFigure />
 </Figure>
 
-## The stop condition is a missing action
+## Dispatch follows actions; completion follows `end_turn`
 
-The loop terminates when the response contains no tool-use block, not when a convenience field happens to say that a turn ended. A response can stop because it reached a token limit while still containing an action. The durable question is smaller: did the model ask the harness to do anything else?
+Tool blocks decide dispatch. A response can reach a token limit while still containing an action, so the wrapper must execute every `tool_use` block and return its matching result even when the stop reason is unusual. The inverse is not completion. With no `tool_use` block, this Anthropic example treats only `stop_reason == "end_turn"` as a normal final response.
 
 ~~~python
-while tool_uses:
+tool_uses = [block for block in response.content if block.type == "tool_use"]
+if tool_uses:
     results = [dispatch(tool.name, tool.input) for tool in tool_uses]
     messages.append(one_user_message_with(results))
     response = call_model(messages)
-    tool_uses = response.tool_uses
+elif response.stop_reason == "end_turn":
+    return
+else:
+    raise RuntimeError("response was truncated or stopped unexpectedly")
 ~~~
 
-The artifact adds a max-step guard because a loop without a ceiling can spend time and money while repeating itself. It does not add recovery. If the model call fails, the REPL reports the error and returns control to the user. Retrying, streaming, and interruption belong to Stage Two, where their failure modes earn the complexity.
+The artifact fails loudly on `max_tokens` and `model_context_window_exceeded` rather than passing partial text off as a completed turn. That is deliberate. It adds a max-step guard because a loop without a ceiling can spend time and money while repeating itself, but it does not add recovery. Retrying, streaming, and interruption belong to Stage Two, where their failure modes earn the complexity.
 
 ## Four tools cover a repository’s working rhythm
 
@@ -64,7 +68,7 @@ Advance the transcript one transition at a time. The wrapper does not decide how
   <StageOneThinWrapperWidget />
 </Widget>
 
-Tool errors should travel back to the model as observations too. A failed exact match is more useful as “old_str matched twice” than as a crashed process. The thin wrapper returns that text in an error-marked result, so the model gets a chance to narrow the edit. It still lacks rich recovery, output discipline, and a way to recognize a repeated bad plan.
+Tool errors should travel back to the model as observations too. A failed exact match is more useful as “old_str matched more than once” than as a crashed process. The thin wrapper returns that text in an error-marked result, so the model gets a chance to narrow the edit. It still lacks rich recovery, output discipline, and a way to recognize a repeated bad plan.
 
 <Callout kind="note">
   A reverse-engineering study estimates that only about 1.6% of one large coding agent’s source was decision logic, with the rest serving as harness. Treat that ratio as a directional illustration, not a measurement: it comes from line counts over a leak-derived bundle. [Dive into Claude Code](https://arxiv.org/abs/2604.14228) documents the method and its caveats.
@@ -110,5 +114,6 @@ Stage One proves that a capable model plus tools can work. It does not make the 
 - [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
 - [Anthropic, “Building Effective Agents”](https://www.anthropic.com/research/building-effective-agents)
 - [Anthropic tool-use implementation guide](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use)
+- [Anthropic, “Stop reasons and fallback”](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 - [Paul Gauthier, “Unified diffs make GPT-4 Turbo 3X less lazy”](https://aider.chat/2023/12/21/unified-diffs.html)
 - [Liu, Zhao, Shang, and Shen, “Dive into Claude Code”](https://arxiv.org/abs/2604.14228)

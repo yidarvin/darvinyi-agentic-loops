@@ -62,14 +62,15 @@ const steps: WalkthroughStep[] = [
   },
   {
     label: "06 / exit",
-    title: "Text without a tool call ends the turn",
+    title: "No tool call plus end_turn completes",
     transcript: [
       "assistant: Updated slugify and the test now passes.",
       "tool_uses = []",
+      'stop_reason = "end_turn"',
       "REPL waits for the next user request",
     ],
-    explanation: "The final response contains no action block, so the wrapper exits the inner loop.",
-    invariant: "No tool_use is the termination signal. A stop_reason alone is not enough.",
+    explanation: "The final response contains no action block and ended naturally, so the wrapper exits the inner loop.",
+    invariant: "Tool blocks decide dispatch. No tool_use completes only with end_turn; truncation is an error.",
   },
 ];
 

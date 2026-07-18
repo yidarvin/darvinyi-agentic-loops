@@ -3,7 +3,7 @@
 Research reference for *Agentic Loops*, Chapter 19 (opens Part V, Build Your Own Coding Agent; the first hands-on build). Part V is a three-stage progression: Stage One (this chapter — the minimal thin CLI wrapper), Stage Two ("The Real Loop" — robustness, error handling, streaming, tool design, context management), Stage Three ("Production-Grade" — MCP, subagents, memory, hardening), then "Evaluating Agents." The reader deeply understands the agent loop, tool calls, context economics, MCP, skills, multi-agent, and memory from earlier Parts — this chapter APPLIES those concepts in a concrete build rather than re-explaining them. Fast-moving specifics (SDK details, model names); version-pin and re-verify.
 
 ## TL;DR
-- A working coding agent is a ~200–400-line `while` loop that sends the conversation plus tool definitions to a tool-use-capable model, executes whatever tool the model asks for, appends the result, and repeats until the model stops calling tools — the intelligence lives in the model, not the harness. Thorsten Ball's "How to Build an Agent" builds one in under 400 lines of Go; the Princeton/Stanford `mini-swe-agent` does it in ~100 lines of Python and scores >74% on SWE-bench Verified.
+- A working coding agent is a ~200–400-line `while` loop that sends the conversation plus tool definitions to a tool-use-capable model, executes whatever tool the model asks for, appends the result, and repeats while action blocks remain. In this provider example, a no-tool response completes normally only at `end_turn`; truncation fails loudly. The intelligence lives in the model, not the harness. Thorsten Ball's "How to Build an Agent" builds one in under 400 lines of Go; the Princeton/Stanford `mini-swe-agent` does it in ~100 lines of Python and scores >74% on SWE-bench Verified.
 - The minimal-but-useful tool set is four tools — `read_file`, `list_files`, `edit_file` (string-replacement), and `run_bash` — with `run_bash` the single most powerful because it hands the model the entire Unix toolchain (grep, tests, git, build). Targeted string-replacement edits beat full-file rewrites on tokens and reliability.
 - The thin wrapper genuinely works and proves the thesis, but it is a demo, not a product: no error recovery, no streaming, naive context management (it grows until it overflows and crashes), no permission system, no memory, no MCP, no eval. That gap — quantified by one reverse-engineering study as ~98.4% of Claude Code being "harness," not model — is exactly what Stages Two and Three build.
 
@@ -29,16 +29,19 @@ while True:
                                        system=SYSTEM, tools=TOOLS, messages=messages)
     messages.append({"role": "assistant", "content": response.content})
     tool_uses = [b for b in response.content if b.type == "tool_use"]
-    if not tool_uses:            # no tool call -> the model is done with this turn
+    if tool_uses:
+        results = []
+        for tu in tool_uses:
+            output, is_error = dispatch(tu.name, tu.input)
+            results.append({"type": "tool_result", "tool_use_id": tu.id,
+                            "content": output, "is_error": is_error})
+        messages.append({"role": "user", "content": results})
+        continue
+    if response.stop_reason == "end_turn":
         break
-    results = []
-    for tu in tool_uses:
-        output, is_error = dispatch(tu.name, tu.input)
-        results.append({"type": "tool_result", "tool_use_id": tu.id,
-                        "content": output, "is_error": is_error})
-    messages.append({"role": "user", "content": results})
+    raise RuntimeError(f"response stopped before completion: {response.stop_reason}")
 ```
-Subtlety to teach: exit on the *absence of `tool_use` blocks*, not naively on `stop_reason == "end_turn"`. `stop_reason` can be `max_tokens` while tool calls are still present; the reliable termination signal is "the model asked for no more tools."
+Subtlety to teach: tool blocks decide dispatch, not `stop_reason` alone. `stop_reason` can be `max_tokens` while tool calls are still present, so execute every complete `tool_use` block and return its result. The inverse is not completion. When no client tool block is present, accept only `end_turn` as the normal final response. `max_tokens` and `model_context_window_exceeded` mean the response is truncated; Stage One can fail loudly rather than add recovery. [Anthropic's stop-reason guidance](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) documents the distinction.
 **(e) Tool dispatch.** A `dispatch(name, input)` that maps the tool name to a Python function, runs it, captures output, and — critically — catches exceptions and returns them as tool results with `is_error=True` rather than crashing. Anthropic's guidance: on failure, send a clear message inside `tool_result` content and set `"is_error": true` so the model can "understand why the tool failed and potentially try again"; return "Error: Location 'Atlantis' not found" rather than a generic "Failed" or a raw stack trace.
 
 ## The core tools in detail
@@ -57,7 +60,7 @@ Trace "fix the failing test in this repo." Given the four tools, the model auton
 3. Reasons (in a text block) about the fix.
 4. Calls `edit_file` with a precise `old_str`/`new_str`.
 5. Calls `run_bash("pytest -x")` again → sees green, or a new error and *loops back to step 2 on its own*.
-6. Emits a final text summary with no tool call → the loop exits.
+6. Emits a final text summary with no tool call and `end_turn` → the loop exits.
 
 Nothing in the harness sequenced those steps. Ball's demo makes it visceral: told only "help me solve the riddle in secret-file.txt," the model decides on its own to call `read_file` — "we didn't say *anything* about 'if a user asks you about a file, read the file.'" The self-correction in step 5 is the crux: because each tool result (including errors) is fed back, the model observes failure and adapts — the "wriggling itself out of errors" behavior that looks like magic but is just the loop plus a capable model. Concrete proof: the intelligence is in the model, not the scaffold.
 
@@ -118,13 +121,16 @@ def edit_file(path, old_str, new_str):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(new_str); return f"Created {path}"
     content = p.read_text()
-    count = content.count(old_str)
-    if count == 0: raise ValueError("old_str not found in file")
-    if count > 1: raise ValueError(f"old_str matched {count} times; make it unique")
-    p.write_text(content.replace(old_str, new_str)); return "OK"
+    first_match = content.find(old_str)
+    if first_match == -1: raise ValueError("old_str not found in file")
+    if content.find(old_str, first_match + 1) != -1:
+        raise ValueError("old_str matched more than once; make it unique")
+    p.write_text(content.replace(old_str, new_str, 1)); return "OK"
 
-BASH_ENV = {**os.environ, "PAGER": "cat", "GIT_PAGER": "cat",
-            "PIP_PROGRESS_BAR": "off", "TQDM_DISABLE": "1"}
+BASH_ENV = {key: value for key, value in os.environ.items()
+            if key != "ANTHROPIC_API_KEY"}
+BASH_ENV.update({"PAGER": "cat", "GIT_PAGER": "cat",
+                 "PIP_PROGRESS_BAR": "off", "TQDM_DISABLE": "1"})
 def run_bash(command):
     r = subprocess.run(command, shell=True, capture_output=True, text=True,
                        timeout=120, env=BASH_ENV)
@@ -150,14 +156,17 @@ def run_agent(messages, max_steps=50):
         for b in resp.content:
             if b.type == "text" and b.text.strip():
                 print(f"agent: {b.text}")
-        if not tool_uses:
-            return                                  # model produced no tool call -> done
-        results = []
-        for tu in tool_uses:
-            content, is_error = dispatch(tu.name, tu.input)
-            results.append({"type": "tool_result", "tool_use_id": tu.id,
-                            "content": content, "is_error": is_error})
-        messages.append({"role": "user", "content": results})
+        if tool_uses:
+            results = []
+            for tu in tool_uses:
+                content, is_error = dispatch(tu.name, tu.input)
+                results.append({"type": "tool_result", "tool_use_id": tu.id,
+                                "content": content, "is_error": is_error})
+            messages.append({"role": "user", "content": results})
+            continue
+        if resp.stop_reason == "end_turn":
+            return
+        raise RuntimeError(f"response stopped before completion: {resp.stop_reason}")
 
 def main():
     messages = []
@@ -194,7 +203,7 @@ if __name__ == "__main__":
 - **Common pitfalls to warn readers about:**
   - *Tool-result pairing.* Every `tool_use` needs a matching `tool_result` in the very next message; parallel calls all go in one user message. Mismatches produce hard 400 errors.
   - *Appending the assistant turn verbatim* (with its `tool_use` blocks) so `tool_use_id`s stay aligned.
-  - *Termination.* Exit on absence of `tool_use` blocks, not naively on `stop_reason`. Always add a `max_steps` guard — unbounded loops burn money (community write-ups document runaways of hundreds of steps and multi-thousand-dollar bills). Watch for repetition loops (same tool, identical args); a simple dedup/step cap suffices at Stage One.
+  - *Termination.* `tool_use` blocks determine dispatch. With no tool block, verify `stop_reason == "end_turn"` before treating a turn as complete. `max_tokens` and `model_context_window_exceeded` are truncation, not completion; recover later or fail loudly at Stage One. Always add a `max_steps` guard; unbounded loops burn money (community write-ups document runaways of hundreds of steps and multi-thousand-dollar bills). Watch for repetition loops (same tool, identical args); a simple dedup/step cap suffices at Stage One.
   - *Schema mistakes* (wrong `input_schema` shape, missing `required`) cause malformed calls.
   - *Interactive commands hanging bash* — set the non-interactive env vars.
 - **Debugging tips.** Log the full conversation (it *is* the trace — `mini-swe-agent`'s linear history is prized precisely because "the message history exactly matches what the LM sees"); print each tool call and its arguments; inspect `tool_result` contents; save the trajectory to JSON for replay.

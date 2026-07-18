@@ -4,7 +4,7 @@ export function StageOneThinWrapperFigure() {
       viewBox="0 0 920 525"
       className="min-w-[720px] w-full"
       role="img"
-      aria-label="A coding-agent REPL sends conversation history and tools to a model. Tool requests flow through dispatch and return as one user message, while a response with no tool use ends the turn."
+      aria-label="A coding-agent REPL sends conversation history and tools to a model. Tool requests flow through dispatch and return as one user message. A response with no tool use ends normally only with end_turn; a truncated or unexpected stop fails loudly."
       fill="none"
     >
       <title>Stage One thin-wrapper control flow</title>
@@ -109,19 +109,20 @@ export function StageOneThinWrapperFigure() {
         loop
       </text>
 
-      <text x="854" y="255" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
-        no
+      <text x="832" y="255" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+        no + end_turn
       </text>
       <path d="M848 218 H886 V315 H860" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
       <rect x="730" y="280" width="130" height="76" rx="8" fill="var(--surface)" stroke="var(--border)" />
       <text x="795" y="312" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--fg)">
-        print text
+        print final text
       </text>
       <text x="795" y="334" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--fg-muted)">
         return to REPL
       </text>
-      <text x="748" y="375" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
-        stop here, not on stop_reason
+      <text x="730" y="375" fontFamily="var(--font-mono)" fontSize="10" fill="var(--comment)">
+        <tspan x="730" dy="0">truncation / other stop</tspan>
+        <tspan x="730" dy="16">→ error, not completion</tspan>
       </text>
 
       <rect x="28" y="474" width="864" height="28" rx="6" fill="var(--surface)" stroke="var(--border)" />
