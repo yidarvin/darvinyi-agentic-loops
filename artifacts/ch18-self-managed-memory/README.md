@@ -5,8 +5,8 @@ separate Node processes. Session 1 proposes a framework correction, project
 preferences, and an instruction-shaped tool result. The local policy promotes only
 trusted user facts, replaces the stale current framework, archives its predecessor,
 quarantines the tool result, and compacts the surviving facts into a bounded
-project.md-style hot block. Session 2 starts fresh, reads the same state file, and
-answers from the persisted facts.
+project.md-style hot block. Session 2 starts fresh, reads that persisted hot block,
+and derives its answer from the file content.
 
 The script deliberately uses a deterministic policy rather than an API model call.
 That makes the candidate, validation, promotion, and recall path repeatable. In a
@@ -52,8 +52,9 @@ temporary state file. It asserts all of the following:
 - Fastify replaces Express as the current framework, while Express remains archived.
 - The tool-derived instruction is quarantined and cannot become trusted memory.
 - The hot block is compacted from the current facts with source keys.
-- A fresh second process recalls the persisted framework, package manager, and release
-  window.
+- A fresh second process derives the framework, package manager, and release window
+  from the compacted hot block.
+- Changing only the compacted hot block changes what that fresh process recalls.
 
 ## Requirements and boundaries
 

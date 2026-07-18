@@ -1,5 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { execFile as runFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+const execFile = promisify(runFile);
+const artifactDirectory = dirname(fileURLToPath(import.meta.url));
+const agentScript = resolve(artifactDirectory, "self_managed_memory.mjs");
 
 async function main() {
   const directory = process.argv[2];
@@ -32,7 +40,47 @@ async function main() {
     "session 2 answer did not use the persisted release window",
   );
 
-  process.stdout.write("self-managed memory artifact: replacement, quarantine, compaction, and fresh-process recall passed\n");
+  const changedHotBlockRecall = await reloadAfterChangingOnlyHotBlock(state);
+  assert(
+    changedHotBlockRecall.recalled.framework === "Express",
+    "session 2 did not derive the framework from the changed project.md",
+  );
+  assert(
+    changedHotBlockRecall.recalled.packageManager === "npm",
+    "session 2 did not derive the package manager from the changed project.md",
+  );
+  assert(
+    changedHotBlockRecall.recalled.releaseWindow === "Monday 10:00 UTC",
+    "session 2 did not derive the release window from the changed project.md",
+  );
+  assert(
+    changedHotBlockRecall.answer.includes("Express with npm") &&
+      changedHotBlockRecall.answer.includes("Monday at 10:00 UTC"),
+    "session 2 answer did not change after project.md changed",
+  );
+
+  process.stdout.write(
+    "self-managed memory artifact: replacement, quarantine, compaction, and hot-block-backed fresh-process recall passed\n",
+  );
+}
+
+async function reloadAfterChangingOnlyHotBlock(state) {
+  const alteredState = JSON.parse(JSON.stringify(state));
+  alteredState.hotBlock.content = [
+    "# project release playbook",
+    "- build with Express and npm",
+    "- schedule production releases Monday 10:00 UTC",
+  ].join("\n");
+
+  const directory = await mkdtemp(join(tmpdir(), "self-managed-memory-hot-block-"));
+  const statePath = resolve(directory, "state.json");
+  try {
+    await writeFile(statePath, JSON.stringify(alteredState, null, 2) + "\n", "utf8");
+    const { stdout } = await execFile(process.execPath, [agentScript, "--session", "2", "--state", statePath, "--json"]);
+    return JSON.parse(stdout);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 async function readJson(path) {

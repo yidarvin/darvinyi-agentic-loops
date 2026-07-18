@@ -131,30 +131,27 @@ class PersistentMemoryAgent {
 
   async runSessionTwo() {
     const state = await readExistingState(this.statePath);
-    const facts = currentFacts(state);
-    requireFact(facts, "framework");
-    requireFact(facts, "package_manager");
-    requireFact(facts, "release_window");
     if (!state.hotBlock?.content) throw new Error("memory has no compacted hot block; run session 1 first");
+    const facts = readProjectPlaybook(state.hotBlock.content);
 
     const answer =
       "Use " +
       facts.framework +
       " with " +
-      facts.package_manager +
+      facts.packageManager +
       " and schedule the production release for " +
-      facts.release_window.replace("Tuesday 14:00 UTC", "Tuesday at 14:00 UTC") +
+      formatReleaseWindow(facts.releaseWindow) +
       ".";
 
     return {
       session: 2,
       statePath: this.statePath,
       readAt: SESSION_TWO_TIME,
-      reads: ["memory.view(project.md)", "memory.read(current trusted facts)"],
+      reads: ["memory.view(project.md)"],
       recalled: {
         framework: facts.framework,
-        packageManager: facts.package_manager,
-        releaseWindow: facts.release_window,
+        packageManager: facts.packageManager,
+        releaseWindow: facts.releaseWindow,
       },
       answer,
       hotBlockRevision: state.hotBlock.revision,
@@ -274,6 +271,26 @@ function currentFacts(state) {
     if (memory.current) facts[memory.key] = memory.value;
   }
   return facts;
+}
+
+function readProjectPlaybook(content) {
+  const build = content.match(/^- build with (?<framework>.+) and (?<packageManager>.+)$/m);
+  const release = content.match(/^- schedule production releases (?<releaseWindow>.+)$/m);
+
+  if (!build?.groups?.framework || !build.groups.packageManager || !release?.groups?.releaseWindow) {
+    throw new Error("project.md does not contain a complete release playbook");
+  }
+
+  return {
+    framework: build.groups.framework,
+    packageManager: build.groups.packageManager,
+    releaseWindow: release.groups.releaseWindow,
+  };
+}
+
+function formatReleaseWindow(releaseWindow) {
+  const match = releaseWindow.match(/^(.+?) (\d{1,2}:\d{2} UTC)$/);
+  return match ? match[1] + " at " + match[2] : releaseWindow;
 }
 
 function currentMemory(state, key) {
