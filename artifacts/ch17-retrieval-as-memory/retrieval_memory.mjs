@@ -481,6 +481,7 @@ function actionOperations(tokens) {
   add(actionInSafetyQuestion(tokens));
   add(actionInGenericInterrogativeQuestion(tokens));
   add(actionInWithPassiveCondition(tokens));
+  add(actionInLeadingConditionalPassiveCondition(tokens));
   for (const operation of actionTermsAfterClauseConnector(tokens)) add(operation);
 
   return [...new Set(operations)];
@@ -576,6 +577,21 @@ function actionInWithPassiveCondition(tokens) {
   if (withIndex === -1) return null;
   return tokens.find(
     (term, index) => index > withIndex && term.length > 3 && term.endsWith("ed"),
+  ) || null;
+}
+
+function actionInLeadingConditionalPassiveCondition(tokens) {
+  if (tokens[0] !== "if") return null;
+  const mainClauseIndex = tokens.findIndex(
+    (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
+  );
+  const conditionEnd = mainClauseIndex === -1 ? tokens.length : mainClauseIndex;
+  const copulaIndex = tokens.findIndex(
+    (term, index) => index > 0 && index < conditionEnd && ["is", "are", "was", "were"].includes(term),
+  );
+  if (copulaIndex === -1) return null;
+  return tokens.find(
+    (term, index) => index > copulaIndex && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
   ) || null;
 }
 
@@ -1356,6 +1372,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentWithDeletedTelemetry,
       "deployment with deleted telemetry condition",
+    );
+
+    const deploymentAfterLeadingDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-if-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "If telemetry data is deleted, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentAfterLeadingDeletedTelemetry,
+      "deployment after leading deleted telemetry condition",
     );
 
     const thirdPersonPurgingLookup = await runAgent({
