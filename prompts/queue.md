@@ -28,7 +28,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 14 | when-multi-agent-fails       | When Multi-Agent Fails                          | DONE    |
 | 15 | memory-taxonomy              | The Memory Taxonomy                             | DONE    |
 | 16 | prompt-caching-economics     | Prompt Caching and the Economics of Remembering | DONE    |
-| 17 | retrieval-as-memory          | Retrieval as Memory                             | PENDING |
+| 17 | retrieval-as-memory          | Retrieval as Memory                             | DONE    |
 | 18 | self-managed-memory          | Self-Managed Memory                             | PENDING |
 | 19 | stage-one-thin-wrapper       | Stage One: The Thin Wrapper                     | PENDING |
 | 20 | stage-two-real-loop          | Stage Two: The Real Loop                        | PENDING |

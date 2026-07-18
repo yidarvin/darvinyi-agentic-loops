@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -849,3 +849,13 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. **The Round 38 regression is deterministic.** The artifact self-test now runs the exact leading-`when` question in a fresh persistent store through `assertUnsupportedRequestAbstains`, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision.
 
 No advisories were taken. `bash artifacts/ch17-retrieval-as-memory/check.sh` passes, and `npm run check` completed all seven sections with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 39 review (2026-07-18)
+
+Independent convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history through Round 38 and its resolutions, the current MDX chapter, exact figure and widget, fixture, README, checker, complete runnable artifact, build notes, and research backbone. Re-verified the prior REQUIRED paths with the deterministic artifact self-test and focused inspection: invalid dates reject; irrelevant, unsupported, unknown-identifier, incomplete-scope, and every previously covered destructive-action input abstain; deployment packets remain complete-or-abstain; untrusted query and memory content remains escaped and role-separated; and the RRF tie, readable teaching labels, telemetry, release-schedule, widget-paraphrase, generic-service-scope, and latest leading-`when` paths hold. Ran `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check`; both pass, with the repository gate completing all seven sections with `CHECK OK`. Checked the consequential claims against the linked primary and official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Anthropic Contextual Retrieval and caching, RAGAS, and OpenAI embeddings.
+
+The chapter is materially truthful, its figure and widget teach the stated retrieval policy accessibly, and the runnable artifact is deterministic, documented, and fail-closed for its supported instructional scope.
+
+## Advisories
+
+- None. Settled README-formatting, illustrative-token-display, rank-grid-semantics, and critique-history-ordering notes remain non-blocking and are not reopened.
