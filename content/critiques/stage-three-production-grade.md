@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -284,3 +284,24 @@ Convergence re-review: read `prompts/critique-rubric.md`, the complete append-on
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 11 against the current MDX, exact figure and widget, artifact, README, policy, demo server, and deterministic checks:
+
+1. Round 1 retains the removed public sandbox bypass, descriptor-contained memory roots and host writes, policy authorization before MCP launch, and host-owned definition locks.
+2. Rounds 2 and 3 retain the narrow child environment plus descriptor-relative no-follow reads for static and post-open workspace-symlink attacks.
+3. Round 4 retains the reviewed non-PATH Seatbelt binary and bounded FIFO or oversized host-file handling.
+4. Round 5 retains bounded, deadline-enforced MCP frames and process cleanup on malformed protocol data.
+5. Round 6 retains process-group cleanup for MCP descendants and descriptor-relative memory writes.
+6. Round 7 retains the independent MCP, memory, and subagent seams in the figure and prose, and the workspace-local custom-server contract.
+7. Round 8 retains execution-only Seatbelt permissions, fork denial, and the `setsid()` containment regression.
+8. Round 9 retains kernel denials for workspace `.env*` and `secrets/**` reads and mutations.
+9. Round 10 retains the narrow `/private/var/select` runtime lookup and external secret regression.
+10. Round 11 retains multi-link rejection in the bounded host and bundled-MCP readers; its real public-demo check now also confirms a multi-link `PROJECT.md` fails before any MCP connection.
+
+1. Added `reject_protected_workspace_hardlinks()` in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py`. After the MCP launch policy approves but before `client.start()` can reach `popen`, it recursively scans root `.env*` entries and `secrets/**` without following symlinks, then fails closed when a protected regular file has more than one hard link. This prevents an approved server from mutating a protected inode through an allowed alias such as `PROJECT.md`.
+2. Added deterministic coverage for root `.env*`, nested `.env*` directories, and `secrets/**` aliases. Added a Darwin-gated public-parser regression with a compatible workspace-local custom MCP server that would overwrite `PROJECT.md`; it proves the server never starts and the protected `.env.production` inode and contents stay unchanged.
+3. Updated `artifacts/ch21-stage-three-production-grade/README.md` so the documented secret-mutation boundary explicitly includes the pre-launch hard-link-alias rejection.
+
+No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.

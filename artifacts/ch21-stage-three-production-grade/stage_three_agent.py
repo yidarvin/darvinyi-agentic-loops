@@ -487,6 +487,62 @@ def profile_path(path: Path) -> str:
     return str(path).replace("\\", "\\\\").replace('"', '\\"')
 
 
+def reject_protected_workspace_hardlinks(workspace: Path) -> None:
+    """Fail closed when a protected file has a writable hard-link alias.
+
+    Seatbelt rules name paths, not inodes. Before any MCP child starts, reject a
+    workspace where a root ``.env*`` entry or a regular file below ``secrets/``
+    has more than one link. Otherwise an approved server could mutate protected
+    content through an allowed name such as ``PROJECT.md``.
+    """
+
+    root = workspace.resolve()
+
+    def status_for(path: Path) -> os.stat_result:
+        try:
+            return os.stat(path, follow_symlinks=False)
+        except OSError as error:
+            raise HarnessError(f"unable to inspect protected workspace path: {path}") from error
+
+    def reject_if_multi_link(path: Path, status: os.stat_result) -> None:
+        if not stat.S_ISREG(status.st_mode) or status.st_nlink <= 1:
+            return
+        try:
+            display = path.relative_to(root)
+        except ValueError:
+            display = path
+        raise HarnessError(f"refusing MCP launch: protected workspace file has a hard-link alias: {display}")
+
+    def scan_protected_tree(directory: Path) -> None:
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    status = status_for(path)
+                    if stat.S_ISREG(status.st_mode):
+                        reject_if_multi_link(path, status)
+                    elif stat.S_ISDIR(status.st_mode):
+                        scan_protected_tree(path)
+        except OSError as error:
+            raise HarnessError(f"unable to scan protected workspace directory: {directory}") from error
+
+    try:
+        with os.scandir(root) as entries:
+            root_entries = [(Path(entry.path), entry.name) for entry in entries]
+    except OSError as error:
+        raise HarnessError(f"unable to scan workspace for protected files: {root}") from error
+
+    for path, name in root_entries:
+        status = status_for(path)
+        if name.startswith(".env"):
+            if stat.S_ISREG(status.st_mode):
+                reject_if_multi_link(path, status)
+            elif stat.S_ISDIR(status.st_mode):
+                scan_protected_tree(path)
+        elif name == "secrets" and stat.S_ISDIR(status.st_mode):
+            scan_protected_tree(path)
+
+
 class MacOSSandbox:
     """A fail-closed Seatbelt launcher for child processes on macOS.
 
@@ -937,6 +993,7 @@ class ProductionHarness:
             command = shlex.join(self.mcp_command)
             self.stream.emit("mcp.server_launch_requested", server=self.server_name, command=command)
             if self._authorize("mcp_server", launch_target, approved=approve_mcp_server):
+                reject_protected_workspace_hardlinks(self.workspace)
                 client.start()
                 public_tool = f"mcp__{self.server_name}__{self.mcp_tool}"
                 if self._authorize(
@@ -1245,6 +1302,28 @@ def run_self_test() -> None:
             raise HarnessError("Seatbelt profile does not enforce the non-detachable MCP process boundary")
         if f'(subpath "{profile_path(Path("/private/var"))}")' in process_profile:
             raise HarnessError("Seatbelt profile grants a broad /private/var read root")
+
+        protected_alias_workspace = root / "protected-hardlink-preflight-workspace"
+        protected_alias_workspace.mkdir()
+        for protected_relative in (
+            ".env.production",
+            ".env.production/nested-token.txt",
+            "secrets/service-token.txt",
+        ):
+            protected_path = protected_alias_workspace / protected_relative
+            protected_path.parent.mkdir(parents=True, exist_ok=True)
+            protected_path.write_text("protected hard-link sentinel\n", encoding="utf-8")
+            alias_path = protected_alias_workspace / f"alias-{protected_path.name}"
+            os.link(protected_path, alias_path)
+            try:
+                reject_protected_workspace_hardlinks(protected_alias_workspace)
+            except HarnessError as error:
+                if "hard-link alias" not in str(error):
+                    raise HarnessError(f"protected hard-link preflight raised the wrong error: {error}") from error
+            else:
+                raise HarnessError(f"protected hard-link preflight accepted {protected_relative}")
+            alias_path.unlink()
+            protected_path.unlink()
 
         fake_sandbox = root / "fake-sandbox-exec"
         fake_sandbox.write_text(
@@ -2313,6 +2392,8 @@ for line in sys.stdin:
                 )
                 if alias == "PROJECT.md":
                     os.link(protected, alias_workspace / "PROJECT.md")
+                    if read_bounded_regular_file(alias_workspace, "PROJECT.md", byte_limit=1200) is not None:
+                        raise HarnessError("bounded readers accepted a multi-link project brief")
                 else:
                     (alias_workspace / "PROJECT.md").write_text(
                         "The visible project brief is safe.\n", encoding="utf-8"
@@ -2348,7 +2429,16 @@ for line in sys.stdin:
                     StdioMcpClient, "call_tool", new=capture_tool_result
                 ):
                     if alias == "PROJECT.md":
-                        exit_code = main(command)
+                        try:
+                            main(command)
+                        except HarnessError as error:
+                            if "hard-link alias" not in str(error):
+                                raise HarnessError(
+                                    f"public demo rejected a multi-link project brief for the wrong reason: {error}"
+                                ) from error
+                            exit_code = 2
+                        else:
+                            raise HarnessError("public demo accepted a multi-link project brief before MCP launch")
                     else:
                         try:
                             main(command)
@@ -2365,13 +2455,14 @@ for line in sys.stdin:
                     raise HarnessError("pre-existing protected hard link reached a public-demo readable surface")
 
                 if alias == "PROJECT.md":
-                    if exit_code != 0:
-                        raise HarnessError("public demo did not complete after rejecting a multi-link project brief")
-                    if len(tool_results) != 1 or "PROJECT.md is unavailable" not in canonical_json(tool_results):
-                        raise HarnessError("bundled MCP server accepted a multi-link project brief")
-                    summaries = [event for event in events if event.get("event") == "subagent.summary"]
-                    if not summaries or sentinel in canonical_json(summaries):
-                        raise HarnessError("subagent summary accepted a multi-link project brief")
+                    if exit_code != 2:
+                        raise HarnessError("public demo did not fail closed on a multi-link project brief")
+                    if tool_results or any(event.get("event") == "mcp.tool_result" for event in events):
+                        raise HarnessError("multi-link project brief reached an MCP result")
+                    if any(event.get("event") == "mcp.connected" for event in events):
+                        raise HarnessError("multi-link project brief started an MCP server")
+                    if any(event.get("event") == "subagent.summary" for event in events):
+                        raise HarnessError("multi-link project brief reached the worker summary")
                     memory_events = [event for event in events if event.get("event") == "memory.loaded"]
                     if not memory_events or sentinel in canonical_json(memory_events):
                         raise HarnessError("startup-memory event exposed a protected project alias")
@@ -2388,6 +2479,98 @@ for line in sys.stdin:
             run_alias_case("PROJECT.md")
             run_alias_case(".agent-memory/project.md")
 
+        def assert_real_seatbelt_blocks_preexisting_secret_hardlink_mutation() -> None:
+            """Reject a writable alias before a custom MCP child can start."""
+
+            alias_workspace = root / "preexisting-hardlink-mutation-workspace"
+            alias_workspace.mkdir()
+            protected = alias_workspace / ".env.production"
+            sentinel = "preexisting-hardlink-mutation-sentinel\n"
+            protected.write_text(sentinel, encoding="utf-8")
+            protected_status = protected.stat()
+            project_brief = alias_workspace / "PROJECT.md"
+            os.link(protected, project_brief)
+            (alias_workspace / "TODO.md").write_text(
+                "A pre-existing secret alias must stop an untrusted server before launch.\n", encoding="utf-8"
+            )
+            started_marker = alias_workspace / "alias-writer-started.txt"
+            alias_writer = alias_workspace / "alias_writer.py"
+            alias_writer.write_text(
+                """from __future__ import annotations
+import json
+import os
+import sys
+from pathlib import Path
+
+workspace = Path(os.environ["STAGE_THREE_WORKSPACE"])
+workspace.joinpath("alias-writer-started.txt").write_text("started", encoding="utf-8")
+tool = {
+    "name": "rewrite_project",
+    "description": "Attempt to rewrite the workspace project brief.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+}
+
+def respond(request_id, result):
+    print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    request_id = request.get("id")
+    if request_id is None:
+        continue
+    if request.get("method") == "initialize":
+        respond(request_id, {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "alias-writer", "version": "1.0.0"},
+        })
+    elif request.get("method") == "tools/list":
+        respond(request_id, {"tools": [tool]})
+    elif request.get("method") == "tools/call":
+        workspace.joinpath("PROJECT.md").write_text("mutated through alias\\n", encoding="utf-8")
+        respond(request_id, {"content": [{"type": "text", "text": "rewritten"}], "isError": False})
+""",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "demo",
+                    "--workspace",
+                    str(alias_workspace),
+                    "--server-name",
+                    "alias-writer",
+                    "--mcp-command",
+                    "python3 ./alias_writer.py",
+                    "--mcp-tool",
+                    "rewrite_project",
+                    "--approve-mcp-server",
+                    "--approve-mcp-tool",
+                    "--stream",
+                    "quiet",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode != 2 or "hard-link alias" not in result.stderr:
+                raise HarnessError("real Seatbelt public demo did not reject the protected hard-link alias")
+            if started_marker.exists():
+                raise HarnessError("protected hard-link preflight launched the custom MCP server")
+            current_status = protected.stat()
+            if (
+                (current_status.st_dev, current_status.st_ino)
+                != (protected_status.st_dev, protected_status.st_ino)
+                or protected.read_text(encoding="utf-8") != sentinel
+                or project_brief.read_text(encoding="utf-8") != sentinel
+            ):
+                raise HarnessError("protected inode changed through a pre-existing hard-link alias")
+
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
@@ -2397,6 +2580,7 @@ for line in sys.stdin:
                 external_dotenv.write_text(external_value, encoding="utf-8")
                 assert_real_seatbelt_blocks_workspace_secrets(external_dotenv, external_value)
             assert_real_seatbelt_rejects_preexisting_secret_hardlinks()
+            assert_real_seatbelt_blocks_preexisting_secret_hardlink_mutation()
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():

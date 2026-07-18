@@ -73,9 +73,12 @@ process starts. There is no global bypass-permissions flag.
    escaping lifecycle cleanup; the client also terminates and reaps the original
    process group on close or protocol abort. It also denies MCP reads and mutations
    for root `.env*` paths and `secrets/**`, matching the policy's secret boundary and
-   rejecting protected pathnames. The bundled MCP server and host-owned readers also
-   reject pre-existing multi-link files before reading them, so a protected file
-   cannot be relabeled as an allowed workspace input.
+   rejecting protected pathnames. Before any MCP server starts, the harness also
+   rejects a protected regular file with a pre-existing hard-link alias, so an
+   allowed path such as `PROJECT.md` cannot mutate a `.env*` or `secrets/**` inode.
+   The bundled MCP server and host-owned readers also reject pre-existing multi-link
+   files before reading them, so a protected file cannot be relabeled as an allowed
+   workspace input.
 4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
 5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
@@ -128,12 +131,14 @@ model adapter are deliberate next steps rather than hidden dependencies.
 The policy is useful because it makes intent auditable. It is not the containment
 boundary. Seatbelt constrains the subprocess after policy allows it to start. For
 MCP children, the generated profile enforces the policy's `.env*` and `secrets/**`
-denials for both reads and mutations. The bundled MCP server and host-owned readers
-also reject pre-existing multi-link inputs before reading them, because pathname
-rules alone cannot establish file provenance. Custom server code must apply the same
-content-safe read rule to every workspace file it consumes. The profile has an
-intentionally narrow writable area and no network. It still needs defense in depth:
-inspect tool definitions, isolate credentials, preserve human approval for
+denials for both reads and mutations. Before launch, the harness rejects any
+pre-existing multi-link `.env*` or `secrets/**` file, preventing a writable allowed
+pathname from aliasing a protected inode. The bundled MCP server and host-owned
+readers also reject pre-existing multi-link inputs before reading them, because
+pathname rules alone cannot establish file provenance. Custom server code must apply
+the same content-safe read rule to every workspace file it consumes. The profile has
+an intentionally narrow writable area and no network. It still needs defense in
+depth: inspect tool definitions, isolate credentials, preserve human approval for
 irreversible actions, and prefer stronger VM isolation for high-value secrets or
 untrusted content.
 
