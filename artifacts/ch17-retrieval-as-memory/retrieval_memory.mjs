@@ -95,6 +95,11 @@ const UNREPRESENTABLE_ACTION_TERMS = new Set([
   "purges",
   "purged",
   "purging",
+  "remove",
+  "removes",
+  "removed",
+  "removing",
+  "removal",
 ]);
 
 async function main() {
@@ -1276,6 +1281,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       mixedSupportedAndDestructiveAction,
       "mixed supported and destructive action request",
+    );
+
+    const mixedSupportedAndRemovalAction = await runAgent({
+      storePath: resolve(directory, "mixed-supported-removal-action-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "How do I deploy checkout after removing telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      mixedSupportedAndRemovalAction,
+      "mixed supported and removal action request",
     );
 
     const thirdPersonPurgingLookup = await runAgent({
