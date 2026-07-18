@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -91,3 +91,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. Added a shared descriptor-relative reader in `stage_three_agent.py` for host-side workspace and memory files. It opens roots and components with no-follow, nonblocking descriptors; verifies a regular file before any read; and caps bytes before UTF-8 decoding. Unsafe or oversized workspace inputs are omitted from the subagent summary, while unsafe or oversized memory files raise `MemoryEscape`. New FIFO and sparse-64-MiB regressions prove both readers return without blocking and request no more than their configured byte caps. Updated the artifact README to name this boundary precisely.
 
 No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 5 review (2026-07-18)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current chapter, exact figure and widget, complete Chapter 21 artifact, README, check script, policy, and research backbone; and checked the linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully, including the Chapter 21 artifact gate. Re-verified every Round 1 through Round 4 REQUIRED fix in the current artifact: the public sandbox bypass remains absent; escaping memory roots are rejected; MCP launch authorization precedes `popen`; locks remain host-owned outside the writable workspace; the child environment uses its narrow allowlist; static and post-open workspace symlinks are contained; the reviewed Seatbelt path is not resolved through `PATH`; and FIFO or oversized workspace and memory files are rejected before a host-side blocking or unbounded read. I also exercised the public demo with an approved custom MCP child that emits a partial response.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- the MCP response timeout is bypassed by a partial frame, allowing an approved server to hang the host indefinitely.** `StdioMcpClient.request()` waits with `select.select(..., 8)` at lines 461-469, but once a server writes any byte, `process.stdout.readline()` at line 470 blocks without either a deadline or a byte cap until it receives a newline or EOF. In a disposable workspace, I ran the public `demo` with `--approve-mcp-server` and a custom child that flushed `{` then slept. The harness did not exit within four seconds and required termination, before its `finally: client.close()` path could run. This is distinct from the settled FIFO and oversized-file reader finding: it is an untrusted MCP protocol-stream denial of service during `initialize`, and it violates the artifact's timeout and graceful-degradation teaching. Replace the text-mode `readline()` path with a deadline-enforced, size-bounded framed reader that terminates and reaps the child on an incomplete or oversized response. Add deterministic partial-frame and oversized-frame regressions that prove the public demo fails in bounded time and leaves no child running.
+
+## Advisories
+
+- None.
