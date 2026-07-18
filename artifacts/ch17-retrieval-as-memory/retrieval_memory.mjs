@@ -463,6 +463,10 @@ function requestedServices(tokens) {
 function classifyActionRequest(tokens) {
   // Collect every action clause before accepting a request. The allow-list is the
   // contract: a later operation cannot inherit support from an earlier deployment.
+  const leadingConditionalOperation = actionInLeadingConditionalClause(tokens);
+  if (hasUnrepresentedLeadingConditional(tokens, leadingConditionalOperation)) {
+    return { supported: false };
+  }
   const operations = actionOperations(tokens);
   if (operations.length) return { supported: operations.every((operation) => SUPPORTED_ACTION_TERMS.has(operation)) };
 
@@ -487,7 +491,7 @@ function actionOperations(tokens) {
   add(actionInSafetyQuestion(tokens));
   add(actionInGenericInterrogativeQuestion(tokens));
   add(actionInWithPassiveCondition(tokens));
-  add(actionInLeadingConditionalPassiveCondition(tokens));
+  add(actionInLeadingConditionalClause(tokens));
   for (const operation of actionTermsAfterClauseConnector(tokens)) add(operation);
 
   return [...new Set(operations)];
@@ -586,7 +590,7 @@ function actionInWithPassiveCondition(tokens) {
   ) || null;
 }
 
-function actionInLeadingConditionalPassiveCondition(tokens) {
+function actionInLeadingConditionalClause(tokens) {
   const mainClauseIndex = tokens.findIndex(
     (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
   );
@@ -608,11 +612,29 @@ function actionInLeadingConditionalPassiveCondition(tokens) {
       (["is", "are", "was", "were"].includes(term) ||
         (["has", "have", "had"].includes(term) && tokens[index + 1] === "been")),
   );
-  if (passiveAuxiliaryIndex === -1) return null;
-  return tokens.find(
-    (term, index) =>
-      index > passiveAuxiliaryIndex && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
-  ) || null;
+  if (passiveAuxiliaryIndex !== -1) {
+    return tokens.find(
+      (term, index) =>
+        index > passiveAuxiliaryIndex && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
+    ) || null;
+  }
+
+  const activePredicate = tokens.find(
+    (term, index) => index > 0 && index < conditionEnd && isPotentialThirdPersonPredicate(term),
+  );
+  return normalizeThirdPersonPredicate(activePredicate || null);
+}
+
+function hasUnrepresentedLeadingConditional(tokens, detectedOperation) {
+  const mainClauseIndex = tokens.findIndex(
+    (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
+  );
+  if (mainClauseIndex === -1) return false;
+  const startsWithConditional =
+    tokens[0] === "if" ||
+    LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0]) ||
+    (tokens[0] === "in" && tokens[1] === "case");
+  return startsWithConditional && !detectedOperation;
 }
 
 function actionInPassiveGenericQuestion(tokens) {
@@ -1422,6 +1444,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentAfterLeadingPerfectPassiveDeletedTelemetry,
       "deployment after leading perfect-passive deleted telemetry condition",
+    );
+
+    const deploymentAfterLeadingActiveDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-if-active-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "If someone deletes telemetry data, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentAfterLeadingActiveDeletedTelemetry,
+      "deployment after leading active deleted telemetry condition",
     );
 
     const deploymentGivenDeletedTelemetry = await runAgent({
