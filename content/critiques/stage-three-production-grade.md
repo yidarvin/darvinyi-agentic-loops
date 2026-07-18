@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -113,3 +113,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Added deterministic public-demo regressions for a child that flushes a partial `{` frame and a child that emits a completed oversized newline-delimited frame. Each uses the public parser and Seatbelt launcher seam, asserts failure within two seconds, and checks the recorded child PID is no longer running.
 
 No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
+
+## Round 6 review (2026-07-18)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current chapter, exact figure and widget, complete Chapter 21 artifact, README, check script, policy, demo server, research backbone, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully through all seven sections and `bash artifacts/ch21-stage-three-production-grade/check.sh` successfully. Re-verified every Round 1 through Round 5 REQUIRED fix in the current artifact: no public sandbox bypass, contained memory roots, policy before MCP launch, host-owned definition locks, a narrow child environment, static and post-open workspace symlink containment, a reviewed non-PATH Seatbelt executable, bounded no-follow host reads, and bounded MCP-frame cleanup. The figure and widget remain accessible, accurate teaching mechanisms. In disposable macOS workspaces, I also reproduced a real Seatbelt child descendant continuing to write the workspace after its direct parent exited, and a post-validation memory-file symlink redirecting the host write outside that workspace.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- an approved MCP server can retain a sandboxed descendant that races a later host-side memory write outside the workspace.** `StdioMcpClient._stop_process()` at lines 465-500 waits for, terminates, and kills only the direct `Popen` PID, so an MCP server that forks can leave a Seatbelt-contained descendant running with the workspace write grant after `client.close()`. On a later `demo`, `SafeMemory.write()` validates `project.md` with `path_for()` at lines 215-216, then uses pathname `mkdir()` and `write_text()` at lines 217-218 without a descriptor-relative no-follow write. A surviving descendant can replace the checked memory file with a symlink after that validation, causing the unsandboxed harness to overwrite an arbitrary host path before `SafeMemory.read()` notices the escape. I reproduced both components with the actual Seatbelt launcher and a disposable outside target: the descendant wrote after its direct parent was reaped, and the post-check symlink received the host memory seed. This is distinct from the settled static-root, read, and reader-TOCTOU fixes because it is an executable host-write escape across runs. Start each MCP child in its own process group and terminate/reap that group on every close or abort. Replace the memory writer with a descriptor-relative, no-follow, fail-closed write rooted in a verified directory descriptor. Add a deterministic public-demo regression in which an approved custom server forks a descendant, races a subsequent demo's memory write, and proves neither an outside write nor a surviving descendant is possible.
+
+## Advisories
+
+- None.
