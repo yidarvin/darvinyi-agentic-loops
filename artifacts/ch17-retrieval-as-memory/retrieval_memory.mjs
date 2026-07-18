@@ -601,12 +601,17 @@ function actionInLeadingConditionalPassiveCondition(tokens) {
     ) || null;
   }
   if (tokens[0] !== "if") return null;
-  const copulaIndex = tokens.findIndex(
-    (term, index) => index > 0 && index < conditionEnd && ["is", "are", "was", "were"].includes(term),
+  const passiveAuxiliaryIndex = tokens.findIndex(
+    (term, index) =>
+      index > 0 &&
+      index < conditionEnd &&
+      (["is", "are", "was", "were"].includes(term) ||
+        (["has", "have", "had"].includes(term) && tokens[index + 1] === "been")),
   );
-  if (copulaIndex === -1) return null;
+  if (passiveAuxiliaryIndex === -1) return null;
   return tokens.find(
-    (term, index) => index > copulaIndex && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
+    (term, index) =>
+      index > passiveAuxiliaryIndex && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
   ) || null;
 }
 
@@ -1402,6 +1407,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentAfterLeadingDeletedTelemetry,
       "deployment after leading deleted telemetry condition",
+    );
+
+    const deploymentAfterLeadingPerfectPassiveDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-if-perfect-passive-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "If telemetry has been deleted, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentAfterLeadingPerfectPassiveDeletedTelemetry,
+      "deployment after leading perfect-passive deleted telemetry condition",
     );
 
     const deploymentGivenDeletedTelemetry = await runAgent({
