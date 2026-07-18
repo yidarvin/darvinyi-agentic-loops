@@ -79,14 +79,14 @@ Tool errors should travel back to the model as observations too. A failed exact 
 
 ## Run the supervised REPL
 
-The artifact is intentionally a provider example, not a portable SDK layer. It keeps the model name in an environment variable so you can select a current tool-capable model rather than inheriting a stale snapshot. Its README launches the API key through a process-scoped credential sequence, not an exported parent-shell variable. That narrows an environment-disclosure path, but it does not sandbox the REPL. Read its safety notes before pointing it at a repository.
+The artifact is intentionally a provider example, not a portable SDK layer. It keeps the model name in an environment variable so you can select a current tool-capable model rather than inheriting a stale snapshot. Its README starts Python before it prompts for the API key, so the typed key never enters the agent process's initial environment. That closes a specific environment-disclosure path, but it does not sandbox the REPL. Read its safety notes before pointing it at a repository.
 
 <RunnableArtifact
   name="stage_one_thin_wrapper"
   path="artifacts/ch19-stage-one-thin-wrapper/"
   runtime="Python 3.11+ and the Anthropic Python SDK"
-  run={["python3 -m pip install -r requirements.txt", "Use README.md's process-scoped credential block to run agent.py"]}
-  requires={["An Anthropic API key entered through the artifact's process-scoped launcher", "THIN_WRAPPER_MODEL"]}
+  run={["python3 -m pip install -r requirements.txt", "Run agent.py and enter the API key at its post-start prompt, as README.md describes"]}
+  requires={["An Anthropic API key entered at the artifact's post-start prompt", "THIN_WRAPPER_MODEL"]}
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch19-stage-one-thin-wrapper">
   A minimal REPL with a real message history, four local tools, a tool-result loop, and an offline self-check. It deliberately omits retries, streaming, compaction, permissions, sandboxing, memory, MCP, and evaluation.
 </RunnableArtifact>

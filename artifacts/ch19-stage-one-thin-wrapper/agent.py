@@ -8,6 +8,7 @@ the response shape and client construction below are specific to this SDK.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 from pathlib import Path
@@ -167,6 +168,7 @@ class WorkspaceTools:
             text=True,
             timeout=COMMAND_TIMEOUT_SECONDS,
             env=self.command_environment,
+            stdin=subprocess.DEVNULL,
         )
         output = clip(result.stdout + result.stderr)
         return "(exit {})\n{}".format(result.returncode, output)
@@ -200,15 +202,29 @@ def configured_model() -> str:
     return model
 
 
-def create_client() -> Any:
-    # The documented launcher gives this process, and only this process, the key.
-    # Remove it before the REPL exposes model-controlled shell commands.
-    api_key = os.environ.pop("ANTHROPIC_API_KEY", "").strip()
+def read_api_key() -> str:
+    """Read a credential after startup without putting it in this process's environment."""
+    if "ANTHROPIC_API_KEY" in os.environ:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY must not be exported. Start from a fresh terminal and enter the key at the prompt."
+        )
+
+    # In normal use getpass opens and closes the terminal prompt before any model
+    # controlled tool can run. The non-TTY path makes the same post-start handoff
+    # testable with a pipe, never an environment variable.
+    if sys.stdin.isatty():
+        api_key = getpass.getpass("Anthropic API key: ")
+    else:
+        api_key = sys.stdin.readline()
+    api_key = api_key.strip()
     if not api_key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is required for this process. "
-            "Start the REPL with the process-scoped credential command in README.md."
+            "An Anthropic API key is required. Enter it at the post-start prompt described in README.md."
         )
+    return api_key
+
+
+def create_client(api_key: str) -> Any:
     try:
         import anthropic
     except ImportError as error:
@@ -320,6 +336,67 @@ def run_repl(client: Any, model: str, tools: WorkspaceTools, max_steps: int) -> 
             )
 
 
+def run_credential_boundary_probe() -> None:
+    """Exercise the real post-start credential path without importing the SDK."""
+
+    api_key = read_api_key()
+
+    class OfflineAnthropic:
+        def __init__(self, api_key: str) -> None:
+            self.api_key = api_key
+
+    with patch.dict(sys.modules, {"anthropic": SimpleNamespace(Anthropic=OfflineAnthropic)}):
+        client = create_client(api_key)
+    api_key = ""
+
+    tools = WorkspaceTools(Path.cwd())
+    environment_probe = tools.run_bash(
+        'set -e; '
+        'key_name="ANTHROPIC_API_KEY"; '
+        'key_marker="${key_name}="; '
+        'child_pid="$$"; '
+        'agent_pid="$PPID"; '
+        'ancestor_pid="$(ps -o ppid= -p "$agent_pid" | tr -d " ")"; '
+        'test -n "$ancestor_pid"; '
+        'if env | grep -F -q "$key_marker"; then exit 1; fi; '
+        'for pid in "$child_pid" "$agent_pid" "$ancestor_pid"; do '
+        'if ps eww -p "$pid" | grep -F -q "$key_marker"; then exit 1; fi; '
+        'done; '
+        'printf "credential-environment-clean\\n"'
+    )
+    if environment_probe != "(exit 0)\ncredential-environment-clean\n":
+        raise AssertionError("credential environment probe did not complete")
+    if client.api_key in environment_probe:
+        raise AssertionError("credential fixture appeared in probe output")
+
+    print("credential boundary probe passed")
+
+
+def run_real_subprocess_credential_probe() -> None:
+    """Prove the documented post-start handoff keeps a fixture out of ps paths."""
+
+    fixture_key = "self-test-key-must-not-reach-shell"
+    clean_environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in {"ANTHROPIC_API_KEY", "THIN_WRAPPER_API_KEY"}
+    }
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--credential-boundary-probe"],
+        input=fixture_key + "\n",
+        text=True,
+        capture_output=True,
+        cwd=Path(__file__).resolve().parent,
+        env=clean_environment,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
+    combined_output = result.stdout + result.stderr
+    if result.returncode != 0:
+        raise AssertionError("credential boundary subprocess failed")
+    if fixture_key in combined_output:
+        raise AssertionError("credential fixture appeared in boundary-probe output")
+
+
 def run_self_test() -> None:
     class OfflineClient:
         def __init__(self, responses: list[Any]) -> None:
@@ -369,30 +446,13 @@ def run_self_test() -> None:
 
         fixture_key = "self-test-key-must-not-reach-shell"
 
-        class OfflineAnthropic:
-            def __init__(self, api_key: str) -> None:
-                self.api_key = api_key
-
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
-            with patch.dict(sys.modules, {"anthropic": SimpleNamespace(Anthropic=OfflineAnthropic)}):
-                offline_client = create_client()
-            assert offline_client.api_key == fixture_key
-            assert "ANTHROPIC_API_KEY" not in os.environ
-
-            parent_tools = WorkspaceTools(workspace)
-            ancestor_environment_output = parent_tools.run_bash(
-                'repl_pid="$PPID"; '
-                'ancestor_pid="$(ps -o ppid= -p "$repl_pid" | tr -d " ")"; '
-                'ps eww -p "$repl_pid"; '
-                'if [ -n "$ancestor_pid" ]; then ps eww -p "$ancestor_pid"; fi'
-            )
-            assert fixture_key not in ancestor_environment_output
-
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
             credential_tools = WorkspaceTools(workspace)
             credential_output = credential_tools.run_bash("printf '%s' \"$ANTHROPIC_API_KEY\"")
         assert fixture_key not in credential_output
         assert credential_output == "(exit 0)\n"
+
+        run_real_subprocess_credential_probe()
 
         for stop_reason in TRUNCATED_STOP_REASONS:
             truncated_client = OfflineClient(
@@ -444,6 +504,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Directory the REPL starts in.")
     parser.add_argument("--max-steps", type=int, default=50, help="Maximum model calls for one user request.")
     parser.add_argument("--self-test", action="store_true", help="Run an offline tool and dispatch check.")
+    parser.add_argument(
+        "--credential-boundary-probe",
+        action="store_true",
+        help="Run the internal post-start credential boundary probe.",
+    )
     return parser.parse_args()
 
 
@@ -451,6 +516,9 @@ def main() -> int:
     args = parse_args()
     if args.self_test:
         run_self_test()
+        return 0
+    if args.credential_boundary_probe:
+        run_credential_boundary_probe()
         return 0
     if args.max_steps < 1:
         print("--max-steps must be at least 1", file=sys.stderr)
@@ -463,7 +531,11 @@ def main() -> int:
 
     try:
         model = configured_model()
-        client = create_client()
+        api_key = read_api_key()
+        try:
+            client = create_client(api_key)
+        finally:
+            api_key = ""
     except RuntimeError as error:
         print("startup error: {}".format(error), file=sys.stderr)
         return 2

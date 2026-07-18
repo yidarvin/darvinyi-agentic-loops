@@ -19,7 +19,7 @@ The animating claim (established in the book's opening): a capable coding agent 
 
 ## The minimal architecture
 Five components, no more:
-**(a) API client + model call.** Instantiate the SDK client with `ANTHROPIC_API_KEY` supplied only to the REPL process, then remove it from that process environment before exposing shell tools. Call `client.messages.create(model=..., max_tokens=..., system=..., tools=..., messages=...)`. The request carries the full conversation and tool schemas every turn because the server is stateless.
+**(a) API client + model call.** Start the REPL process without an API-key environment variable, then read the key through a hidden prompt after startup and pass that local value explicitly to the SDK client. Reject a pre-exported `ANTHROPIC_API_KEY`, and keep excluding that name from shell-child environments as defense in depth. This keeps the typed key out of the direct child, REPL-parent, and launcher-ancestor environment paths before shell tools are exposed. Call `client.messages.create(model=..., max_tokens=..., system=..., tools=..., messages=...)`. The request carries the full conversation and tool schemas every turn because the server is stateless.
 **(b) Conversation state.** A plain list of message dicts. User turns `{"role": "user", "content": "..."}`. Assistant turns appended *verbatim* as `{"role": "assistant", "content": response.content}` — preserving `tool_use` blocks so their `id`s stay aligned. Tool outputs go back as one `{"role": "user", "content": [tool_result blocks]}` message. Hard API rule: each `tool_use` must be answered by a matching `tool_result` in the immediately following message, and all parallel calls' results go in one user message — split them and the API rejects the next request with a 400.
 **(c) Tool definitions.** Each tool is `{name, description, input_schema}` (input_schema is a JSON Schema object). Anthropic wraps these into a system prompt server-side. In the SDK, definitions can be hand-written dicts or generated from typed functions (`@beta_tool` infers schema from type hints + docstring).
 **(d) The loop.** The canonical shape (per Anthropic's tutorial and docs):
@@ -73,16 +73,19 @@ A complete, runnable thin-wrapper coding agent in Python (~200 lines) using the 
 
 ```python
 # agent.py — a minimal thin-wrapper coding agent
-import os, json, subprocess, pathlib
+import getpass, os, json, subprocess, pathlib
 import anthropic
 
 MODEL = "claude-sonnet-4-5"          # any tool-use-capable Claude model; names change fast
-def make_client():
-    # The launcher exposes the key only to this Python process.
-    api_key = os.environ.pop("ANTHROPIC_API_KEY")
+def read_api_key():
+    if "ANTHROPIC_API_KEY" in os.environ:
+        raise RuntimeError("start from a fresh terminal; enter the key at the prompt")
+    return getpass.getpass("Anthropic API key: ").strip()
+
+def make_client(api_key):
     return anthropic.Anthropic(api_key=api_key)
 
-client = make_client()
+client = make_client(read_api_key())
 
 SYSTEM = (
     "You are a coding agent operating in the user's working directory. "
@@ -191,7 +194,7 @@ if __name__ == "__main__":
     main()
 ```
 
-**Running it.** `pip install anthropic`; in a fresh terminal, read the key into an unexported variable inside a subshell, then use `ANTHROPIC_API_KEY="$THIN_WRAPPER_API_KEY" exec python agent.py` inside that subshell; `cd` into the target repo; then type e.g. "add a function `slugify(s)` to utils.py and a test for it, then run the tests." The `exec` leaves no launcher process holding the key in its environment, and the client removes the Python environment variable before the shell tool is available. This prevents a `ps eww` environment lookup, not process-memory inspection or arbitrary shell access. Dependencies are just the SDK. That is the entire artifact.
+**Running it.** `pip install anthropic`; in a fresh terminal that has never exported `ANTHROPIC_API_KEY`, set the model identifier and launch `python agent.py`, then enter the key at its hidden post-start prompt. The prompt completes before shell tools become available, so the typed key never enters the agent process's initial environment or its launcher ancestor. This prevents that `ps eww` environment lookup for the typed key, not process-memory inspection or arbitrary shell access. Dependencies are just the SDK. That is the entire artifact.
 
 ## What it gets right — and its limitations
 **What it gets right.** Genuinely works for real tasks (create files, fix tests, refactor, answer questions about the codebase); comprehensible in one sitting; demonstrates the exact loop production agents run; the model's capability shines through unobstructed; a real, extensible foundation, not a toy mock.

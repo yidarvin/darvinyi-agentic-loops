@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -88,3 +88,13 @@ Fresh-eyes convergence re-review: read the complete three-round history and reso
 ## Advisories
 
 - The Round 3 non-blocking source-link note remains: the listed `implement-tool-use` URL redirects to Define tools rather than the direct Handle tool calls page. The current stop-reason source still supports the chapter's substantive claim.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified every REQUIRED finding from Rounds 1, 2, 3, and 4 against the current MDX, exact SVG figure, widget, runnable artifact, README, and research backbone. Round 1 still holds: both no-tool and tool-bearing truncation fail before dispatch, overlapping exact matches leave the file unchanged, and shell children exclude `ANTHROPIC_API_KEY`. Round 2 still holds: the essential figure labels remain visible at 16 SVG units in `--fg` or `--fg-muted`, and the full gate passes. Round 3 still holds: a truncation carrying a tool block appends no history and performs no local action, while the prompt-based handoff leaves no typed key in the model shell's inspected ancestor path.
+
+1. `artifacts/ch19-stage-one-thin-wrapper/agent.py` now rejects a pre-exported `ANTHROPIC_API_KEY`, reads the key only after Python starts, and passes that local value directly into `create_client(api_key)`. `run_bash` still filters the variable from child environments and now gives child commands `DEVNULL` as standard input, so the credential handoff is closed before model-controlled tools run.
+2. The artifact self-check now starts a real clean-environment subprocess, provides a synthetic key through its post-start input path, and has its model-shell probe verify the direct child environment plus the shell, REPL-parent, and ancestor `ps eww` paths. The probe returns a deterministic clean marker only after all three process checks pass, avoiding output-truncation blind spots.
+3. `README.md`, `src/chapters/stage-one-thin-wrapper.mdx`, and `docs/research/ch19-stage-one-thin-wrapper.md` now teach the post-start hidden prompt and retain the explicit unsandboxed-shell and process-memory boundary.
+
+No advisories were taken. `npm run check` passes with `CHECK OK`.

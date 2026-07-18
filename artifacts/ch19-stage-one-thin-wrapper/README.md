@@ -8,7 +8,7 @@ The implementation is a **product example: Anthropic Messages API**. The central
 
 The run_bash tool executes shell commands with your user privileges. The file tools reject paths outside the selected workspace, but shell commands are not sandboxed and can still read, write, or reach the network outside it.
 
-The documented launcher reads the key into an unexported variable inside a short-lived subshell and assigns it only to the Python process. The REPL then constructs its SDK client with the explicit key and removes `ANTHROPIC_API_KEY` from its own environment; every shell child also excludes it. Started from a fresh terminal with no prior export, this closes the direct-child, REPL-parent, and invoking-shell-ancestor environment paths that `run_bash` can inspect with `ps`.
+The documented launcher starts Python without an API-key environment variable. After Python starts, it reads the key through a hidden terminal prompt, constructs the SDK client with that local value, and closes the prompt before model-controlled tools become available. Every shell child excludes `ANTHROPIC_API_KEY` and receives no standard input. Start from a fresh terminal that has never exported `ANTHROPIC_API_KEY`; the artifact refuses to start if that variable is already present in its own environment. For the key entered at the prompt, this keeps the direct shell child, REPL process, and launcher-ancestor environment paths that `run_bash` can inspect with `ps` free of that key.
 
 This is credential hygiene, not a sandbox. Commands can still reach other user-accessible environment variables, files, credentials, and the network. The authenticated SDK client also necessarily keeps a credential in process memory, which this Stage One artifact does not protect from a capable same-user process inspector.
 
@@ -23,16 +23,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 export THIN_WRAPPER_MODEL=your-current-tool-capable-model
-(
-  printf 'Anthropic API key: '
-  read -r -s THIN_WRAPPER_API_KEY
-  printf '\n'
-  ANTHROPIC_API_KEY="$THIN_WRAPPER_API_KEY" \
-    exec python3 agent.py --workspace /path/to/disposable-repo
-)
+python3 agent.py --workspace /path/to/disposable-repo
 ~~~
 
-`THIN_WRAPPER_API_KEY` is an unexported subshell variable. `ANTHROPIC_API_KEY` exists only in the Python process long enough to initialize the client, then the artifact removes it. The model identifier is deliberately not hard-coded. Provider model names move faster than the loop contract. Set `THIN_WRAPPER_MODEL` to a current model ID your account can use for tool calls.
+After Python starts, it prompts for the Anthropic API key without echoing it. Do not export `ANTHROPIC_API_KEY` or pass the key as a command-line argument. The model identifier is deliberately not hard-coded. Provider model names move faster than the loop contract. Set `THIN_WRAPPER_MODEL` to a current model ID your account can use for tool calls.
 
 Try a bounded task such as:
 
@@ -48,7 +42,7 @@ The REPL prints every tool call. It keeps the full conversation in memory for th
 bash check.sh
 ~~~
 
-The check compiles the program and exercises file reading, overlapping exact-match rejection, path containment, error results, a local shell command, API-key removal from the REPL, shell children, and the inspected parent/ancestor process environments, plus truncated-response handling with and without a tool block. It does not import the SDK, require an API key, or make a network call.
+The check compiles the program and exercises file reading, overlapping exact-match rejection, path containment, error results, a local shell command, API-key filtering for shell children, and a real clean-environment subprocess that passes a synthetic key after startup and inspects the child, REPL process, and ancestor `ps` paths. It also covers truncated responses with and without a tool block. It does not import the SDK, require an API key, or make a network call.
 
 ## What this stage intentionally omits
 
