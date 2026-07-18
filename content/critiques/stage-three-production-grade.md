@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -47,3 +47,16 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. Added `contained_workspace_file()` and routed the read-only subagent through it before any file test or read. It resolves each fixed candidate and retains it only when it remains below the resolved workspace. The self-test now makes `PROJECT.md` a symlink to an outside sentinel, confirms the worker skips it, and confirms a contained `TODO.md` still appears in the summary.
 
 No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
+
+## Round 3 review (2026-07-18)
+
+Fresh-eyes re-review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, artifact, README, check script, policy, research backbone, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` and `bash artifacts/ch21-stage-three-production-grade/check.sh`, both passing. Re-verified every earlier REQUIRED fix in the current artifacts: the public sandbox bypass remains absent and rejected; escaping memory and static subagent symlinks are rejected; MCP launch is authorized before `popen`; host-owned definition locks remain outside the server-writable workspace; and the Round 2 `*_API_KEY` and `*_PASSWORD` cases remain scrubbed. I also exercised the current child-environment path and a concurrent workspace-symlink attack against the actual Seatbelt launcher.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- common credential carriers still reach sandboxed MCP children.** `scrubbed_environment()` only removes the exact names and suffixes at lines 39-40 and 184-199, so it retains common credential variables such as `SECRET_KEY`, `DB_PASS`, and a credential-bearing `DATABASE_URL`. The function is passed directly to `MacOSSandbox.popen()` at lines 259-269. With synthetic values, an actual Seatbelt-launched child received `SECRET_KEY`, while the fixed Round 2 `DEMO_API_KEY` and `DEMO_PASSWORD` cases were absent. This contradicts the chapter's credential-scrubbing instruction and the README's stated child-environment boundary: an approved untrusted MCP server can read and persist host credentials inside its writable workspace. Replace the inherited-environment denylist with a narrow allowlist, or cover these concrete credential forms, and add a deterministic child-process regression for `SECRET_KEY` and a credential-bearing connection URL.
+2. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- a sandboxed MCP server can race the host-side subagent into reading outside the workspace.** `contained_workspace_file()` resolves and contains `PROJECT.md` at lines 431-440, but `run_subagent_loop()` later calls `bounded_read(path)` at lines 453-457. The approved MCP process remains alive at that point and Seatbelt grants it workspace writes at line 237, while this host read is outside Seatbelt. I reproduced a custom MCP server atomically alternating `PROJECT.md` between a contained file and a symlink to a host-only sentinel; the sentinel reached `subagent.summary` through the actual `MacOSSandbox` path. This is distinct from the settled Round 2 static-symlink fix because the replacement happens after containment validation. Make the read race-safe with descriptor-relative no-follow semantics and regular-file verification, or run it inside the same containment boundary, then add a deterministic concurrent-swap regression proving the sentinel cannot reach the summary.
+
+## Advisories
+
+- Round 1's suggestion to add a direct source link for the qualified prompt-approval statistic remains a settled advisory and is not re-litigated.
