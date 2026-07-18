@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -28,3 +28,13 @@ Regression gate: read the full critique history with `git log -p -- content/crit
 Advisories taken: none. The two Round 1 advisories remain outside this required-fix resolution scope.
 
 Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh` and `npm run check` pass.
+
+## Round 2 review (2026-07-18)
+Fresh-eyes re-review: read the complete critique history, including `git log -p -- content/critiques/stage-two-real-loop.md`; the current chapter, research backbone, exact `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and complete runnable artifact. Ran `npm run check` successfully (`CHECK OK`), then ran both documented offline demo modes and `bash artifacts/ch20-stage-two-real-loop/check.sh` successfully. Re-verified all Round 1 REQUIRED fixes: the chapter now states the nine-request retry maximum; the repaired lower figure paths return to model control; the widget orders retry before a completed call and closes `read_03`; search revalidates symlink targets and caps aggregate output; and an interrupted shell returns a matching error after terminating its group. Checked the linked Anthropic error, tool-call, streaming, fine-grained streaming, prompt-caching, and context-editing documentation, plus Anthropic's current Messages tutorial for legal history ordering. Round 1 advisories remain settled and are not re-litigated.
+
+## Required fixes
+1. **src/chapters/_figures/StageTwoRealLoopFigure.tsx:101 --- validation failure is drawn as execution.** The figure's only outgoing path from `validate` (`schema · path · permission`) goes to `bounded execution`. That teaches an invalid path, schema, or denied permission as proceeding to execution, contradicting the chapter's table and `run_tool_safely`, which return a matching `is_error` result before invoking a handler. Draw an explicit validation-failure or denial branch to `matching tool_result`, and make execution conditional on successful validation. This is a new missing tool-boundary failure path, not a reopening of Round 1's repaired context and interrupted-stream arrows.
+2. **artifacts/ch20-stage-two-real-loop/agent.py:434-461 --- compaction makes the optional Anthropic adapter send an invalid history.** `_compact()` replaces a normal `user → assistant(tool_use) → user(tool_result)` history with `assistant(summary) → assistant(tool_use) → user(tool_result)`. I reproduced that exact role sequence locally; the scripted demo reaches this branch but masks it because its provider ignores history. Anthropic's Messages guidance requires a user-first, alternating conversation, so the live adapter will fail just when it attempts its demonstrated compaction. Preserve a leading user turn or emit a valid user continuation summary, retain the tool-result adjacency, and add a deterministic assertion that compacted histories are legal for the provider.
+
+## Advisories
+- No new advisories. The Round 1 advisories remain settled.
