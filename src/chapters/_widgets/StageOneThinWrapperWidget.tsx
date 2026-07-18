@@ -70,7 +70,7 @@ const steps: WalkthroughStep[] = [
       "REPL waits for the next user request",
     ],
     explanation: "The final response contains no action block and ended naturally, so the wrapper exits the inner loop.",
-    invariant: "Tool blocks decide dispatch. No tool_use completes only with end_turn; truncation is an error.",
+    invariant: "Dispatch requires stop_reason == tool_use and tool blocks. No tool_use completes only with end_turn; truncation errors before dispatch.",
   },
 ];
 

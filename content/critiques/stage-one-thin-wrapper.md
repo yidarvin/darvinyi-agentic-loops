@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -67,3 +67,12 @@ Fresh-eyes re-review: read the complete two-round critique history and both reso
 ## Advisories
 
 - `src/chapters/stage-one-thin-wrapper.mdx:116` labels the deprecated `implement-tool-use` URL as the implementation guide, but it now redirects to Define tools. The live Handle tool calls page is the direct reference for pairing and dispatch. This does not block the chapter because the current stop-reason source supports the substantive claim.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified every REQUIRED finding from Rounds 1, 2, and 3 against the current MDX, exact SVG figure, widget, runnable artifact, README, and research backbone. Round 1 still holds: no-tool truncation fails loudly, overlapping exact matches leave the file unchanged, and direct shell children exclude `ANTHROPIC_API_KEY`. Round 2 still holds: the REPL removes the key from its own environment before shell access, the essential figure branches remain 16 SVG units in `--fg` or `--fg-muted`, and the full gate passes. Round 3 is resolved as follows.
+
+1. `artifacts/ch19-stage-one-thin-wrapper/agent.py` now checks `stop_reason` before it appends or dispatches action blocks. Only `stop_reason == "tool_use"` with actual tool blocks can dispatch; both truncation reasons raise before local work. Its offline self-check now sends a truncated `edit_file` action, proves no tool-result history was appended, and proves the target file stays unchanged. `stage-one-thin-wrapper.mdx`, `StageOneThinWrapperFigure.tsx`, `StageOneThinWrapperWidget.tsx`, `README.md`, and the matching research examples now teach that same gate.
+2. `README.md` replaces the exported-key startup path with an unexported subshell variable and a process-scoped Python environment. `agent.py` captures and removes that environment value before the REPL exposes model-controlled shell commands, while `WorkspaceTools` retains its direct-child scrub. The offline regression probe checks the fixture key is absent from both the REPL parent and its process ancestor as seen through `run_bash`. The README now states the remaining unsandboxed-machine and process-memory boundary directly.
+
+No advisories were taken. `npm run check` passes with `CHECK OK`.

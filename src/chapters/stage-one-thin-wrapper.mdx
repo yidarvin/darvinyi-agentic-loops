@@ -27,23 +27,26 @@ That assistant append must preserve the response blocks verbatim, including tool
   <StageOneThinWrapperFigure />
 </Figure>
 
-## Dispatch follows actions; completion follows `end_turn`
+## Dispatch requires `tool_use`; completion requires `end_turn`
 
-Tool blocks decide dispatch. A response can reach a token limit while still containing an action, so the wrapper must execute every `tool_use` block and return its matching result even when the stop reason is unusual. The inverse is not completion. With no `tool_use` block, this Anthropic example treats only `stop_reason == "end_turn"` as a normal final response.
+`stop_reason` gates dispatch, and tool blocks identify the actions to dispatch. This Anthropic example executes only a response whose `stop_reason == "tool_use"` and whose content contains `tool_use` blocks. A token-limited response can contain a partial action, so `max_tokens` and `model_context_window_exceeded` fail before any local tool runs. With no `tool_use` block, only `stop_reason == "end_turn"` is a normal final response.
 
 ~~~python
+stop_reason = response.stop_reason
 tool_uses = [block for block in response.content if block.type == "tool_use"]
-if tool_uses:
+if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+    raise RuntimeError("response was truncated before dispatch")
+if stop_reason == "tool_use" and tool_uses:
     results = [dispatch(tool.name, tool.input) for tool in tool_uses]
     messages.append(one_user_message_with(results))
     response = call_model(messages)
-elif response.stop_reason == "end_turn":
+elif stop_reason == "end_turn" and not tool_uses:
     return
 else:
-    raise RuntimeError("response was truncated or stopped unexpectedly")
+    raise RuntimeError("response has an invalid stop reason or tool-block shape")
 ~~~
 
-The artifact fails loudly on `max_tokens` and `model_context_window_exceeded` rather than passing partial text off as a completed turn. That is deliberate. It adds a max-step guard because a loop without a ceiling can spend time and money while repeating itself, but it does not add recovery. Retrying, streaming, and interruption belong to Stage Two, where their failure modes earn the complexity.
+The artifact fails loudly on `max_tokens` and `model_context_window_exceeded` rather than passing partial text or partial actions off as a completed turn. That is deliberate. It adds a max-step guard because a loop without a ceiling can spend time and money while repeating itself, but it does not add recovery. Retrying, streaming, and interruption belong to Stage Two, where their failure modes earn the complexity.
 
 ## Four tools cover a repository’s working rhythm
 
@@ -76,14 +79,14 @@ Tool errors should travel back to the model as observations too. A failed exact 
 
 ## Run the supervised REPL
 
-The artifact is intentionally a provider example, not a portable SDK layer. It keeps the model name in an environment variable so you can select a current tool-capable model rather than inheriting a stale snapshot. Read its safety notes before pointing it at a repository.
+The artifact is intentionally a provider example, not a portable SDK layer. It keeps the model name in an environment variable so you can select a current tool-capable model rather than inheriting a stale snapshot. Its README launches the API key through a process-scoped credential sequence, not an exported parent-shell variable. That narrows an environment-disclosure path, but it does not sandbox the REPL. Read its safety notes before pointing it at a repository.
 
 <RunnableArtifact
   name="stage_one_thin_wrapper"
   path="artifacts/ch19-stage-one-thin-wrapper/"
   runtime="Python 3.11+ and the Anthropic Python SDK"
-  run={["python3 -m pip install -r requirements.txt", "python3 agent.py --workspace /path/to/disposable-repo"]}
-  requires={["ANTHROPIC_API_KEY", "THIN_WRAPPER_MODEL"]}
+  run={["python3 -m pip install -r requirements.txt", "Use README.md's process-scoped credential block to run agent.py"]}
+  requires={["An Anthropic API key entered through the artifact's process-scoped launcher", "THIN_WRAPPER_MODEL"]}
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch19-stage-one-thin-wrapper">
   A minimal REPL with a real message history, four local tools, a tool-result loop, and an offline self-check. It deliberately omits retries, streaming, compaction, permissions, sandboxing, memory, MCP, and evaluation.
 </RunnableArtifact>

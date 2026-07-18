@@ -3,7 +3,7 @@
 Research reference for *Agentic Loops*, Chapter 19 (opens Part V, Build Your Own Coding Agent; the first hands-on build). Part V is a three-stage progression: Stage One (this chapter — the minimal thin CLI wrapper), Stage Two ("The Real Loop" — robustness, error handling, streaming, tool design, context management), Stage Three ("Production-Grade" — MCP, subagents, memory, hardening), then "Evaluating Agents." The reader deeply understands the agent loop, tool calls, context economics, MCP, skills, multi-agent, and memory from earlier Parts — this chapter APPLIES those concepts in a concrete build rather than re-explaining them. Fast-moving specifics (SDK details, model names); version-pin and re-verify.
 
 ## TL;DR
-- A working coding agent is a ~200–400-line `while` loop that sends the conversation plus tool definitions to a tool-use-capable model, executes whatever tool the model asks for, appends the result, and repeats while action blocks remain. In this provider example, a no-tool response completes normally only at `end_turn`; truncation fails loudly. The intelligence lives in the model, not the harness. Thorsten Ball's "How to Build an Agent" builds one in under 400 lines of Go; the Princeton/Stanford `mini-swe-agent` does it in ~100 lines of Python and scores >74% on SWE-bench Verified.
+- A working coding agent is a ~200–400-line `while` loop that sends the conversation plus tool definitions to a tool-use-capable model, dispatches only complete `tool_use` responses, appends the result, and repeats while action blocks remain. In this provider example, a no-tool response completes normally only at `end_turn`; truncation fails loudly before dispatch. The intelligence lives in the model, not the harness. Thorsten Ball's "How to Build an Agent" builds one in under 400 lines of Go; the Princeton/Stanford `mini-swe-agent` does it in ~100 lines of Python and scores >74% on SWE-bench Verified.
 - The minimal-but-useful tool set is four tools — `read_file`, `list_files`, `edit_file` (string-replacement), and `run_bash` — with `run_bash` the single most powerful because it hands the model the entire Unix toolchain (grep, tests, git, build). Targeted string-replacement edits beat full-file rewrites on tokens and reliability.
 - The thin wrapper genuinely works and proves the thesis, but it is a demo, not a product: no error recovery, no streaming, naive context management (it grows until it overflows and crashes), no permission system, no memory, no MCP, no eval. That gap — quantified by one reverse-engineering study as ~98.4% of Claude Code being "harness," not model — is exactly what Stages Two and Three build.
 
@@ -19,7 +19,7 @@ The animating claim (established in the book's opening): a capable coding agent 
 
 ## The minimal architecture
 Five components, no more:
-**(a) API client + model call.** Instantiate the SDK client (reads `ANTHROPIC_API_KEY` from env) and call `client.messages.create(model=..., max_tokens=..., system=..., tools=..., messages=...)`. The request carries the full conversation and tool schemas every turn because the server is stateless.
+**(a) API client + model call.** Instantiate the SDK client with `ANTHROPIC_API_KEY` supplied only to the REPL process, then remove it from that process environment before exposing shell tools. Call `client.messages.create(model=..., max_tokens=..., system=..., tools=..., messages=...)`. The request carries the full conversation and tool schemas every turn because the server is stateless.
 **(b) Conversation state.** A plain list of message dicts. User turns `{"role": "user", "content": "..."}`. Assistant turns appended *verbatim* as `{"role": "assistant", "content": response.content}` — preserving `tool_use` blocks so their `id`s stay aligned. Tool outputs go back as one `{"role": "user", "content": [tool_result blocks]}` message. Hard API rule: each `tool_use` must be answered by a matching `tool_result` in the immediately following message, and all parallel calls' results go in one user message — split them and the API rejects the next request with a 400.
 **(c) Tool definitions.** Each tool is `{name, description, input_schema}` (input_schema is a JSON Schema object). Anthropic wraps these into a system prompt server-side. In the SDK, definitions can be hand-written dicts or generated from typed functions (`@beta_tool` infers schema from type hints + docstring).
 **(d) The loop.** The canonical shape (per Anthropic's tutorial and docs):
@@ -27,9 +27,12 @@ Five components, no more:
 while True:
     response = client.messages.create(model=MODEL, max_tokens=4096,
                                        system=SYSTEM, tools=TOOLS, messages=messages)
-    messages.append({"role": "assistant", "content": response.content})
+    stop_reason = response.stop_reason
     tool_uses = [b for b in response.content if b.type == "tool_use"]
-    if tool_uses:
+    if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+        raise RuntimeError(f"response was truncated: {stop_reason}")
+    if stop_reason == "tool_use" and tool_uses:
+        messages.append({"role": "assistant", "content": response.content})
         results = []
         for tu in tool_uses:
             output, is_error = dispatch(tu.name, tu.input)
@@ -37,11 +40,12 @@ while True:
                             "content": output, "is_error": is_error})
         messages.append({"role": "user", "content": results})
         continue
-    if response.stop_reason == "end_turn":
+    if stop_reason == "end_turn" and not tool_uses:
+        messages.append({"role": "assistant", "content": response.content})
         break
-    raise RuntimeError(f"response stopped before completion: {response.stop_reason}")
+    raise RuntimeError(f"response has an invalid stop reason or tool-block shape: {stop_reason}")
 ```
-Subtlety to teach: tool blocks decide dispatch, not `stop_reason` alone. `stop_reason` can be `max_tokens` while tool calls are still present, so execute every complete `tool_use` block and return its result. The inverse is not completion. When no client tool block is present, accept only `end_turn` as the normal final response. `max_tokens` and `model_context_window_exceeded` mean the response is truncated; Stage One can fail loudly rather than add recovery. [Anthropic's stop-reason guidance](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) documents the distinction.
+Subtlety to teach: `stop_reason` is the safety gate, while tool blocks identify the requested actions. Dispatch only when `stop_reason == "tool_use"` and client tool blocks are present. `max_tokens` and `model_context_window_exceeded` mean the response is truncated, even if a partial tool block appears; Stage One must fail before local dispatch rather than add recovery. With no client tool block, accept only `end_turn` as the normal final response. [Anthropic's stop-reason guidance](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) documents the distinction.
 **(e) Tool dispatch.** A `dispatch(name, input)` that maps the tool name to a Python function, runs it, captures output, and — critically — catches exceptions and returns them as tool results with `is_error=True` rather than crashing. Anthropic's guidance: on failure, send a clear message inside `tool_result` content and set `"is_error": true` so the model can "understand why the tool failed and potentially try again"; return "Error: Location 'Atlantis' not found" rather than a generic "Failed" or a raw stack trace.
 
 ## The core tools in detail
@@ -74,11 +78,9 @@ import anthropic
 
 MODEL = "claude-sonnet-4-5"          # any tool-use-capable Claude model; names change fast
 def make_client():
-    api_key = os.environ["ANTHROPIC_API_KEY"]
-    try:
-        return anthropic.Anthropic(api_key=api_key)
-    finally:
-        os.environ.pop("ANTHROPIC_API_KEY", None)
+    # The launcher exposes the key only to this Python process.
+    api_key = os.environ.pop("ANTHROPIC_API_KEY")
+    return anthropic.Anthropic(api_key=api_key)
 
 client = make_client()
 
@@ -158,12 +160,12 @@ def run_agent(messages, max_steps=50):
     for _ in range(max_steps):                      # guard against infinite loops
         resp = client.messages.create(model=MODEL, max_tokens=4096,
                                       system=SYSTEM, tools=TOOLS, messages=messages)
-        messages.append({"role": "assistant", "content": resp.content})
+        stop_reason = resp.stop_reason
         tool_uses = [b for b in resp.content if b.type == "tool_use"]
-        for b in resp.content:
-            if b.type == "text" and b.text.strip():
-                print(f"agent: {b.text}")
-        if tool_uses:
+        if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+            raise RuntimeError(f"response was truncated: {stop_reason}")
+        if stop_reason == "tool_use" and tool_uses:
+            messages.append({"role": "assistant", "content": resp.content})
             results = []
             for tu in tool_uses:
                 content, is_error = dispatch(tu.name, tu.input)
@@ -171,9 +173,10 @@ def run_agent(messages, max_steps=50):
                                 "content": content, "is_error": is_error})
             messages.append({"role": "user", "content": results})
             continue
-        if resp.stop_reason == "end_turn":
+        if stop_reason == "end_turn" and not tool_uses:
+            messages.append({"role": "assistant", "content": resp.content})
             return
-        raise RuntimeError(f"response stopped before completion: {resp.stop_reason}")
+        raise RuntimeError(f"response has an invalid stop reason or tool-block shape: {stop_reason}")
 
 def main():
     messages = []
@@ -188,7 +191,7 @@ if __name__ == "__main__":
     main()
 ```
 
-**Running it.** `pip install anthropic`; `export ANTHROPIC_API_KEY=sk-...`; `cd` into the target repo; `python agent.py`; then type e.g. "add a function `slugify(s)` to utils.py and a test for it, then run the tests." Dependencies are just the SDK. That is the entire artifact.
+**Running it.** `pip install anthropic`; in a fresh terminal, read the key into an unexported variable inside a subshell, then use `ANTHROPIC_API_KEY="$THIN_WRAPPER_API_KEY" exec python agent.py` inside that subshell; `cd` into the target repo; then type e.g. "add a function `slugify(s)` to utils.py and a test for it, then run the tests." The `exec` leaves no launcher process holding the key in its environment, and the client removes the Python environment variable before the shell tool is available. This prevents a `ps eww` environment lookup, not process-memory inspection or arbitrary shell access. Dependencies are just the SDK. That is the entire artifact.
 
 ## What it gets right — and its limitations
 **What it gets right.** Genuinely works for real tasks (create files, fix tests, refactor, answer questions about the codebase); comprehensible in one sitting; demonstrates the exact loop production agents run; the model's capability shines through unobstructed; a real, extensible foundation, not a toy mock.
@@ -210,7 +213,7 @@ if __name__ == "__main__":
 - **Common pitfalls to warn readers about:**
   - *Tool-result pairing.* Every `tool_use` needs a matching `tool_result` in the very next message; parallel calls all go in one user message. Mismatches produce hard 400 errors.
   - *Appending the assistant turn verbatim* (with its `tool_use` blocks) so `tool_use_id`s stay aligned.
-  - *Termination.* `tool_use` blocks determine dispatch. With no tool block, verify `stop_reason == "end_turn"` before treating a turn as complete. `max_tokens` and `model_context_window_exceeded` are truncation, not completion; recover later or fail loudly at Stage One. Always add a `max_steps` guard; unbounded loops burn money (community write-ups document runaways of hundreds of steps and multi-thousand-dollar bills). Watch for repetition loops (same tool, identical args); a simple dedup/step cap suffices at Stage One.
+  - *Termination.* Dispatch requires both `stop_reason == "tool_use"` and tool blocks. With no tool block, verify `stop_reason == "end_turn"` before treating a turn as complete. `max_tokens` and `model_context_window_exceeded` are truncation, not completion, even when a partial tool block appears; recover later or fail loudly at Stage One. Always add a `max_steps` guard; unbounded loops burn money (community write-ups document runaways of hundreds of steps and multi-thousand-dollar bills). Watch for repetition loops (same tool, identical args); a simple dedup/step cap suffices at Stage One.
   - *Schema mistakes* (wrong `input_schema` shape, missing `required`) cause malformed calls.
   - *Interactive commands hanging bash* — set the non-interactive env vars.
 - **Debugging tips.** Log the full conversation (it *is* the trace — `mini-swe-agent`'s linear history is prized precisely because "the message history exactly matches what the LM sees"); print each tool call and its arguments; inspect `tool_result` contents; save the trajectory to JSON for replay.

@@ -201,19 +201,19 @@ def configured_model() -> str:
 
 
 def create_client() -> Any:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    # The documented launcher gives this process, and only this process, the key.
+    # Remove it before the REPL exposes model-controlled shell commands.
+    api_key = os.environ.pop("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is required. Export it before starting the REPL.")
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is required for this process. "
+            "Start the REPL with the process-scoped credential command in README.md."
+        )
     try:
         import anthropic
     except ImportError as error:
         raise RuntimeError("Missing SDK. Run: python3 -m pip install -r requirements.txt") from error
-    try:
-        return anthropic.Anthropic(api_key=api_key)
-    finally:
-        # The SDK client has the explicit key. Do not leave it visible through the
-        # long-lived REPL process that model-controlled shell commands can inspect.
-        os.environ.pop("ANTHROPIC_API_KEY", None)
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def print_assistant_text(response: Any) -> None:
@@ -240,42 +240,56 @@ def run_agent(
             tools=TOOL_SCHEMAS,
             messages=messages,
         )
-        messages.append({"role": "assistant", "content": response.content})
-
+        stop_reason = getattr(response, "stop_reason", None)
         tool_uses = [block for block in response.content if getattr(block, "type", None) == "tool_use"]
-        if not tool_uses:
-            stop_reason = getattr(response, "stop_reason", None)
-            if stop_reason == NORMAL_COMPLETION_STOP_REASON:
-                print_assistant_text(response)
-                return
-            if stop_reason in TRUNCATED_STOP_REASONS:
-                raise RuntimeError(
-                    "model response was truncated ({}) instead of completing the turn".format(stop_reason)
-                )
+
+        if stop_reason in TRUNCATED_STOP_REASONS:
             raise RuntimeError(
-                "model returned no tool use with stop_reason {!r}; "
-                "Stage One accepts only end_turn as a completed turn".format(stop_reason)
+                "model response was truncated ({}) before tool dispatch".format(stop_reason)
             )
 
-        print_assistant_text(response)
+        if stop_reason == "tool_use":
+            if not tool_uses:
+                raise RuntimeError("model requested tool use but returned no tool_use blocks")
 
-        results: list[dict[str, Any]] = []
-        for tool_use in tool_uses:
-            name = str(getattr(tool_use, "name", ""))
-            arguments = getattr(tool_use, "input", {})
-            print("tool: {}({})".format(name, json.dumps(arguments, ensure_ascii=False)))
-            content, is_error = dispatch(tools, name, arguments)
-            results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": getattr(tool_use, "id"),
-                    "content": content,
-                    "is_error": is_error,
-                }
+            messages.append({"role": "assistant", "content": response.content})
+            print_assistant_text(response)
+
+            results: list[dict[str, Any]] = []
+            for tool_use in tool_uses:
+                name = str(getattr(tool_use, "name", ""))
+                arguments = getattr(tool_use, "input", {})
+                print("tool: {}({})".format(name, json.dumps(arguments, ensure_ascii=False)))
+                content, is_error = dispatch(tools, name, arguments)
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": getattr(tool_use, "id"),
+                        "content": content,
+                        "is_error": is_error,
+                    }
+                )
+
+            messages.append({"role": "user", "content": results})
+            print("loop: completed step {}".format(step))
+            continue
+
+        if stop_reason == NORMAL_COMPLETION_STOP_REASON:
+            if tool_uses:
+                raise RuntimeError("model returned tool_use blocks with end_turn; refusing to dispatch mismatched response")
+            messages.append({"role": "assistant", "content": response.content})
+            print_assistant_text(response)
+            return
+
+        if tool_uses:
+            raise RuntimeError(
+                "model returned tool_use blocks with stop_reason {!r}; "
+                "dispatch requires stop_reason == 'tool_use'".format(stop_reason)
             )
-
-        messages.append({"role": "user", "content": results})
-        print("loop: completed step {}".format(step))
+        raise RuntimeError(
+            "model returned no tool use with stop_reason {!r}; "
+            "Stage One accepts only end_turn as a completed turn".format(stop_reason)
+        )
 
     raise RuntimeError("max_steps reached; this Stage One wrapper stops instead of looping forever")
 
@@ -366,8 +380,13 @@ def run_self_test() -> None:
             assert "ANTHROPIC_API_KEY" not in os.environ
 
             parent_tools = WorkspaceTools(workspace)
-            parent_environment_output = parent_tools.run_bash('ps eww -p "$PPID"')
-            assert fixture_key not in parent_environment_output
+            ancestor_environment_output = parent_tools.run_bash(
+                'repl_pid="$PPID"; '
+                'ancestor_pid="$(ps -o ppid= -p "$repl_pid" | tr -d " ")"; '
+                'ps eww -p "$repl_pid"; '
+                'if [ -n "$ancestor_pid" ]; then ps eww -p "$ancestor_pid"; fi'
+            )
+            assert fixture_key not in ancestor_environment_output
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": fixture_key}, clear=False):
             credential_tools = WorkspaceTools(workspace)
@@ -391,30 +410,31 @@ def run_self_test() -> None:
             else:
                 raise AssertionError("{} must fail loudly".format(stop_reason))
 
-        tool_then_complete_client = OfflineClient(
-            [
-                fake_response(
-                    "max_tokens",
-                    [
-                        SimpleNamespace(
-                            type="tool_use",
-                            id="toolu_offline_check",
-                            name="read_file",
-                            input={"path": "sample.txt"},
-                        )
-                    ],
-                ),
-                fake_response(
-                    NORMAL_COMPLETION_STOP_REASON,
-                    [SimpleNamespace(type="text", text="offline check complete")],
-                ),
-            ]
-        )
-        tool_history: list[dict[str, Any]] = []
-        run_agent(tool_then_complete_client, "offline-test-model", tools, tool_history, max_steps=2)
-        tool_result = tool_history[1]["content"][0]
-        assert tool_result["type"] == "tool_result"
-        assert tool_result["is_error"] is False
+        for stop_reason in TRUNCATED_STOP_REASONS:
+            truncated_action_client = OfflineClient(
+                [
+                    fake_response(
+                        stop_reason,
+                        [
+                            SimpleNamespace(
+                                type="tool_use",
+                                id="toolu_offline_check",
+                                name="edit_file",
+                                input={"path": "sample.txt", "old_str": "gamma", "new_str": "must-not-write"},
+                            )
+                        ],
+                    )
+                ]
+            )
+            truncated_action_history: list[dict[str, Any]] = []
+            try:
+                run_agent(truncated_action_client, "offline-test-model", tools, truncated_action_history, max_steps=1)
+            except RuntimeError as error:
+                assert stop_reason in str(error)
+            else:
+                raise AssertionError("{} with tool_use must fail before dispatch".format(stop_reason))
+            assert truncated_action_history == []
+            assert sample.read_text(encoding="utf-8") == "alpha\ngamma\n"
 
     print("self-check passed")
 

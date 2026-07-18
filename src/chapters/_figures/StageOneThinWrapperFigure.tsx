@@ -4,7 +4,7 @@ export function StageOneThinWrapperFigure() {
       viewBox="0 0 920 525"
       className="min-w-[720px] w-full"
       role="img"
-      aria-label="A coding-agent REPL sends conversation history and tools to a model. Tool requests flow through dispatch and return as one user message. A response with no tool use ends normally only with end_turn; a truncated or unexpected stop fails loudly."
+      aria-label="A coding-agent REPL sends conversation history and tools to a model. Dispatch happens only when stop_reason is tool_use and matching action blocks exist. Tool results return as one user message. A no-tool end_turn ends normally; truncation and mismatches fail before dispatch."
       fill="none"
     >
       <title>Stage One thin-wrapper control flow</title>
@@ -70,13 +70,13 @@ export function StageOneThinWrapperFigure() {
       </text>
       <rect x="696" y="199" width="152" height="38" rx="19" fill="var(--surface)" stroke="var(--border)" />
       <text x="772" y="214" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg)">
-        <tspan x="772" dy="0">tool_use</tspan>
-        <tspan x="772" dy="17">blocks?</tspan>
+        <tspan x="772" dy="0">stop_reason</tspan>
+        <tspan x="772" dy="17">== tool_use?</tspan>
       </text>
       <path d="M772 154 V199" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
 
-      <text x="576" y="255" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
-        yes, one or many
+      <text x="505" y="255" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
+        yes + blocks
       </text>
       <path d="M696 218 H584 V316 H570" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
 
@@ -111,8 +111,8 @@ export function StageOneThinWrapperFigure() {
       </text>
 
       <text x="795" y="253" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
-        <tspan x="795" dy="0">no tool_use</tspan>
-        <tspan x="795" dy="18">+ end_turn</tspan>
+        <tspan x="795" dy="0">end_turn</tspan>
+        <tspan x="795" dy="18">+ no tool_use</tspan>
       </text>
       <path d="M848 218 H886 V315 H860" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-one-thin-wrapper-arrow)" />
       <rect x="730" y="280" width="130" height="76" rx="8" fill="var(--surface)" stroke="var(--border)" />
@@ -123,9 +123,9 @@ export function StageOneThinWrapperFigure() {
         return to REPL
       </text>
       <text x="795" y="375" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fill="var(--fg-muted)">
-        <tspan x="795" dy="0">truncation /</tspan>
-        <tspan x="795" dy="18">other stop</tspan>
-        <tspan x="795" dy="18">→ error, not completion</tspan>
+        <tspan x="795" dy="0">max_tokens / context</tspan>
+        <tspan x="795" dy="18">or mismatch</tspan>
+        <tspan x="795" dy="18">→ error before dispatch</tspan>
       </text>
 
       <rect x="28" y="474" width="864" height="28" rx="6" fill="var(--surface)" stroke="var(--border)" />
