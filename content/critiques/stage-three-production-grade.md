@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -239,3 +239,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 2. Extended the real Seatbelt public-demo regression in `stage_three_agent.py`: an approved workspace-local MCP server now attempts to read and hard-link an external `/private/var/tmp/.../.env.production` sentinel. The test requires both operations to be blocked, no copied or linked value to appear in the workspace, and the external sentinel to remain unchanged. A public-parser mutation probe confirmed that a broad grant reads and copies the sentinel, while the narrowed profile blocks it.
 
 No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 11 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history, current MDX, exact figure and widget, full artifact, README, policy, demo server, research backbone, and the linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully through all seven sections, including the artifact's real-Seatbelt public-demo regression. Re-verified the prior REQUIRED boundaries in the current artifact: no public sandbox bypass; descriptor-contained memory and host I/O; policy before MCP launch; host-owned definition locks; a fixed child environment; bounded host reads and MCP frames; process lifecycle containment; the independent-seam figure; the workspace-local custom-server contract; and the `.env*`, `secrets/**`, and external `/private/var` pathname denials. I then used the documented public macOS demo in a disposable workspace with `PROJECT.md` as a pre-existing hard link to `.env.production` containing a synthetic secret. The demo returned success, emitted `mcp.tool_result` and `run.completed`, and the host worker summary included that secret.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` and `mcp_demo_server.py` --- a pre-existing hard-link alias bypasses the claimed secret-read boundary.** `MacOSSandbox._profile()` broadly permits reads below the workspace at lines 503-535 and then excludes only `.env*` and `secrets/**` pathnames. A hard link from `PROJECT.md` to `.env.production` has an allowed pathname, so the denial does not apply. The actual bundled server resolves and reads that allowed name at `mcp_demo_server.py:23-32`, and the host read-only worker uses the same allowed name through its descriptor reader at `stage_three_agent.py:830-862`. `SafeMemory` likewise accepts a pre-existing regular `.agent-memory/project.md` and later reads it by its allowed pathname, so the same provenance gap reaches host startup memory before the server launches. In a disposable real-Seatbelt public-demo workspace, `PROJECT.md` hard-linked to `.env.production` with `hardlink-secret-sentinel` led to a successful `mcp.tool_result`, `run.completed`, and `subagent.summary` containing `PROJECT.md: hardlink-secret-sentinel`. This directly falsifies the README's claim that the boundary prevents an approved server from relocating protected material into an allowed workspace name (lines 74-77), and it remains outside the Round 9 regression, which tests a server creating a link after launch rather than a pre-existing alias (`stage_three_agent.py:2160-2172`). Make the readable surface content-safe rather than pathname-only for the MCP, subagent, and startup-memory readers, or reject pre-existing multi-link files and add a real-Seatbelt public-demo regression that proves a `.env.production` hard-linked to `PROJECT.md` or `.agent-memory/project.md` cannot reach an MCP result, worker summary, or startup-memory event.
+
+## Advisories
+
+- None.
