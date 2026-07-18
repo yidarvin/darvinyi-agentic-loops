@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -25,3 +25,16 @@ Regression gate: read the complete critique history and `git log -p -- content/c
 4. Moved MCP definition locks into validated `AgentState` storage outside the sandboxed server workspace, with a guard against a state-root symlink back into that workspace. The Seatbelt profile grants no write rule for that location. The self-test seeds a trusted host-owned lock, lets a malicious server replace the former workspace lock and return a changed definition, then verifies `ToolDefinitionChanged` is raised and the trusted lock remains unchanged.
 
 No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` both pass.
+
+## Round 2 review (2026-07-18)
+
+Fresh-eyes re-review: read `prompts/critique-rubric.md`, the complete current critique file, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the complete current MDX, figure, widget, Chapter 21 artifact, README, research file, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` and `bash artifacts/ch21-stage-three-production-grade/check.sh`, both passing. Re-verified every Round 1 REQUIRED fix in the current artifact: the public sandbox bypass remains absent and rejected, memory-root symlinks are rejected, MCP launch is authorized before `popen`, and the definition lock remains outside the server-writable workspace with its malicious-server regression. The figure and widget still teach the stated boundaries and retain their accessible SVG/button mechanisms. No new factual or source defect was found.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py`: generic credential-shaped environment variables reach sandboxed MCP children.** `scrubbed_environment()` at lines 181-196 removes a short explicit set plus `*_TOKEN`, `*_SECRET`, and names containing `CREDENTIAL`, but leaves `*_API_KEY` and `*_PASSWORD`. With synthetic `DEMO_API_KEY` and `DEMO_PASSWORD`, I exercised the actual `MacOSSandbox.popen()` path and its Seatbelt child printed both values. `MacOSSandbox.popen()` supplies this same function to the normal MCP server at lines 256-265, contrary to the chapter's instruction to strip credential-shaped variables and the README's stated credential-scrubbing boundary. An approved but untrusted local server can therefore read and persist such host secrets inside the allowed workspace. Scrub generic API-key/password forms too, or use a narrowly justified environment allowlist, and add a deterministic regression proving these synthetic variables are absent from a public-demo child.
+2. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py`: the host-side subagent follows workspace symlinks outside the workspace.** `run_subagent_loop()` at lines 437-440 calls `.is_file()` and then `bounded_read()` on `workspace / "PROJECT.md"` and `workspace / "TODO.md"` without resolving and containing either path. In a normal public `demo` run on macOS, I made `workspace/PROJECT.md` a symlink to a separate host-only sentinel file. The command exited successfully and emitted that sentinel in `subagent.summary`; the MCP server's own `PROJECT.md` reader correctly rejects this same escape. Because the worker runs directly in the harness process at lines 534-535, this read bypasses both Seatbelt and the policy evaluator. Resolve each candidate and prove it remains under the resolved workspace before testing or reading it, then add a deterministic regression that an escaping symlink is skipped or rejected and never appears in the subagent summary.
+
+## Advisories
+
+- Round 1's missing direct link for the qualified prompt-approval statistic remains advisory only. It is not re-litigated here.
