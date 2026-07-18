@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -209,3 +209,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state that task-scoped approval does not override the kernel-enforced secret read and mutation boundary.
 
 No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 10 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, complete Chapter 21 artifact, README, policy, demo server, research backbone, and linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully through all seven sections. Re-verified every Round 1 through Round 9 REQUIRED fix in the current artifacts: the public sandbox bypass remains absent; memory and host writes are descriptor-contained; MCP launch stays policy-gated; definition locks remain host-owned; child environments are allowlisted; unsafe host reads and MCP frames are bounded; lifecycle escapes are blocked; the figure and workspace-local custom-server contract remain accurate; and workspace `.env*` plus `secrets/**` access remains denied. I then exercised the actual public macOS Seatbelt path with an approved workspace-local MCP server reading an external secret under `/private/var`.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- the broad `/private/var` read grant lets an approved untrusted MCP server copy an outside-workspace `.env` secret into its writable workspace.** `MacOSSandbox._profile()` includes `"/private/var"` in `readable` (lines 503-512), which becomes an unrestricted `file-read*` subpath grant (lines 528-529); its later `.env*` and `secrets/**` denials are constructed only below `self.workspace` (lines 517-532). In a disposable real macOS Seatbelt run, I placed `.env.production` containing `DEMO_SECRET=outside-workspace-sentinel` under `/private/var/folders/...`, put a compatible `read_probe.py` inside the selected workspace, and invoked the public `demo` CLI with explicit server, tool, and verification approvals. It exited 0 and the server wrote that exact sentinel to `outside-dotenv-result.txt` in the workspace. This is not the private test launcher: the public command invoked the reviewed `/usr/bin/sandbox-exec`. The chapter requires secret-read denial and containment for untrusted local servers, but the unqualified secret policy silently stops at the selected workspace, allowing a task-approved server to persist a host secret into an otherwise permitted path. Remove the blanket `/private/var` read permission or replace it with the minimal runtime paths the interpreter needs, then add a real-Seatbelt regression that proves a workspace-local approved server cannot read or copy an external `/private/var/.../.env.production` sentinel.
+
+## Advisories
+
+- None.
