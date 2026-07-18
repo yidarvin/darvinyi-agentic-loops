@@ -52,12 +52,17 @@ export function StageThreeProductionGradeWidget() {
   const trace = [
     "startup: load project context and bounded memory",
     capabilities.mcp
-      ? "discover: namespace external tools; mark descriptions and results untrusted"
+      ? "authorize: display the MCP server command; policy gates launch before discovery"
+      : "authorize: no external server launch; native dispatch stays local",
+    capabilities.mcp
+      ? capabilities.sandbox
+        ? "discover: approved server starts inside workspace-scoped containment"
+        : "discover: approved server starts with host privileges"
       : "discover: use native tools only",
     capabilities.subagents
       ? "inspect: depth-one read-only worker returns a compressed finding"
       : "inspect: coordinator consumes the inspection output directly",
-    "verify: permission policy evaluates deny, ask, allow",
+    "verify: policy evaluates deny, ask, allow for each later effectful action",
     capabilities.sandbox
       ? "execute: workspace-scoped process with constrained egress"
       : "execute: approved process inherits host privileges",

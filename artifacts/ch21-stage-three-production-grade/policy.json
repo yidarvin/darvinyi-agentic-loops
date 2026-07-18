@@ -30,9 +30,14 @@
   ],
   "allow": [
     {
+      "tool": "mcp_server",
+      "target": "bundled demo server:*",
+      "reason": "the bundled local server is a reviewed read-only demonstration"
+    },
+    {
       "tool": "mcp__demo__read_project_brief",
-      "target": "MCP tool invocation",
-      "reason": "the local demo tool is read-only"
+      "target": "bundled demo tool invocation",
+      "reason": "the reviewed bundled demo tool is read-only"
     }
   ]
 }

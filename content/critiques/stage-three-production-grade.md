@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -14,3 +14,14 @@ Fresh-eyes review: read `prompts/critique-rubric.md`, the complete critique hist
 ## Advisories
 
 - The sentence that users approved most permission prompts is appropriately qualified, but adding the direct Anthropic containment report would make its attribution easier to audit. This is not blocking.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Round 1 is the first and only review, so there are no prior-round REQUIRED fixes to re-verify. Re-verified all four Round 1 fixes against the current MDX, widget, artifact, README, and deterministic regressions.
+
+1. Removed the public `demo --sandbox` option and the raw-child branch from `MacOSSandbox` in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py`. The only raw launcher is now the private self-test helper. The self-test confirms `demo --help` exposes no bypass, rejects the former switch, forces Seatbelt unavailable, and proves a normal demo cannot create an unsandboxed-child marker.
+2. Hardened `SafeMemory` in `stage_three_agent.py` to resolve `.agent-memory`, prove that root remains below the resolved workspace before and after directory creation, and reject an outside symlink. The self-test creates that symlink and confirms no external project-memory or lock write occurs.
+3. Added a distinct `mcp_server` policy decision before `StdioMcpClient.start()` can call `popen`, with `mcp.server_launch_requested` recording the exact `shlex.join()` command. `policy.json` permits only the bundled reviewed demo server by default; custom servers require a matching rule or `--approve-mcp-server`. The automatic tool allow is bound to that verified command and the exact demo tool, so a custom command that claims the `demo` namespace still needs `--approve-mcp-tool`. The self-test proves both that a denied custom server cannot create a workspace startup marker and that a demo-named custom server cannot invoke its tool without approval. Updated the widget, chapter wording, README, and trace assertions to teach this authorization-before-discovery order.
+4. Moved MCP definition locks into validated `AgentState` storage outside the sandboxed server workspace, with a guard against a state-root symlink back into that workspace. The Seatbelt profile grants no write rule for that location. The self-test seeds a trusted host-owned lock, lets a malicious server replace the former workspace lock and return a changed definition, then verifies `ToolDefinitionChanged` is raised and the trusted lock remains unchanged.
+
+No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` both pass.

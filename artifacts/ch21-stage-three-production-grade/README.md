@@ -29,21 +29,24 @@ python3 stage_three_agent.py demo \
   --stream ndjson
 ```
 
-The demo writes `.agent-memory/`, `mcp-tool-lock.json`, and `verification.txt` under
-the chosen workspace. The first two record durable project state and pinned tool
-definitions. The last file proves that the approved process could write inside the
-workspace. It cannot write outside the workspace when the Seatbelt profile starts.
+The demo writes `.agent-memory/` and `verification.txt` under the chosen workspace.
+It keeps `mcp-tool-lock.json` in a sibling `.stage-three-agent-state/` directory that
+the sandboxed server cannot write. The memory file records durable project context;
+the host-owned lock records pinned tool definitions. The verification file proves that
+the approved process could write inside the workspace. It cannot write outside the
+workspace when the Seatbelt profile starts.
 
 The NDJSON stream includes events such as:
 
 ```text
 memory.loaded
+mcp.server_launch_requested
+permission.decided
 mcp.tool_pinned
 mcp.connected
 mcp.tool_result
 subagent.started
 subagent.summary
-permission.decided
 sandbox.started
 sandbox.completed
 run.completed
@@ -56,31 +59,38 @@ process starts. There is no global bypass-permissions flag.
 
 1. `stage_three_agent.py` loads a bounded project-memory file through
    `Path.resolve()` plus `relative_to()` containment checks.
-2. It starts `mcp_demo_server.py` as a local stdio JSON-RPC server inside Seatbelt,
-   performs `initialize`, discovers `tools/list`, maps the tool to
-   `mcp__demo__read_project_brief`, and pins its normalized definition hash.
-3. It records the MCP tool result as untrusted data rather than treating it as an
+2. It displays the exact MCP server command and evaluates a distinct launch policy
+   before `popen`. The bundled read-only server is reviewed; a custom command needs a
+   matching policy rule or one task-scoped approval. The automatic demo-tool allowance
+   applies only to the reviewed command and exact exposed tool, not a custom server
+   that claims the `demo` namespace.
+3. It starts an approved `mcp_demo_server.py` inside Seatbelt, performs `initialize`,
+   discovers `tools/list`, maps the tool to `mcp__demo__read_project_brief`, and pins
+   its normalized definition hash in host-owned state outside the server workspace.
+4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
-4. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
+5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
    capped summary, not a tool transcript.
-5. It evaluates a permission rule in `deny`, `ask`, `allow` order. A denial always
+6. It evaluates every permission rule in `deny`, `ask`, `allow` order. A denial always
    wins over a broader allow rule.
-6. It launches the one approved shell command through Seatbelt. The generated profile
+7. It launches the one approved shell command through Seatbelt. The generated profile
    allows writes only below `--workspace`, denies network, and scrubs common
    credential-shaped environment variables from child processes.
 
-`check.sh` runs deterministic invariants, then records and validates a full demo
-trace in a temporary workspace. On non-macOS systems it uses the explicit `test`
-sandbox double only for the portable artifact gate. That test double is not available
-to the normal demo command and has no security meaning.
+`check.sh` runs deterministic invariants, including a regression that forces Seatbelt
+unavailable and proves the public demo cannot launch a child. On macOS with Seatbelt,
+it also records and validates a full demo trace in a temporary workspace.
 
 ## Connect another local stdio MCP server
 
 The probe accepts a quoted command for a compatible local stdio server and invokes a
-named zero-argument tool. The server is still launched through the same fail-closed
-sandbox, and its tool definitions still need to match the recorded lock file. A
-non-demo server receives no blanket allow rule, so give it a reviewed policy entry or
-use the single-invocation approval flag while testing.
+named zero-argument tool. The exact server command appears in a distinct launch-policy
+decision before the server starts. The server is still launched through the same
+fail-closed sandbox, and its tool definitions still need to match the host-owned lock
+file. A non-demo server receives no blanket allow rule, so give it a reviewed policy
+entry or use the task-scoped launch approval while testing. It also needs a
+task-scoped tool approval unless a policy rule matches that exact reviewed server and
+tool.
 
 ```bash
 python3 stage_three_agent.py demo \
@@ -88,6 +98,7 @@ python3 stage_three_agent.py demo \
   --server-name filesystem \
   --mcp-command 'python3 /absolute/path/to/server.py' \
   --mcp-tool read_project_brief \
+  --approve-mcp-server \
   --approve-mcp-tool \
   --approve-verification
 ```
@@ -107,7 +118,8 @@ approval for irreversible actions, and prefer stronger VM isolation for high-val
 secrets or untrusted content.
 
 The bundled MCP server is trusted only for demonstration. Treat every external tool
-description and result as untrusted input. If the lock file changes, the client emits
+description and result as untrusted input. The host keeps the lock outside the server's
+writable workspace. If the definition changes, the client emits
 `mcp.tool_definition_changed` and refuses the tool call rather than accepting a
 silent capability change.
 
