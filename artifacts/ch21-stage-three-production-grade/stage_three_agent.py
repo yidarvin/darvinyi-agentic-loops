@@ -98,7 +98,8 @@ def read_bounded_regular_file(root: Path, relative_path: str, byte_limit: int) -
 
     Both the workspace and memory roots can be written by an approved sandboxed
     server. Open every path component relative to an already-open directory,
-    reject links and special files before reading, and cap bytes before decoding.
+    reject links, pre-existing multi-link aliases, and special files before reading,
+    and cap bytes before decoding.
     """
 
     relative = Path(relative_path)
@@ -149,7 +150,8 @@ def read_bounded_regular_file(root: Path, relative_path: str, byte_limit: int) -
                 return None
             raise HarnessError(f"unable to open contained file: {relative_path}") from error
         try:
-            if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
+            file_status = os.fstat(file_descriptor)
+            if not stat.S_ISREG(file_status.st_mode) or file_status.st_nlink > 1:
                 return None
 
             chunks: List[bytes] = []
@@ -2294,6 +2296,98 @@ for line in sys.stdin:
             if any(path.exists() for path in copied_paths):
                 raise HarnessError("real Seatbelt MCP server copied protected material into the workspace")
 
+        def assert_real_seatbelt_rejects_preexisting_secret_hardlinks() -> None:
+            """Prove protected aliases never reach the public demo's readable surfaces."""
+
+            original_stream = EventStream
+            original_call_tool = StdioMcpClient.call_tool
+
+            def run_alias_case(alias: str) -> None:
+                alias_workspace = root / f"preexisting-hardlink-{alias.replace('/', '-')}-workspace"
+                alias_workspace.mkdir()
+                sentinel = f"preexisting-hardlink-{alias}-secret\n"
+                protected = alias_workspace / ".env.production"
+                protected.write_text(sentinel, encoding="utf-8")
+                (alias_workspace / "TODO.md").write_text(
+                    "Reject unsafe workspace aliases before reading them.\n", encoding="utf-8"
+                )
+                if alias == "PROJECT.md":
+                    os.link(protected, alias_workspace / "PROJECT.md")
+                else:
+                    (alias_workspace / "PROJECT.md").write_text(
+                        "The visible project brief is safe.\n", encoding="utf-8"
+                    )
+                    memory_root = alias_workspace / ".agent-memory"
+                    memory_root.mkdir()
+                    os.link(protected, memory_root / "project.md")
+
+                captured_streams: List[EventStream] = []
+                tool_results: List[Dict[str, Any]] = []
+
+                class CapturingEventStream(original_stream):
+                    def __init__(self, mode: str) -> None:
+                        super().__init__(mode)
+                        captured_streams.append(self)
+
+                def capture_tool_result(
+                    client: StdioMcpClient, public_name: str, arguments: Dict[str, Any]
+                ) -> Dict[str, Any]:
+                    result = original_call_tool(client, public_name, arguments)
+                    tool_results.append(result)
+                    return result
+
+                command = [
+                    "demo",
+                    "--workspace",
+                    str(alias_workspace),
+                    "--approve-verification",
+                    "--stream",
+                    "quiet",
+                ]
+                with patch.object(sys.modules[__name__], "EventStream", CapturingEventStream), patch.object(
+                    StdioMcpClient, "call_tool", new=capture_tool_result
+                ):
+                    if alias == "PROJECT.md":
+                        exit_code = main(command)
+                    else:
+                        try:
+                            main(command)
+                        except MemoryEscape:
+                            exit_code = 2
+                        else:
+                            raise HarnessError("public demo accepted a multi-link startup-memory file")
+
+                if not captured_streams:
+                    raise HarnessError("hard-link regression did not capture the public demo event stream")
+                events = captured_streams[-1].events
+                serialized_events = canonical_json(events)
+                if sentinel in serialized_events or sentinel in canonical_json(tool_results):
+                    raise HarnessError("pre-existing protected hard link reached a public-demo readable surface")
+
+                if alias == "PROJECT.md":
+                    if exit_code != 0:
+                        raise HarnessError("public demo did not complete after rejecting a multi-link project brief")
+                    if len(tool_results) != 1 or "PROJECT.md is unavailable" not in canonical_json(tool_results):
+                        raise HarnessError("bundled MCP server accepted a multi-link project brief")
+                    summaries = [event for event in events if event.get("event") == "subagent.summary"]
+                    if not summaries or sentinel in canonical_json(summaries):
+                        raise HarnessError("subagent summary accepted a multi-link project brief")
+                    memory_events = [event for event in events if event.get("event") == "memory.loaded"]
+                    if not memory_events or sentinel in canonical_json(memory_events):
+                        raise HarnessError("startup-memory event exposed a protected project alias")
+                else:
+                    if exit_code != 2:
+                        raise HarnessError("public demo did not fail closed on a multi-link startup-memory file")
+                    if tool_results or any(event.get("event") == "mcp.tool_result" for event in events):
+                        raise HarnessError("multi-link startup memory reached an MCP result")
+                    if any(event.get("event") == "subagent.summary" for event in events):
+                        raise HarnessError("multi-link startup memory reached the worker summary")
+                    if any(event.get("event") == "memory.loaded" for event in events):
+                        raise HarnessError("multi-link startup memory reached a memory-loaded event")
+
+            run_alias_case("PROJECT.md")
+            run_alias_case(".agent-memory/project.md")
+
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
@@ -2302,6 +2396,7 @@ for line in sys.stdin:
                 external_value = "synthetic-external-dotenv-sentinel\n"
                 external_dotenv.write_text(external_value, encoding="utf-8")
                 assert_real_seatbelt_blocks_workspace_secrets(external_dotenv, external_value)
+            assert_real_seatbelt_rejects_preexisting_secret_hardlinks()
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():
@@ -2313,7 +2408,7 @@ for line in sys.stdin:
 
     print(
         "self-test: containment, bounded host reads, MCP launch policy, custom-server contract, "
-        "lock pinning, subagent boundary, workspace secret boundary, and sandbox behavior passed"
+        "lock pinning, subagent boundary, workspace secret boundary, hard-link safety, and sandbox behavior passed"
     )
 
 

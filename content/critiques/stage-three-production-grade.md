@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -251,3 +251,24 @@ Convergence re-review: read `prompts/critique-rubric.md`, the complete append-on
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 10 against the current chapter, exact figure and widget, artifact, README, policy, and deterministic regressions:
+
+1. Round 1 still has no public sandbox bypass; memory roots and host writes remain descriptor-contained; MCP launch authorization precedes `popen`; and definition locks remain host-owned outside the MCP workspace.
+2. Rounds 2 and 3 retain the narrow child environment and descriptor-relative no-follow reads for static and post-open workspace-symlink attacks.
+3. Round 4 still binds launches to the reviewed Seatbelt executable and rejects FIFO or oversized host inputs before decoding.
+4. Round 5 still bounds malformed, partial, and oversized MCP frames and reaps the child on protocol failure.
+5. Round 6 retains descriptor-relative memory writes and process-group cleanup for ordinary MCP descendants.
+6. Round 7 retains the independent dispatcher seams in the figure and prose, plus the runnable workspace-local custom-server contract.
+7. Round 8 retains the execution-only Seatbelt rule, fork denial, and direct plus forked `setsid()` containment regression.
+8. Round 9 retains policy-mirrored kernel denials for workspace `.env*` and `secrets/**` reads and mutations.
+9. Round 10 retains the narrowed `/private/var/select` runtime lookup and the external `/private/var` secret regression.
+
+1. Updated `read_bounded_regular_file()` in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` to reject an opened regular file with more than one hard link before reading it. `SafeMemory.read()` and the read-only worker both use that descriptor-relative reader. It still accepts a descriptor whose link count falls to zero after it was safely opened, preserving the Round 3 post-open replacement guarantee.
+2. Updated `artifacts/ch21-stage-three-production-grade/mcp_demo_server.py` to use the same bounded descriptor-relative reader for `PROJECT.md`, so the bundled MCP result rejects a multi-link alias instead of reading it.
+3. Added a real-Seatbelt public-demo regression in `stage_three_agent.py`. It hard-links `.env.production` to `PROJECT.md` and proves the MCP result and worker summary omit the sentinel while startup memory remains safe. It then hard-links `.env.production` to `.agent-memory/project.md` and proves the public parser fails before any `memory.loaded`, MCP-result, or worker-summary event.
+4. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state the pathname-policy limit and the bundled-MCP and host-reader multi-link rejection rule, including the custom-server responsibility to apply the same content-safe read discipline.
+
+No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.

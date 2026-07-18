@@ -73,8 +73,9 @@ process starts. There is no global bypass-permissions flag.
    escaping lifecycle cleanup; the client also terminates and reaps the original
    process group on close or protocol abort. It also denies MCP reads and mutations
    for root `.env*` paths and `secrets/**`, matching the policy's secret boundary and
-   preventing an approved server from relocating protected material into an allowed
-   workspace name.
+   rejecting protected pathnames. The bundled MCP server and host-owned readers also
+   reject pre-existing multi-link files before reading them, so a protected file
+   cannot be relabeled as an allowed workspace input.
 4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
 5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
@@ -127,11 +128,14 @@ model adapter are deliberate next steps rather than hidden dependencies.
 The policy is useful because it makes intent auditable. It is not the containment
 boundary. Seatbelt constrains the subprocess after policy allows it to start. For
 MCP children, the generated profile enforces the policy's `.env*` and `secrets/**`
-denials for both reads and mutations, so task-scoped approval cannot expose or
-rename protected workspace material. The profile has an intentionally narrow
-writable area and no network. It still needs defense in depth: inspect tool
-definitions, isolate credentials, preserve human approval for irreversible actions,
-and prefer stronger VM isolation for high-value secrets or untrusted content.
+denials for both reads and mutations. The bundled MCP server and host-owned readers
+also reject pre-existing multi-link inputs before reading them, because pathname
+rules alone cannot establish file provenance. Custom server code must apply the same
+content-safe read rule to every workspace file it consumes. The profile has an
+intentionally narrow writable area and no network. It still needs defense in depth:
+inspect tool definitions, isolate credentials, preserve human approval for
+irreversible actions, and prefer stronger VM isolation for high-value secrets or
+untrusted content.
 
 The bundled MCP server is trusted only for demonstration. Treat every external tool
 description and result as untrusted input. The host keeps the lock outside the server's

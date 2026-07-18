@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+from stage_three_agent import HarnessError, read_bounded_regular_file
+
 
 PROTOCOL_VERSION = "2025-06-18"
 
@@ -22,14 +24,13 @@ def failure(request_id: Any, message: str) -> None:
 
 def project_brief() -> str:
     workspace = Path(os.environ.get("STAGE_THREE_WORKSPACE", ".")).resolve()
-    brief = (workspace / "PROJECT.md").resolve()
     try:
-        brief.relative_to(workspace)
-    except ValueError:
+        content = read_bounded_regular_file(workspace, "PROJECT.md", byte_limit=1200)
+    except HarnessError:
         return "workspace path rejected"
-    if not brief.is_file():
-        return "PROJECT.md is absent"
-    return brief.read_text(encoding="utf-8")[:1200]
+    if content is None:
+        return "PROJECT.md is unavailable"
+    return content
 
 
 def tools() -> Dict[str, Any]:
