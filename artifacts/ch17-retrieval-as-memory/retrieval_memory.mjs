@@ -90,6 +90,7 @@ const GENERIC_LOOKUP_STARTERS = new Set([
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
 const ACTION_CLAUSE_CONNECTORS = new Set(["after", "before", "then", "while"]);
+const LEADING_CONDITIONAL_PARTICIPLE_CUES = new Set(["assuming", "considering", "given", "provided"]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -581,11 +582,16 @@ function actionInWithPassiveCondition(tokens) {
 }
 
 function actionInLeadingConditionalPassiveCondition(tokens) {
-  if (tokens[0] !== "if") return null;
   const mainClauseIndex = tokens.findIndex(
     (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
   );
   const conditionEnd = mainClauseIndex === -1 ? tokens.length : mainClauseIndex;
+  if (LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0])) {
+    return tokens.find(
+      (term, index) => index > 0 && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
+    ) || null;
+  }
+  if (tokens[0] !== "if") return null;
   const copulaIndex = tokens.findIndex(
     (term, index) => index > 0 && index < conditionEnd && ["is", "are", "was", "were"].includes(term),
   );
@@ -1387,6 +1393,36 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentAfterLeadingDeletedTelemetry,
       "deployment after leading deleted telemetry condition",
+    );
+
+    const deploymentGivenDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-given-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Given deleted telemetry data, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentGivenDeletedTelemetry,
+      "deployment given deleted telemetry condition",
+    );
+
+    const deploymentAssumingDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-assuming-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Assuming deleted telemetry data, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentAssumingDeletedTelemetry,
+      "deployment assuming deleted telemetry condition",
     );
 
     const thirdPersonPurgingLookup = await runAgent({
