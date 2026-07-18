@@ -55,6 +55,29 @@ class FatalModelError(RuntimeError):
     """A model request needs repair instead of another retry."""
 
 
+class HarnessTermination(SystemExit):
+    """A terminal signal reached the harness and must unwind an active tool call."""
+
+
+def install_sigterm_shutdown_handler() -> Callable[[], None]:
+    """Let an active shell reap its process group before the harness exits on SIGTERM."""
+    if not hasattr(signal, "SIGTERM"):
+        return lambda: None
+    previous_handler = signal.getsignal(signal.SIGTERM)
+
+    def request_shutdown(signum: int, _frame: Any) -> None:
+        # Keep the handler re-entrant: run_shell performs the bounded Popen cleanup
+        # while this exception unwinds through its active tool boundary.
+        raise HarnessTermination(128 + signum)
+
+    signal.signal(signal.SIGTERM, request_shutdown)
+
+    def restore() -> None:
+        signal.signal(signal.SIGTERM, previous_handler)
+
+    return restore
+
+
 def read_api_key_file(raw_path: str | None) -> str:
     """Read a live-provider key after startup without inheriting it from the environment."""
     if "ANTHROPIC_API_KEY" in os.environ:
@@ -163,6 +186,7 @@ class WorkspaceTools:
         self.max_file_chars = max_file_chars
         self.max_output_chars = max_output_chars
         self.shell_timeout_seconds = shell_timeout_seconds
+        self._active_shell_process: subprocess.Popen[str] | None = None
         if not self.workspace.is_dir():
             raise ConfigurationError("workspace is not a directory: {}".format(self.workspace))
         self.shell_environment = {
@@ -282,6 +306,7 @@ class WorkspaceTools:
     def run_shell(self, command: str) -> str:
         if not isinstance(command, str) or not command.strip():
             raise ToolFailure("command must be a non-empty string")
+        process: subprocess.Popen[str] | None = None
         try:
             process = subprocess.Popen(
                 command,
@@ -294,30 +319,39 @@ class WorkspaceTools:
                 env=self.shell_environment,
                 start_new_session=True,
             )
+            self._active_shell_process = process
+            try:
+                output, _ = process.communicate(timeout=self.shell_timeout_seconds)
+            except KeyboardInterrupt:
+                output = self._stop_and_collect_process_group(process)
+                raise ToolFailure(
+                    "[Request interrupted by user] command interrupted; its process group was terminated\n{}".format(
+                        middle_clip(output or "", self.max_output_chars)
+                    )
+                )
+            except subprocess.TimeoutExpired:
+                output = self._stop_and_collect_process_group(process)
+                raise ToolFailure(
+                    "command timed out after {:.1f}s; its process group was terminated\n{}".format(
+                        self.shell_timeout_seconds, middle_clip(output or "", self.max_output_chars)
+                    )
+                )
+            output = middle_clip(output or "", self.max_output_chars)
+            if process.returncode != 0:
+                raise ToolFailure("command exited {}\n{}".format(process.returncode, output))
+            return "(exit 0)\n{}".format(output)
         except OSError as error:
             raise ToolFailure("could not start shell command: {}".format(error)) from error
+        except HarnessTermination:
+            self._stop_active_shell_process_group()
+            raise
+        finally:
+            if self._active_shell_process is process:
+                self._active_shell_process = None
 
-        try:
-            output, _ = process.communicate(timeout=self.shell_timeout_seconds)
-        except KeyboardInterrupt:
-            output = self._stop_and_collect_process_group(process)
-            raise ToolFailure(
-                "[Request interrupted by user] command interrupted; its process group was terminated\n{}".format(
-                    middle_clip(output or "", self.max_output_chars)
-                )
-            )
-        except subprocess.TimeoutExpired:
-            output = self._stop_and_collect_process_group(process)
-            raise ToolFailure(
-                "command timed out after {:.1f}s; its process group was terminated\n{}".format(
-                    self.shell_timeout_seconds, middle_clip(output or "", self.max_output_chars)
-                )
-            )
-
-        output = middle_clip(output or "", self.max_output_chars)
-        if process.returncode != 0:
-            raise ToolFailure("command exited {}\n{}".format(process.returncode, output))
-        return "(exit 0)\n{}".format(output)
+    def _stop_active_shell_process_group(self) -> None:
+        if self._active_shell_process is not None:
+            self._stop_and_collect_process_group(self._active_shell_process)
 
     @staticmethod
     def _stop_process_group(
@@ -1183,6 +1217,49 @@ def self_test() -> None:
         time.sleep(1.1)
         assert not interrupt_resistant_marker.exists(), "SIGTERM-resistant interrupted child escaped the process group"
 
+        harness_sigterm_marker = workspace / "harness-sigterm-marker.txt"
+        harness_sigterm_ready = workspace / "harness-sigterm-ready.txt"
+        harness_sigterm_command = resistant_child_command(
+            harness_sigterm_ready.name, harness_sigterm_marker.name
+        )
+        harness_sigterm_probe_code = "\n".join(
+            [
+                "import agent, sys, time",
+                "from pathlib import Path",
+                "def probe_demo(mode, *, emit, sleep_fn=time.sleep):",
+                "    workspace = Path(sys.argv[1])",
+                "    provider = agent.ScriptedProvider(transient_failures=0)",
+                "    provider.turns = [agent._tool_turn('run a supervisor-cancellable shell child', agent.ToolCall('harness_sigterm_01', 'run_shell', {'command': sys.argv[2]}))]",
+                "    return agent.run_agent(provider, agent.WorkspaceTools(workspace, shell_timeout_seconds=3.0), agent.PermissionGate('dangerously-skip-permissions', interactive=False), agent.ContextManager('cancel the harness while a shell is active', clear_at_chars=10000, compact_at_chars=20000), 'Run a cancellable shell command.', emit=emit, sleep_fn=sleep_fn, max_steps=2)",
+                "agent.run_demo = probe_demo",
+                "raise SystemExit(agent.main(['agent.py', '--demo', '--mode', 'dangerously-skip-permissions']))",
+            ]
+        )
+        harness_sigterm_probe = subprocess.Popen(
+            [sys.executable, "-c", harness_sigterm_probe_code, str(workspace), harness_sigterm_command],
+            cwd=Path(__file__).resolve().parent,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        wait_for_file(harness_sigterm_ready)
+        harness_sigterm_started = time.monotonic()
+        harness_sigterm_probe.send_signal(signal.SIGTERM)
+        try:
+            _, harness_sigterm_stderr = harness_sigterm_probe.communicate(timeout=1.0)
+        except subprocess.TimeoutExpired as error:
+            harness_sigterm_probe.kill()
+            harness_sigterm_probe.communicate()
+            raise AssertionError("harness SIGTERM cleanup was not bounded") from error
+        harness_sigterm_elapsed = time.monotonic() - harness_sigterm_started
+        assert harness_sigterm_probe.returncode in {
+            -signal.SIGTERM,
+            128 + signal.SIGTERM,
+        }, harness_sigterm_stderr
+        assert harness_sigterm_elapsed < 1.0, "harness SIGTERM cleanup was not bounded"
+        time.sleep(1.1)
+        assert not harness_sigterm_marker.exists(), "SIGTERM-resistant child escaped after harness shutdown"
+
         key_file = outside / "anthropic-key.txt"
         key_file.write_text("stage-two-fixture\n", encoding="utf-8")
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "stage-two-fixture"}):
@@ -1305,6 +1382,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--max-steps", type=int, default=12)
     args = parser.parse_args(argv[1:])
 
+    restore_sigterm_handler = install_sigterm_shutdown_handler()
     try:
         if args.self_test:
             self_test()
@@ -1346,6 +1424,8 @@ def main(argv: list[str]) -> int:
     except (ConfigurationError, FatalModelError, TransientModelError, ToolFailure) as error:
         print("error: {}".format(error), file=sys.stderr)
         return 2
+    finally:
+        restore_sigterm_handler()
 
 
 if __name__ == "__main__":

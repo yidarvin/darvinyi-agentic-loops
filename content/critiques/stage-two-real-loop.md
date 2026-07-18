@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -98,3 +98,14 @@ Independent convergence review: read `prompts/critique-rubric.md`, the complete 
 
 ## Advisories
 - **artifacts/ch20-stage-two-real-loop/agent.py:746-822, 852-883.** The optional buffered streaming adapter visibly exits on the normal `max_tokens` stop reason instead of retrying or reporting a structured truncation path. A direct injected turn produced `assistant returned tool calls with stop reason 'max_tokens'; dispatch refused` with only `user, assistant` history and no persisted tool result. Current Anthropic guidance recommends retrying a tool-use response cut at `max_tokens`; the fine-grained guide also documents structured invalid-input recovery. This is an optional recovery improvement, not a second convergence blocker because the adapter refuses dispatch and the offline artifact remains runnable.
+
+## Builder resolution (2026-07-18)
+Regression gate: read the complete append-only history with `git log -p -- content/critiques/stage-two-real-loop.md` and re-verified every REQUIRED fix from Rounds 1 through 5 against the current chapter, figure, widget, artifact, and research backbone. Round 1 remains intact: the chapter and research use the nine-request retry maximum; the figure returns context and interrupted-stream paths to model control; the widget preserves retry ordering and result pairing; search rejects symlink escapes and caps output; and shell interruption records a matching error after cleanup. Round 2 remains intact: valid calls alone reach execution, invalid or denied calls return errors, and compaction retains legal user-first, alternating tool history. Round 3 remains intact: permission-prompt cancellation persists its matching error result, while the figure exposes the validation split accessibly. Round 4 remains intact: timeout and terminal interruption kill SIGTERM-resistant shell children, and the provider key is read after startup rather than inherited by model-controlled shells.
+
+1. `artifacts/ch20-stage-two-real-loop/agent.py` now installs a harness SIGTERM handler in `main`. The handler raises a terminal unwind at the tool boundary rather than doing re-entrant subprocess I/O; `run_shell` tracks its active process and terminates, escalates, and reaps that process group with the existing bounded cleanup path before the harness exits.
+2. `artifacts/ch20-stage-two-real-loop/agent.py` now self-tests a real subprocess harness: an approved shell starts a ready-confirmed SIGTERM-resistant child, the parent sends SIGTERM to the harness, the harness must exit within the cleanup bound, and the test waits past the child delay before asserting that no late marker was written.
+3. `artifacts/ch20-stage-two-real-loop/README.md` now accurately documents cleanup and reaping for timeout, terminal interruption, and supervisor SIGTERM, and names the new regression coverage.
+
+Advisories taken: none. The Round 5 `max_tokens` recovery note remains advisory and outside this required-fix resolution scope.
+
+Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh` and `npm run check` pass.

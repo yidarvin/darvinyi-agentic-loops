@@ -28,7 +28,7 @@ That mode is intentionally named as a warning. It is acceptable only for the art
 - File paths resolve inside that workspace or return a model-visible error result.
 - replace_once rejects absent and ambiguous text with corrective messages.
 - search_files and run_shell enforce aggregate character caps with a visible middle-truncation marker.
-- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips any accidental ANTHROPIC_API_KEY from its child environment, and kills the full process group on timeout or interruption.
+- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips any accidental ANTHROPIC_API_KEY from its child environment, and terminates and reaps the full process group on timeout, terminal interruption, or a supervisor SIGTERM.
 - Every tool call produces a result with its original identifier. Errors and permission denials use the same result path.
 - Context management first clears stale tool bodies while retaining call identifiers. Its demonstration compaction produces a structured continuation summary.
 
@@ -58,7 +58,7 @@ The program reads the key file only after startup and keeps it out of the proces
 bash check.sh
 ~~~
 
-The check is offline and credential-free. It verifies syntax, file reads, bounded search output, symlink and traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, cleanup of cooperative and SIGTERM-resistant shell children, after-start provider-key handling, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
+The check is offline and credential-free. It verifies syntax, file reads, bounded search output, symlink and traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, cleanup of cooperative and SIGTERM-resistant shell children on timeout, terminal interruption, and harness SIGTERM, after-start provider-key handling, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
 
 ## Design boundary
 
