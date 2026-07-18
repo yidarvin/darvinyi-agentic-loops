@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-18)
 
@@ -98,3 +98,13 @@ Regression gate: re-verified every REQUIRED finding from Rounds 1, 2, 3, and 4 a
 3. `README.md`, `src/chapters/stage-one-thin-wrapper.mdx`, and `docs/research/ch19-stage-one-thin-wrapper.md` now teach the post-start hidden prompt and retain the explicit unsandboxed-shell and process-memory boundary.
 
 No advisories were taken. `npm run check` passes with `CHECK OK`.
+
+## Round 5 review (2026-07-18)
+
+Fresh-eyes convergence re-review: read the complete append-only history and `git log -p` history, the current MDX, exact SVG figure, widget, artifact README, source, check script, requirements, build notes, and research backbone. Re-verified every prior REQUIRED fix in the current artifacts: no-tool and tool-bearing truncation fail before dispatch; overlapping exact matches leave files unchanged; direct shell-child, REPL-parent, and launcher-ancestor environment probes cannot recover the prompt-entered key; and the essential figure branches remain visible at 16 SVG units in `--fg` or `--fg-muted`. Ran `bash artifacts/ch19-stage-one-thin-wrapper/check.sh` and `npm run check`, which reached `CHECK OK` with all 19 artifact checks, 42 renderer tests, build, and lint passing. Checked the current Anthropic stop-reason and tool-call documentation, Ball's build, mini-swe-agent, Aider's evaluation, Anthropic's effective-agents guidance, and the Claude Code study. A rendered-browser backend was unavailable, so the exact SVG and widget were source-reviewed alongside the passing renderer suite: the figure has its accessible label and visible guarded branches, and the walkthrough uses bounded real-button state with an `aria-live` phase label.
+
+The chapter is materially truthful and teaching: the prose, figure, widget, and runnable artifact agree on guarded tool dispatch, normal completion, and the supervised security boundary.
+
+## Advisories
+
+- The existing Round 3 source-link note remains non-blocking: the listed `implement-tool-use` URL redirects to Define tools rather than the direct Handle tool calls page, while the substantive claims remain supported by the current linked documentation.
