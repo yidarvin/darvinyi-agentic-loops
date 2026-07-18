@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -135,3 +135,16 @@ Regression gate: read the complete append-only critique history and git log -p -
 3. Added deterministic public-demo coverage for an approved custom MCP server that forks a descendant prepared to replace the next run's memory file. The regression proves the descendant is gone before and after the later demo, the outside sentinel is unchanged, and the later memory file remains contained. It also injects a post-root-open symlink swap into SafeMemory.write and proves the descriptor-relative writer fails closed without changing the outside target.
 
 No advisories were taken. python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test, bash artifacts/ch21-stage-three-production-grade/check.sh, and npm run check pass.
+
+## Round 7 review (2026-07-18)
+
+Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, full Chapter 21 artifact, README, check script, policy, demo server, and research backbone. Ran `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check`, both passing. Re-verified every Round 1 through Round 6 REQUIRED fix in the current artifact: no public sandbox bypass, contained memory roots and host writes, policy before MCP launch, host-owned definition locks, a narrow child environment, static and post-open workspace-symlink containment, a reviewed non-PATH Seatbelt executable, bounded host reads and MCP frames, and process-group cleanup for ordinary descendants. Checked the linked MCP, Anthropic, and Claude Code primary sources; no new material source contradiction was found.
+
+## Required fixes
+
+1. **`src/chapters/_figures/StageThreeProductionGradeFigure.tsx` and `src/chapters/stage-three-production-grade.mdx` --- the signature architecture figure teaches a false serial security topology.** The solid `M248 313 H318` arrow runs from the MCP client into the durable-memory box, and `M542 313 H612` then runs from memory into the subagent box. The only links back to the dispatch core are unlabeled dashed lines. This contradicts the chapter's central claim that MCP, durable memory, and subagents are separate seams around one dispatcher, and the actual harness sequence: startup host-memory I/O, independently authorized MCP launch, then the read-only worker. The figure and prose also say every effectful path crosses policy and kernel containment, but `ProductionHarness.run()` performs host `SafeMemory` writes and reads before the first `_authorize()` call, as the README explicitly documents. Redraw the capabilities as independent dispatcher branches, distinguish call and return flow with a legend or labels, and either exclude the host-owned memory path from the policy/sandbox claim or make that path actually honor the asserted boundary. This is a material figure-truthfulness error in the chapter's only architectural teaching mechanism.
+2. **`artifacts/ch21-stage-three-production-grade/README.md` and `stage_three_agent.py` --- the documented custom local-MCP path is not runnable under its own Seatbelt profile.** The README tells readers to pass `--mcp-command 'python3 /absolute/path/to/server.py'`, but `MacOSSandbox._profile()` grants child reads only to system roots, the artifact directory, and `--workspace`; an actual public-demo probe could not read an external `/Users/...` source file and failed before MCP initialization. Either securely add a canonicalized, explicitly authorized read-only server-source location to the profile, or restrict the documented contract to an allowed location and add a deterministic regression for that supported custom-server path. The current documented extension is a concrete non-runnable artifact behavior.
+
+## Advisories
+
+- A custom server that exits before responding reaches `_stop_process()`'s unconditional `os.killpg()` and, on macOS, produces an uncaught `PermissionError` traceback instead of a controlled harness failure. The child has already exited, so this does not independently meet the convergence bar, but it is worth covering while repairing the custom-server path.
