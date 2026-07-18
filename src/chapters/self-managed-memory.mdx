@@ -1,0 +1,203 @@
+import { SelfManagedMemoryFigure } from "./_figures/SelfManagedMemoryFigure";
+import { SelfManagedMemoryWidget } from "./_widgets/SelfManagedMemoryWidget";
+
+Self-managed memory puts the write side of persistence under the agent's control. The
+agent can inspect its state, decide that a fact matters, propose an edit, and reload that
+edit in a later run. That is a stronger capability than a developer-owned extraction job.
+It is also a new control surface. A bad write becomes future context, so production systems
+need the agent to choose *what to propose* while the runtime chooses *what may persist*.
+
+[The Memory Taxonomy](/memory-taxonomy) named the stores. [Prompt Caching and the
+Economics of Remembering](/prompt-caching-economics) priced hot context, and
+[Retrieval as Memory](/retrieval-as-memory) covered the read path. This chapter closes the
+loop: make persistent writes explicit, bounded, attributable, and repairable.
+
+## Give the agent a write capability
+
+An externally managed memory layer extracts facts after a turn and stores them according to
+a developer policy. The model may benefit from the result without deciding that it should
+exist. Self-managed memory instead exposes a tool or editable store to the agent. During a
+task, it can read a project file, propose a correction, replace a stale fact, or leave an
+observation in an archive for later retrieval.
+
+[MemGPT](https://arxiv.org/abs/2310.08560) made this shape concrete with a virtual-memory
+analogy: a small editable core stays in context, conversation history is searchable recall,
+and a larger archive is brought back only when needed. Core memory is hot and token-priced.
+It is not an unlimited window. Archival memory is durable, but it still needs a useful query
+and a bounded retrieval packet.
+
+Product example: [Letta memory blocks](https://docs.letta.com/guides/core-concepts/memory/memory-blocks)
+are persistent, editable sections of an agent's context. Product example:
+[Anthropic's memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
+uses file operations requested by the model and executed by the application. These are two
+substrates for the same pattern. A file, a block, a relational row, or a graph node can all
+hold memory if the write protocol makes authority and provenance visible.
+
+<Figure id="18.1" caption="Self-managed memory is a bounded write loop. The agent decides which change to propose. A policy gate, not the model alone, decides whether the change replaces a volatile fact, appends dated history, or is quarantined. Idle consolidation keeps the hot block small before the next session reloads it.">
+  <SelfManagedMemoryFigure />
+</Figure>
+
+The split matters because the agent has situated information a fixed extractor lacks. It can
+recognize that a correction to a deployment rule belongs in durable project memory while a
+verbose compiler trace does not. Product example:
+[Mem0's memory architecture](https://arxiv.org/abs/2504.19413) illustrates the contrasting
+developer-managed side, where a controller routes memory operations outside the main agent
+loop. Neither side is universally better. Use developer-managed extraction for predictable,
+measurable personalization. Earn self-management when an agent must curate evolving project
+state over many sessions.
+
+## Promote candidates, never raw instructions
+
+Treat every write as a state transition with a record. A practical candidate has a namespace,
+key, value, memory type, source, trust level, valid-time interval, and an explicit relation to
+the record it replaces. This is more useful than a free-form summary because the runtime can
+enforce rules before an edit becomes durable.
+
+- **Replace** one current value when the world has changed: `framework: Express` becomes
+  `framework: Fastify`.
+- **Append with time** when history explains later decisions: keep the former framework as a
+  dated event instead of presenting it as current truth.
+- **Quarantine or reject** candidate memory that came from a tool result, an unauthenticated
+  user, an invalid path, sensitive data, or an instruction-shaped payload.
+
+The replace-versus-accumulate decision is unresolved. Replace keeps a hot block concise and
+avoids contradictions. Temporal accumulation preserves an audit trail and supports questions
+about what was true last month. Choose per field, then encode the choice in the write policy.
+Do not leave it to an incidental prompt phrase.
+
+<Callout kind="danger">
+Persistent memory is a security boundary. [MINJA](https://arxiv.org/abs/2503.03704) shows that
+query-only interaction can poison an agent's memory bank. Its reported injection success exceeds
+95% in the studied settings, while downstream attack success varies by task and agent. Keep
+query-derived content in a candidate namespace, isolate users and agents, protect trusted
+blocks from direct mutation, cap file sizes, filter sensitive data, and log every promotion.
+</Callout>
+
+The runtime should reject writes before they touch a trusted block. Check a path against its
+per-user root. Check a schema and a size limit. Require provenance. Decide whether a record may
+replace, append, or only enter a review queue. A human approval step is appropriate for
+high-impact memory. Scoped autonomy is not a compromise that weakens the pattern. It gives the
+agent useful discretion without treating its own inference as authorization.
+
+## Watch a memory file survive the gap
+
+A durable note only proves its value when a fresh process reads it. Advance the timeline below.
+The agent first proposes corrections and a project preference. The policy gate promotes trusted
+facts, quarantines an instruction-shaped tool result, then an idle job compacts the hot file.
+The final step starts with no conversational context and reconstructs the release answer from
+the persisted memory.
+
+<Widget name="memory_file_timeline" hint="Advance the lifecycle. Compare the candidate patch, the promotion decision, the idle compaction pass, and the exact file a fresh session reads.">
+  <SelfManagedMemoryWidget />
+</Widget>
+
+## Consolidate away from the answer path
+
+Writes create a log. Reflection and consolidation turn that log into working knowledge.
+[Generative Agents](https://arxiv.org/abs/2304.03442) established a useful template: retain
+timestamped experiences, retrieve them by relevance, recency, and importance, then periodically
+synthesize higher-level observations. A coding agent can apply the same move to recurring build
+failures, decisions, and tool lessons.
+
+Run that maintenance off the user-facing turn when possible. [Sleep-time
+Compute](https://arxiv.org/abs/2504.13171) studies the broader idea of using idle computation to
+transform raw context into information that will make later queries cheaper or more accurate.
+The work is not free. It spends speculative compute and only pays when context is stable enough
+to be reused. Its advantage is that compaction, deduplication, temporal normalization, and
+reflection do not lengthen the answer the user is waiting for.
+
+Keep the maintenance worker narrower than the primary agent. It may summarize episodic records,
+merge duplicates, demote stale detail to archival storage, and propose a new hot block. It should
+not silently rewrite protected policy or promote untrusted content. A lock, revision number, and
+diffable write log make concurrent maintenance inspectable rather than mystical.
+
+## Evaluate writes before celebrating recall
+
+End-to-end question answering hides the cause of a failure. A correct answer can mask a missing
+write, and a bad answer can be blamed on retrieval when the fact never entered storage.
+[HaluMem](https://arxiv.org/abs/2511.03506) evaluates extraction, updating, and downstream
+answering separately. Its central warning is that write-side errors, especially omitted updates,
+propagate forward. [RealMem](https://arxiv.org/abs/2601.06966) makes a related case with
+long-horizon project threads: stateful systems still struggle to keep a coherent line of work.
+
+Make the write path observable. For each fixture, assert the proposed operation, promotion or
+rejection decision, resulting current value, archived predecessor, provenance, and later recall.
+Then run the read-side regression suite from the prior chapter. A memory system that recalls a
+poisoned or stale record perfectly has not passed.
+
+## Run a persistent memory agent
+
+The artifact uses no model API. Its deterministic policy stands in for an agent calling memory
+tools so the write protocol is repeatable: it proposes a framework correction, promotes trusted
+project facts, quarantines an instruction-shaped tool result, compacts a `project.md` hot block,
+and starts a second Node process that reads the resulting file. Replace the deterministic
+proposal policy with a tool-calling model only after keeping the validation and audit boundary.
+
+<RunnableArtifact
+  name="persistent_memory_write_loop"
+  path="artifacts/ch18-self-managed-memory/"
+  runtime="node 18+"
+  run={[
+    "cd artifacts/ch18-self-managed-memory",
+    "node self_managed_memory.mjs --reset --session 1",
+    "node self_managed_memory.mjs --session 2",
+    "bash check.sh",
+  ]}>
+A self-contained file-backed memory agent. Its two commands run in separate processes against
+the same state file, so the second session proves recall rather than borrowing a JavaScript
+variable from the first. The check asserts replacement, quarantine, compaction, and persisted
+recall. It needs no network, dependency install, or API key.
+</RunnableArtifact>
+
+## Deploy the narrow version first
+
+Start with a few typed facts whose correctness matters on a later run. Give each fact a clear
+owner, retention policy, and replacement rule. Store raw events separately from the compact hot
+block. A JSON file or a per-project Markdown file is sufficient until concurrent writers,
+cross-project search, or retention rules justify a database.
+
+Next, add a candidate-to-trusted gate and a small operation-level evaluation set. Seed it with a
+correction, duplicate, stale fact, missing update, sensitive string, path traversal attempt, and
+instruction-shaped tool result. Measure update omission and bad promotions alongside recall,
+latency, token cost, and user-visible task success.
+
+Only then add an idle consolidator. It should consume an append-only log, produce a reviewable
+diff, and preserve temporal history before it changes the hot summary. That sequence keeps
+self-management useful as the memory surface grows instead of turning every completed turn into
+an uninspected permanent instruction.
+
+## Exercises
+
+<ExerciseCard n="01" title="Write a promotion contract">
+Choose five facts for a coding agent's `project.md`: a current framework, a past migration,
+a user preference, a compiler trace, and a third-party instruction. Classify each as replace,
+append-dated, archive-only, or reject. Specify the provenance and validation rule that permit
+the first three to persist.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Make a contradiction temporal">
+Extend the artifact so a release policy changes twice in one month. Preserve enough history to
+answer both "what is the rule now?" and "why did the earlier rule stop applying?" without
+leaking the older rule into the current hot block.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Move maintenance out of band">
+Design an idle consolidator for twenty sessions of a real project. Declare its trigger, lock,
+input log, allowed mutations, rollback rule, and p95 user-turn latency budget before writing it.
+Compare it with hot-path writing on update omission and retrieved-token cost.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Test a poisoned candidate">
+Add a candidate record whose text tries to change the agent's policy. Write an operation-level
+test that proves the record remains quarantined, cannot replace a trusted fact, and cannot enter
+the prompt packet on the next session.
+</ExerciseCard>
+
+## Sources
+
+- [Packer et al., "MemGPT: Towards LLMs as Operating Systems"](https://arxiv.org/abs/2310.08560), for editable core memory, recall, and archival tiers.
+- [Letta, "Memory blocks"](https://docs.letta.com/guides/core-concepts/memory/memory-blocks) and [Anthropic, "Memory tool"](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool), product examples of editable in-context blocks and application-controlled memory files.
+- [Park et al., "Generative Agents: Interactive Simulacra of Human Behavior"](https://arxiv.org/abs/2304.03442) and [Lin et al., "Sleep-time Compute: Beyond Inference Scaling at Test-time"](https://arxiv.org/abs/2504.13171), for reflection, consolidation, and off-turn computation.
+- [Chen et al., "HaluMem: A Benchmark for Memory Hallucination in LLM Agents"](https://arxiv.org/abs/2511.03506) and [RealMem: Evaluating Memory for Realistic Long-term Tasks](https://arxiv.org/abs/2601.06966), for direct write-side and long-horizon memory evaluation.
+- [Dong et al., "MINJA: A Practical Memory Injection Attack against LLM Agents"](https://arxiv.org/abs/2503.03704), for query-only memory poisoning and the need for candidate isolation.
+- [Chhikara et al., "Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory"](https://arxiv.org/abs/2504.19413), for the externally managed contrast.
