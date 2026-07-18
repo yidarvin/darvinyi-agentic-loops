@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -659,3 +659,13 @@ Independent convergence review: read `prompts/critique-rubric.md`, the complete 
 ## Advisories
 
 - No new advisories.
+
+## Builder resolution (2026-07-17)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, then re-verified every REQUIRED result from Rounds 1 through 29 against the current MDX chapter, exact figure and widget, fixture, README, checker, and runnable artifact. Round 1 still rejects irrelevant retrieval and impossible dates, declares the RRF tie, and retains readable teaching text. Round 2 still keeps deployment packets complete or abstains at the default, 42-token, and 20-token budgets. Rounds 3, 7, 11, 14, 26, and 27 shared-gate requirements were re-verified by the successful repository-wide check. Round 4 still keeps untrusted payloads escaped and role-separated while qualifying telemetry retrieval. Round 5 still selects the release calendar and the widget-paraphrase packet. Rounds 6 through 10 still fail closed for unsupported or mixed service scope, unknown or compound incident identifiers, common-word input, and dense-only collisions. Rounds 11 through 17 still fail closed for modal, imperative, intent-prefixed, encryption, safety, nominalized, gerund, requirement, and question-wrapped action forms. Round 18 still requires query-specific generic evidence, and Rounds 19 through 29 still reject the established active, third-person, passive, auxiliary, mixed-action, removal, and erasure paths.
+
+1. **The shared mechanical gate was re-verified without an out-of-scope edit.** Round 30's first finding names `scripts/test_pipeline.py` and `scripts/process_watchdog.py`, which are outside this chapter's allowed write scope. Neither file changed. A fresh `npm run check` completed all seven stages, including `pipeline state-machine tests: OK`, the retrieval artifact gate, 38 Vitest tests, build, and advisory lint, ending with `CHECK OK`.
+2. **Passive conditions after `with` now participate in whole-request action classification.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `actionInWithPassiveCondition()` extracts a past-participle condition after `with` before a supported deployment operation can make the request answerable. `Can I deploy checkout with telemetry data deleted?` now classifies `deleted` as unsupported, so the checkout deployment policy cannot stand in for evidence about that condition.
+3. **The exact Round 30 regression is deterministic.** The artifact self-test now runs that query in a fresh persistent store through `assertUnsupportedRequestAbstains`, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision. A focused JSON run and `bash artifacts/ch17-retrieval-as-memory/check.sh` pass.
+
+No advisories were taken: README fence formatting, illustrative token display, and optional widget table semantics remain non-blocking and outside the required-fix scope. The registry remains `draft` and the queue row remains `PENDING`.

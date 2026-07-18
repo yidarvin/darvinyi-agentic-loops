@@ -480,6 +480,7 @@ function actionOperations(tokens) {
   add(actionInAuxiliaryRequirementQuestion(tokens));
   add(actionInSafetyQuestion(tokens));
   add(actionInGenericInterrogativeQuestion(tokens));
+  add(actionInWithPassiveCondition(tokens));
   for (const operation of actionTermsAfterClauseConnector(tokens)) add(operation);
 
   return [...new Set(operations)];
@@ -568,6 +569,14 @@ function actionInGenericInterrogativeQuestion(tokens) {
   if (genericSubjectIndex !== -1) return predicateAfterGenericSubject(tokens, genericSubjectIndex);
 
   return actionInWhatSubjectPredicateQuestion(tokens);
+}
+
+function actionInWithPassiveCondition(tokens) {
+  const withIndex = tokens.lastIndexOf("with");
+  if (withIndex === -1) return null;
+  return tokens.find(
+    (term, index) => index > withIndex && term.length > 3 && term.endsWith("ed"),
+  ) || null;
 }
 
 function actionInPassiveGenericQuestion(tokens) {
@@ -1332,6 +1341,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       mixedSupportedAndErasureAction,
       "mixed supported and erasure action request",
+    );
+
+    const deploymentWithDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-with-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Can I deploy checkout with telemetry data deleted?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentWithDeletedTelemetry,
+      "deployment with deleted telemetry condition",
     );
 
     const thirdPersonPurgingLookup = await runAgent({
