@@ -451,6 +451,11 @@ function requestedServices(tokens) {
     addServicesAfter(tokens, releaseIndex + 1, services);
   }
 
+  if (!services.size) {
+    const forIndex = tokens.lastIndexOf("for");
+    if (forIndex !== -1) addServicesAfter(tokens, forIndex + 1, services);
+  }
+
   if (!services.size && tokens.includes("checkout")) services.add("checkout");
   return [...services];
 }
@@ -1590,6 +1595,18 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertGenericQueryAbstains(unsupportedTelemetryEncryption, "telemetry encryption algorithm query");
+
+    const unsupportedBillingTelemetry = await runAgent({
+      storePath: resolve(directory, "unsupported-billing-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "What telemetry sampling is used for billing?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedServiceAbstains(unsupportedBillingTelemetry, "billing-scoped telemetry query");
 
     let invalidDateRejected = false;
     try {
