@@ -7,9 +7,9 @@ Stage Two makes an agent durable inside one process. Stage Three makes that loop
 
 A robust loop can retry, stream, validate tool inputs, and compact context, yet still be closed, single-agent, amnesiac, and unconfined. Those are separate failure classes. Adding an MCP client lets the agent consume external capability without hand-writing every integration. Durable project context prevents every session from rediscovering the same conventions. A subagent gives a noisy inspection task its own context window. A sandbox limits the blast radius when any tool, model output, package script, or retrieved document is wrong.
 
-Do not turn this into a feature checklist. Each capability belongs at a precise seam in the existing loop. Startup loads project context and selected memory. Tool discovery merges native and MCP-backed tools into one exposed registry. Dispatch maps an exposed tool name back to its implementation. A subagent call is the same loop with a fresh conversation and a smaller tool set. Every effectful action crosses policy and then the operating-system boundary.
+Do not turn this into a feature checklist. Each capability belongs at a precise seam in the existing loop. Startup loads project context and selected memory. Tool discovery merges native and MCP-backed tools into one exposed registry. Dispatch maps an exposed tool name back to its implementation. A subagent call is the same loop with a fresh conversation and a smaller tool set. Each launched MCP or shell process crosses policy before the operating-system boundary. Host-owned startup memory I/O needs its own descriptor-contained path.
 
-<Figure id="21.1" caption="The Stage Two loop stays central. Stage Three adds bounded capability around its dispatcher, while every effectful path crosses both policy and kernel-enforced containment.">
+<Figure id="21.1" caption="The Stage Two loop stays central. MCP, memory, and subagent seams connect independently around its dispatcher. Policy and kernel containment apply to launched MCP and shell processes, while host-owned memory I/O has a separate descriptor-contained path.">
   <StageThreeProductionGradeFigure />
 </Figure>
 

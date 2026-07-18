@@ -1327,6 +1327,97 @@ for line in sys.stdin:
         }:
             raise HarnessError("public demo child received credential-shaped environment variables")
 
+        def assert_public_demo_runs_workspace_custom_server(sandbox_binary: Path, label: str) -> None:
+            """Exercise the documented workspace-relative custom-server contract."""
+
+            custom_workspace = root / f"{label}-custom-server-workspace"
+            custom_workspace.mkdir()
+            (custom_workspace / "PROJECT.md").write_text(
+                "Custom server source stays inside the selected workspace.\n", encoding="utf-8"
+            )
+            (custom_workspace / "TODO.md").write_text(
+                "Initialize and invoke the approved custom server.\n", encoding="utf-8"
+            )
+            custom_server = custom_workspace / "custom_server.py"
+            custom_events = custom_workspace / "custom-server-events.txt"
+            custom_server.write_text(
+                """from __future__ import annotations
+import json
+import os
+import sys
+from pathlib import Path
+
+workspace = Path(os.environ[\"STAGE_THREE_WORKSPACE\"])
+events = workspace / \"custom-server-events.txt\"
+tool = {
+    \"name\": \"inspect_workspace\",
+    \"description\": \"Return a bounded custom-server observation.\",
+    \"inputSchema\": {\"type\": \"object\", \"properties\": {}, \"additionalProperties\": False},
+}
+
+def record(event):
+    with events.open(\"a\", encoding=\"utf-8\") as handle:
+        handle.write(event + \"\\n\")
+
+def respond(request_id, result):
+    print(json.dumps({\"jsonrpc\": \"2.0\", \"id\": request_id, \"result\": result}), flush=True)
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    request_id = request.get(\"id\")
+    if request_id is None:
+        continue
+    if request.get(\"method\") == \"initialize\":
+        record(\"initialize\")
+        respond(request_id, {
+            \"protocolVersion\": \"2025-06-18\",
+            \"capabilities\": {\"tools\": {}},
+            \"serverInfo\": {\"name\": \"workspace-custom\", \"version\": \"1.0.0\"},
+        })
+    elif request.get(\"method\") == \"tools/list\":
+        record(\"tools/list\")
+        respond(request_id, {\"tools\": [tool]})
+    elif request.get(\"method\") == \"tools/call\":
+        record(\"tools/call\")
+        respond(request_id, {\"content\": [{\"type\": \"text\", \"text\": \"custom server ran\"}], \"isError\": False})
+""",
+                encoding="utf-8",
+            )
+            profile = MacOSSandbox(custom_workspace, binary=str(sandbox_binary))._profile()
+            workspace_rule = f'(subpath "{profile_path(custom_workspace.resolve())}")'
+            if workspace_rule not in profile:
+                raise HarnessError("Seatbelt profile omitted the supported custom-server source root")
+
+            with patch.object(platform, "system", return_value="Darwin"), patch.object(
+                sys.modules[__name__], "TRUSTED_SEATBELT_EXECUTABLE", sandbox_binary
+            ):
+                custom_exit = main(
+                    [
+                        "demo",
+                        "--workspace",
+                        str(custom_workspace),
+                        "--server-name",
+                        "workspace-custom",
+                        "--mcp-command",
+                        "python3 ./custom_server.py",
+                        "--mcp-tool",
+                        "inspect_workspace",
+                        "--approve-mcp-server",
+                        "--approve-mcp-tool",
+                        "--approve-verification",
+                        "--stream",
+                        "quiet",
+                    ]
+                )
+            if custom_exit != 0:
+                raise HarnessError("workspace-relative custom MCP server did not complete the public demo")
+            if custom_events.read_text(encoding="utf-8") != "initialize\ntools/list\ntools/call\n":
+                raise HarnessError("workspace-relative custom MCP server did not complete its MCP lifecycle")
+
+        assert_public_demo_runs_workspace_custom_server(fake_sandbox, "fake-seatbelt")
+
         def assert_public_demo_reaps_bad_mcp_frame(
             case: str, payload: bytes, expected_error: str
         ) -> None:
@@ -1858,6 +1949,7 @@ for line in sys.stdin:
             raise HarnessError("malicious MCP regression did not attempt to replace the old workspace lock")
 
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
+            assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():
@@ -1867,7 +1959,10 @@ for line in sys.stdin:
             if blocked.returncode == 0 or outside.exists():
                 raise HarnessError("sandbox allowed a write outside the workspace")
 
-    print("self-test: containment, bounded host reads, MCP launch policy, lock pinning, subagent boundary, and sandbox behavior passed")
+    print(
+        "self-test: containment, bounded host reads, MCP launch policy, custom-server contract, "
+        "lock pinning, subagent boundary, and sandbox behavior passed"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1880,7 +1975,11 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--task", default="review the dependency update", help="task passed to the root and worker loops")
     demo.add_argument("--policy", type=Path, default=Path(__file__).with_name("policy.json"))
     demo.add_argument("--server-name", default="demo", help="namespace prefix for the stdio MCP server")
-    demo.add_argument("--mcp-command", default="", help="quoted command for a compatible local stdio MCP server")
+    demo.add_argument(
+        "--mcp-command",
+        default="",
+        help="quoted command for a compatible local stdio server script inside --workspace",
+    )
     demo.add_argument("--mcp-tool", default="read_project_brief", help="zero-argument MCP tool to invoke")
     demo.add_argument("--approve-mcp-server", action="store_true", help="approve one ask-tier MCP server launch")
     demo.add_argument("--approve-mcp-tool", action="store_true", help="approve one ask-tier MCP tool invocation")

@@ -87,19 +87,23 @@ it also records and validates a full demo trace in a temporary workspace.
 ## Connect another local stdio MCP server
 
 The probe accepts a quoted command for a compatible local stdio server and invokes a
-named zero-argument tool. The exact server command appears in a distinct launch-policy
-decision before the server starts. The server is still launched through the same
-fail-closed sandbox, and its tool definitions still need to match the host-owned lock
-file. A non-demo server receives no blanket allow rule, so give it a reviewed policy
-entry or use the task-scoped launch approval while testing. It also needs a
-task-scoped tool approval unless a policy rule matches that exact reviewed server and
-tool.
+named zero-argument tool. The supported custom-source contract is deliberately
+narrow: put the Python server script inside the selected `--workspace` and invoke it
+by a workspace-relative path. That source is inside the Seatbelt-readable workspace;
+an arbitrary external absolute path is not a supported extension and fails closed.
+The exact server command appears in a distinct launch-policy decision before the
+server starts. The server is still launched through the same fail-closed sandbox, and
+its tool definitions still need to match the host-owned lock file. A non-demo server
+receives no blanket allow rule, so give it a reviewed policy entry or use the
+task-scoped launch approval while testing. It also needs a task-scoped tool approval
+unless a policy rule matches that exact reviewed server and tool.
 
 ```bash
+cp /absolute/path/to/server.py ./demo_workspace/custom_server.py
 python3 stage_three_agent.py demo \
   --workspace ./demo_workspace \
   --server-name filesystem \
-  --mcp-command 'python3 /absolute/path/to/server.py' \
+  --mcp-command 'python3 ./custom_server.py' \
   --mcp-tool read_project_brief \
   --approve-mcp-server \
   --approve-mcp-tool \

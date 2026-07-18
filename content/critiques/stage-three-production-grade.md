@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -148,3 +148,12 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - A custom server that exits before responding reaches `_stop_process()`'s unconditional `os.killpg()` and, on macOS, produces an uncaught `PermissionError` traceback instead of a controlled harness failure. The child has already exited, so this does not independently meet the convergence bar, but it is worth covering while repairing the custom-server path.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 6 against the current artifact and its deterministic regressions: the public parser has no sandbox bypass; memory roots and host writes stay contained; MCP launch authorization precedes `popen`; definition locks stay host-owned outside the writable workspace; the child environment remains a narrow allowlist; static and post-open workspace symlinks stay contained; the reviewed Seatbelt executable is not resolved through `PATH`; FIFO and oversized host reads fail safely; malformed, partial, and oversized MCP frames close and reap their child; and MCP process-group cleanup prevents the prior descendant race.
+
+1. Redrew `src/chapters/_figures/StageThreeProductionGradeFigure.tsx` as three independent dispatch-core branches for MCP, durable memory, and the subagent. The new legend distinguishes solid call or lifecycle actions from dashed returns or startup input. Only launched MCP and verification processes now flow through permission policy and the kernel sandbox. The separate host-owned memory and read-only worker paths name their descriptor-contained boundaries. Updated the matching prose and figure caption in `src/chapters/stage-three-production-grade.mdx` to scope policy and OS containment to launched MCP or shell processes rather than host startup memory I/O.
+2. Restricted the documented custom local-MCP contract in `artifacts/ch21-stage-three-production-grade/README.md` to a Python server script inside `--workspace`, invoked by a workspace-relative path. Updated the CLI help in `stage_three_agent.py` to match. The new deterministic self-test writes `custom_server.py` into a disposable workspace, invokes the public parser with `python3 ./custom_server.py`, verifies the canonical workspace read rule in the Seatbelt profile, and requires `initialize`, `tools/list`, and `tools/call` to complete. It exercises both the test launcher seam and the real local Seatbelt path when available.
+
+No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
