@@ -57,8 +57,10 @@ process starts. There is no global bypass-permissions flag.
 
 ## What the harness actually exercises
 
-1. `stage_three_agent.py` loads a bounded project-memory file through
-   `Path.resolve()` plus `relative_to()` containment checks.
+1. `stage_three_agent.py` establishes the project-memory root with
+   `Path.resolve()` plus `relative_to()` containment checks, then reads
+   host-controlled files through descriptor-relative no-follow, regular-file
+   validation with a byte cap before decoding.
 2. It displays the exact MCP server command and evaluates a distinct launch policy
    before `popen`. The bundled read-only server is reviewed; a custom command needs a
    matching policy rule or one task-scoped approval. The automatic demo-tool allowance

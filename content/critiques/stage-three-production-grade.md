@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -82,3 +82,12 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - Round 1's suggestion to add a direct source link for the qualified prompt-approval statistic remains a settled advisory and is not re-litigated.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 3 against the current artifact, README, exact figure and widget, and deterministic regressions: the public parser still exposes no sandbox bypass; `.agent-memory` roots that escape the workspace are rejected; MCP launch authorization still occurs before `client.start()` and `popen`; definition locks remain in host-owned state outside the server-writable workspace; the narrow child environment allowlist still strips the prior credential forms; and static plus post-open workspace-symlink protections still read only the original contained descriptor.
+
+1. Bound public Seatbelt launches to the reviewed `/usr/bin/sandbox-exec` in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py`, removing inherited `PATH` lookup. `check.sh` and the optional real-Seatbelt self-test use that same exact path. The new deterministic public-demo regression places a fake `sandbox-exec` first in `PATH`, makes the reviewed path unavailable, and proves that neither the shadow launcher nor its raw child can create a marker.
+2. Added a shared descriptor-relative reader in `stage_three_agent.py` for host-side workspace and memory files. It opens roots and components with no-follow, nonblocking descriptors; verifies a regular file before any read; and caps bytes before UTF-8 decoding. Unsafe or oversized workspace inputs are omitted from the subagent summary, while unsafe or oversized memory files raise `MemoryEscape`. New FIFO and sparse-64-MiB regressions prove both readers return without blocking and request no more than their configured byte caps. Updated the artifact README to name this boundary precisely.
+
+No advisory was taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.

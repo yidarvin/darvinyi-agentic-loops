@@ -16,7 +16,6 @@ import os
 import platform
 import select
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
@@ -31,6 +30,8 @@ PROTOCOL_VERSION = "2025-06-18"
 MAX_DEPTH = 1
 SAFE_CHILD_ENV_NAMES = ("LANG", "LC_ALL", "LC_CTYPE", "TZ")
 CHILD_ENV_INJECTIONS = {"STAGE_THREE_WORKSPACE"}
+TRUSTED_SEATBELT_EXECUTABLE = Path("/usr/bin/sandbox-exec")
+MAX_MEMORY_READ_BYTES = 64 * 1024
 
 
 class HarnessError(RuntimeError):
@@ -86,6 +87,90 @@ def write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
+def read_bounded_regular_file(root: Path, relative_path: str, byte_limit: int) -> Optional[str]:
+    """Read a bounded regular file below a directory descriptor without following links.
+
+    Both the workspace and memory roots can be written by an approved sandboxed
+    server. Open every path component relative to an already-open directory,
+    reject links and special files before reading, and cap bytes before decoding.
+    """
+
+    relative = Path(relative_path)
+    if (
+        byte_limit < 1
+        or relative.is_absolute()
+        or not relative.parts
+        or any(part in ("", ".", "..") for part in relative.parts)
+    ):
+        raise HarnessError(f"unsafe bounded-file path: {relative_path}")
+
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    non_blocking = getattr(os, "O_NONBLOCK", 0)
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    if not no_follow or not non_blocking or not directory_flag:
+        raise HarnessError("descriptor-relative no-follow nonblocking reads are required")
+
+    def safely_absent(error: OSError) -> bool:
+        return error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+    directory_flags = os.O_RDONLY | directory_flag | no_follow | non_blocking
+    try:
+        directory_descriptor = os.open(root, directory_flags)
+    except OSError as error:
+        raise HarnessError(f"unable to open bounded-file root: {root}") from error
+    try:
+        if not stat.S_ISDIR(os.fstat(directory_descriptor).st_mode):
+            raise HarnessError(f"bounded-file root is not a directory: {root}")
+
+        for part in relative.parts[:-1]:
+            try:
+                next_descriptor = os.open(part, directory_flags, dir_fd=directory_descriptor)
+            except OSError as error:
+                if safely_absent(error):
+                    return None
+                raise HarnessError(f"unable to open contained directory: {part}") from error
+            if not stat.S_ISDIR(os.fstat(next_descriptor).st_mode):
+                os.close(next_descriptor)
+                return None
+            os.close(directory_descriptor)
+            directory_descriptor = next_descriptor
+
+        file_flags = os.O_RDONLY | no_follow | non_blocking
+        try:
+            file_descriptor = os.open(relative.parts[-1], file_flags, dir_fd=directory_descriptor)
+        except OSError as error:
+            if safely_absent(error):
+                return None
+            raise HarnessError(f"unable to open contained file: {relative_path}") from error
+        try:
+            if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
+                return None
+
+            chunks: List[bytes] = []
+            total = 0
+            while total <= byte_limit:
+                try:
+                    chunk = os.read(file_descriptor, byte_limit + 1 - total)
+                except OSError as error:
+                    if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                        return None
+                    raise HarnessError(f"unable to read contained file: {relative_path}") from error
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > byte_limit:
+                    return None
+                chunks.append(chunk)
+            try:
+                return b"".join(chunks).decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+        finally:
+            os.close(file_descriptor)
+    finally:
+        os.close(directory_descriptor)
+
+
 class SafeMemory:
     """File memory with resolved-path containment, not string-prefix checks."""
 
@@ -113,7 +198,14 @@ class SafeMemory:
 
     def read(self, raw_path: str) -> str:
         path = self.path_for(raw_path)
-        return path.read_text(encoding="utf-8")
+        try:
+            relative_path = path.relative_to(self.root).as_posix()
+        except ValueError as error:
+            raise MemoryEscape(f"memory path escapes root: {raw_path}") from error
+        content = read_bounded_regular_file(self.root, relative_path, MAX_MEMORY_READ_BYTES)
+        if content is None:
+            raise MemoryEscape(f"memory file is not a bounded regular file: {raw_path}")
+        return content
 
     def write(self, raw_path: str, content: str) -> Path:
         path = self.path_for(raw_path)
@@ -203,7 +295,7 @@ class MacOSSandbox:
     def __init__(self, workspace: Path, binary: Optional[str] = None) -> None:
         self.workspace = workspace.resolve()
         self.mode = "seatbelt"
-        self.binary = binary or shutil.which("sandbox-exec")
+        self.binary = Path(binary) if binary else TRUSTED_SEATBELT_EXECUTABLE
 
     def _profile(self) -> str:
         code_root = Path(__file__).resolve().parent
@@ -229,11 +321,11 @@ class MacOSSandbox:
 """
 
     def _command(self, argv: Sequence[str]) -> List[str]:
-        if platform.system() != "Darwin" or not self.binary or not Path(self.binary).is_file():
+        if platform.system() != "Darwin" or not self.binary.is_file():
             raise SandboxUnavailable(
                 "macOS Seatbelt is unavailable. Refusing to launch an unsandboxed child process."
             )
-        return [self.binary, "-p", self._profile(), *argv]
+        return [str(self.binary), "-p", self._profile(), *argv]
 
     def run(self, argv: Sequence[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -416,45 +508,15 @@ class StdioMcpClient:
 def read_contained_workspace_file(workspace: Path, name: str, limit: int = 280) -> Optional[str]:
     """Read one fixed workspace file through a no-follow descriptor.
 
-    The caller never retains a checked pathname. The directory descriptor pins the
-    workspace, ``O_NOFOLLOW`` rejects a replacement symlink, and the same opened
-    regular-file descriptor supplies the bytes returned to the subagent.
+    The caller never retains a checked pathname. The shared reader pins the
+    workspace with a directory descriptor, rejects replacement links and special
+    files before reading, and bounds bytes before decoding.
     """
 
     if Path(name).name != name:
         raise HarnessError(f"workspace reader accepts only a direct filename: {name}")
-    no_follow = getattr(os, "O_NOFOLLOW", 0)
-    if not no_follow:
-        raise HarnessError("O_NOFOLLOW is required for host-side workspace reads")
-
-    root = workspace.resolve()
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    try:
-        root_descriptor = os.open(root, directory_flags)
-    except OSError as error:
-        raise HarnessError(f"unable to open workspace read boundary: {root}") from error
-    try:
-        if not stat.S_ISDIR(os.fstat(root_descriptor).st_mode):
-            raise HarnessError(f"workspace read boundary is not a directory: {root}")
-        try:
-            file_descriptor = os.open(name, os.O_RDONLY | no_follow, dir_fd=root_descriptor)
-        except OSError as error:
-            if error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
-                return None
-            raise HarnessError(f"unable to open contained workspace file: {name}") from error
-        try:
-            if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
-                return None
-            reader = os.fdopen(file_descriptor, "r", encoding="utf-8")
-            file_descriptor = -1
-            with reader:
-                content = reader.read().strip().replace("\n", " ")
-            return content[:limit]
-        finally:
-            if file_descriptor >= 0:
-                os.close(file_descriptor)
-    finally:
-        os.close(root_descriptor)
+    content = read_bounded_regular_file(workspace.resolve(), name, limit)
+    return content.strip().replace("\n", " ") if content is not None else None
 
 
 def run_subagent_loop(task: str, workspace: Path, depth: int) -> str:
@@ -759,6 +821,91 @@ def run_self_test() -> None:
         if "TODO.md" not in racing_summary:
             raise HarnessError("subagent race dropped the contained TODO")
 
+        fifo_workspace = root / "fifo-workspace"
+        fifo_workspace.mkdir()
+        os.mkfifo(fifo_workspace / "PROJECT.md")
+        (fifo_workspace / "TODO.md").write_text("Keep reading contained regular files only.\n", encoding="utf-8")
+        fifo_summaries: List[str] = []
+        fifo_errors: List[Exception] = []
+
+        def read_fifo_workspace() -> None:
+            try:
+                fifo_summaries.append(run_subagent_loop("inspect a FIFO workspace", fifo_workspace, depth=0))
+            except Exception as error:
+                fifo_errors.append(error)
+
+        fifo_reader = threading.Thread(target=read_fifo_workspace, daemon=True)
+        fifo_reader.start()
+        fifo_reader.join(timeout=1)
+        if fifo_reader.is_alive():
+            raise HarnessError("FIFO workspace input blocked the host-side subagent")
+        if fifo_errors:
+            raise HarnessError(f"FIFO workspace input was not safely rejected: {fifo_errors[0]}")
+        if not fifo_summaries or "PROJECT.md" in fifo_summaries[0] or "TODO.md" not in fifo_summaries[0]:
+            raise HarnessError("FIFO workspace input reached the subagent summary")
+
+        oversized_workspace = root / "oversized-workspace"
+        oversized_workspace.mkdir()
+        oversized_project = oversized_workspace / "PROJECT.md"
+        with oversized_project.open("wb") as oversized_file:
+            oversized_file.truncate(64 * 1024 * 1024)
+        (oversized_workspace / "TODO.md").write_text("Retain this short contained note.\n", encoding="utf-8")
+        bounded_workspace_reads: List[int] = []
+        original_read = os.read
+
+        def record_workspace_read(descriptor: int, size: int) -> bytes:
+            bounded_workspace_reads.append(size)
+            return original_read(descriptor, size)
+
+        with patch.object(os, "read", side_effect=record_workspace_read):
+            oversized_summary = run_subagent_loop("inspect an oversized workspace", oversized_workspace, depth=0)
+        if "PROJECT.md" in oversized_summary or "TODO.md" not in oversized_summary:
+            raise HarnessError("oversized workspace input reached the subagent summary")
+        if not bounded_workspace_reads or max(bounded_workspace_reads) > 141:
+            raise HarnessError("workspace reader did not enforce its byte cap before decoding")
+
+        fifo_memory_workspace = root / "fifo-memory-workspace"
+        fifo_memory_workspace.mkdir()
+        fifo_memory = SafeMemory(fifo_memory_workspace)
+        os.mkfifo(fifo_memory.root / "project.md")
+        fifo_memory_errors: List[Exception] = []
+
+        def read_fifo_memory() -> None:
+            try:
+                fifo_memory.read("project.md")
+            except Exception as error:
+                fifo_memory_errors.append(error)
+
+        fifo_memory_reader = threading.Thread(target=read_fifo_memory, daemon=True)
+        fifo_memory_reader.start()
+        fifo_memory_reader.join(timeout=1)
+        if fifo_memory_reader.is_alive():
+            raise HarnessError("FIFO memory input blocked the host-side reader")
+        if len(fifo_memory_errors) != 1 or not isinstance(fifo_memory_errors[0], MemoryEscape):
+            raise HarnessError("FIFO memory input was not rejected as an unsafe memory file")
+
+        oversized_memory_workspace = root / "oversized-memory-workspace"
+        oversized_memory_workspace.mkdir()
+        oversized_memory = SafeMemory(oversized_memory_workspace)
+        oversized_memory_file = oversized_memory.root / "project.md"
+        with oversized_memory_file.open("wb") as oversized_file:
+            oversized_file.truncate(64 * 1024 * 1024)
+        bounded_memory_reads: List[int] = []
+
+        def record_memory_read(descriptor: int, size: int) -> bytes:
+            bounded_memory_reads.append(size)
+            return original_read(descriptor, size)
+
+        try:
+            with patch.object(os, "read", side_effect=record_memory_read):
+                oversized_memory.read("project.md")
+        except MemoryEscape:
+            pass
+        else:
+            raise HarnessError("oversized memory file was accepted")
+        if not bounded_memory_reads or max(bounded_memory_reads) > MAX_MEMORY_READ_BYTES + 1:
+            raise HarnessError("memory reader did not enforce its byte cap before decoding")
+
         unavailable = MacOSSandbox(workspace, binary="/not/a/sandbox-exec")
         try:
             unavailable.run(["/bin/sh", "-c", "true"])
@@ -839,7 +986,7 @@ for line in sys.stdin:
         )
         try:
             with patch.object(platform, "system", return_value="Darwin"), patch.object(
-                shutil, "which", return_value=str(fake_sandbox)
+                sys.modules[__name__], "TRUSTED_SEATBELT_EXECUTABLE", fake_sandbox
             ):
                 environment_probe_exit = main(
                     [
@@ -897,37 +1044,57 @@ for line in sys.stdin:
         if legacy_bypass.returncode == 0:
             raise HarnessError("public demo accepted the removed sandbox bypass")
 
-        public_demo_workspace = root / "public-demo-workspace"
+        public_demo_workspace = root / "path-shadow-public-demo-workspace"
         public_demo_workspace.mkdir()
         (public_demo_workspace / "PROJECT.md").write_text("No raw child should start.\n", encoding="utf-8")
-        marker = public_demo_workspace / "unsandboxed-child-marker.txt"
+        shadow_directory = root / "path-shadow-bin"
+        shadow_directory.mkdir()
+        shadow_marker = root / "path-shadow-launcher-marker.txt"
+        raw_child_marker = root / "raw-child-marker.txt"
+        shadow_launcher = shadow_directory / "sandbox-exec"
+        shadow_launcher.write_text(
+            "#!/bin/sh\n"
+            f"printf shadowed > {shlex.quote(str(shadow_marker))}\n"
+            "if [ \"$1\" = \"-p\" ]; then shift 2; fi\n"
+            "exec \"$@\"\n",
+            encoding="utf-8",
+        )
+        shadow_launcher.chmod(0o700)
         marker_command = [
             sys.executable,
             "-c",
-            f"from pathlib import Path; Path({str(marker)!r}).write_text('started', encoding='utf-8')",
+            f"from pathlib import Path; Path({str(raw_child_marker)!r}).write_text('started', encoding='utf-8')",
         ]
-        no_sandbox_environment = dict(os.environ)
-        no_sandbox_environment["PATH"] = str(root / "no-sandbox-on-path")
-        public_demo = subprocess.run(
-            [
-                sys.executable,
-                str(script_path),
-                "demo",
-                "--workspace",
-                str(public_demo_workspace),
-                "--mcp-command",
-                shlex.join(marker_command),
-                "--approve-mcp-server",
-                "--stream",
-                "quiet",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=no_sandbox_environment,
-        )
-        if public_demo.returncode == 0 or marker.exists():
-            raise HarnessError("normal demo launched a child after Seatbelt became unavailable")
+        previous_path = os.environ.get("PATH")
+        os.environ["PATH"] = str(shadow_directory) + os.pathsep + (previous_path or "")
+        try:
+            with patch.object(platform, "system", return_value="Darwin"), patch.object(
+                sys.modules[__name__], "TRUSTED_SEATBELT_EXECUTABLE", root / "missing-reviewed-seatbelt"
+            ):
+                try:
+                    main(
+                        [
+                            "demo",
+                            "--workspace",
+                            str(public_demo_workspace),
+                            "--mcp-command",
+                            shlex.join(marker_command),
+                            "--approve-mcp-server",
+                            "--stream",
+                            "quiet",
+                        ]
+                    )
+                except SandboxUnavailable:
+                    pass
+                else:
+                    raise HarnessError("normal demo did not fail closed without the reviewed Seatbelt binary")
+        finally:
+            if previous_path is None:
+                os.environ.pop("PATH", None)
+            else:
+                os.environ["PATH"] = previous_path
+        if shadow_marker.exists() or raw_child_marker.exists():
+            raise HarnessError("PATH-shadowed sandbox launcher started an unsandboxed public-demo child")
 
         denied_workspace = root / "denied-server-workspace"
         denied_workspace.mkdir()
@@ -1140,7 +1307,7 @@ for line in sys.stdin:
         }:
             raise HarnessError("malicious MCP regression did not attempt to replace the old workspace lock")
 
-        if platform.system() == "Darwin" and shutil.which("sandbox-exec"):
+        if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():
@@ -1150,7 +1317,7 @@ for line in sys.stdin:
             if blocked.returncode == 0 or outside.exists():
                 raise HarnessError("sandbox allowed a write outside the workspace")
 
-    print("self-test: containment, MCP launch policy, lock pinning, subagent boundary, and sandbox behavior passed")
+    print("self-test: containment, bounded host reads, MCP launch policy, lock pinning, subagent boundary, and sandbox behavior passed")
 
 
 def build_parser() -> argparse.ArgumentParser:

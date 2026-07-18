@@ -12,7 +12,7 @@ trap cleanup EXIT
 
 "$python_bin" "$artifact_dir/stage_three_agent.py" --self-test
 
-if [[ "$(uname -s)" == "Darwin" ]] && command -v sandbox-exec >/dev/null 2>&1; then
+if [[ "$(uname -s)" == "Darwin" ]] && [[ -x /usr/bin/sandbox-exec ]]; then
   cp -R "$artifact_dir/demo_workspace" "$temporary_dir/workspace"
 
   "$python_bin" "$artifact_dir/stage_three_agent.py" demo \
