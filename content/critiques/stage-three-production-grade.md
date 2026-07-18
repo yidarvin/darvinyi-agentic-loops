@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -305,3 +305,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Updated `artifacts/ch21-stage-three-production-grade/README.md` so the documented secret-mutation boundary explicitly includes the pre-launch hard-link-alias rejection.
 
 No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
+
+## Round 13 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history, and `git log -p -- content/critiques/stage-three-production-grade.md`; read the current MDX, exact figure and widget, full Chapter 21 artifact, README, policy, demo server, and research backbone; and checked the linked MCP, Anthropic, and Claude Code primary sources. Ran `npm run check` successfully through all seven sections and `bash artifacts/ch21-stage-three-production-grade/check.sh` successfully, including its real-Seatbelt trace. Re-verified every prior REQUIRED boundary remains intact: no public sandbox bypass; descriptor-contained memory and host I/O; policy before MCP launch; host-owned definition locks; a fixed child environment; bounded host reads and MCP frames; process lifecycle containment; the independent-seam figure; the workspace-local custom-server contract; secret pathname denials; the narrowed `/private/var` read root; and the Round 11 and Round 12 multi-link read and MCP-mutation protections. I then exercised the public parser in a disposable macOS workspace with `verification.txt` as a pre-existing hard link to `.env.production`, a denied custom MCP server, and an approved verification command.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- the approved verification process can mutate a protected secret through a pre-existing hard-link alias when MCP launch is denied.** `reject_protected_workspace_hardlinks()` runs only inside the authorized MCP-launch branch at lines 995-997, but the later approved shell path always runs `printf verified > verification.txt` at lines 1017-1027 under the same pathname-based profile that broadly allows writes below the workspace at lines 591-593. In a public `demo` run with a custom MCP command but no `--approve-mcp-server`, NDJSON recorded `mcp.server_skipped`, then `sandbox.completed` with return code 0 and `run.completed`; `.env.production` and `verification.txt` were the same two-link inode and the protected file changed to `verified`. This is distinct from Round 12's MCP-child mutation finding: no MCP child starts here, yet a task-scoped shell approval bypasses the artifact's `.env*` mutation boundary. Apply the protected-hard-link preflight before any sandboxed workspace-writing process, including verification when MCP launch is skipped, and add a real-Seatbelt public-demo regression that hard-links `.env.production` or `secrets/**` to `verification.txt`, denies the custom MCP launch, approves verification, and proves the run fails before the shell starts and the protected inode is unchanged.
+
+## Advisories
+
+- None.
