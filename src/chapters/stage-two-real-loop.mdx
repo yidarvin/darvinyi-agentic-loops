@@ -1,0 +1,137 @@
+import { StageTwoRealLoopFigure } from "./_figures/StageTwoRealLoopFigure";
+import { StageTwoRealLoopWidget } from "./_widgets/StageTwoRealLoopWidget";
+
+Stage Two turns the thin wrapper into an agent you can leave on a real coding task without expecting the first bad boundary to kill it. The loop still lets the model choose the work. The harness now treats a transient API failure, a bad tool call, a timeout, and a bloated transcript as distinct states with bounded recovery paths. That is the shift from a demonstration to usable execution.
+
+[Stage One](/stage-one-thin-wrapper) established the protocol loop. This chapter adds the harness layers that keep that loop valid while the environment behaves badly. The conceptual pattern transfers across providers. Concrete SDK and API examples below are explicitly labelled.
+
+## Reliability is a protocol property
+
+The fragile loop has predictable collapse points. A rate limit can raise out of the model request. A file lookup can throw. A shell command can hang or dump a log large enough to consume the remaining context. A streamed tool argument can end halfway through JSON. An interrupt can arrive after an assistant emitted a tool call but before the harness returned its result.
+
+The governing rule is simple: a recoverable failure becomes either a bounded retry or information in the next turn. It does not become an uncaught exception.
+
+The most important invariant is not optional:
+
+~~~text
+every tool_use(id) -> one matching tool_result(tool_use_id=id)
+~~~
+
+That pairing survives every path. A denied write gets an error result. A path-validation failure gets an error result. A tool exception gets an error result. If an interrupt leaves an action unresolved, append a synthetic interrupted error result before continuing or saving the conversation. [The anatomy of a tool call](/anatomy-of-a-tool-call) explains the wire-level pairing. The model can correct from a precise error. It cannot correct from a dead process or malformed history.
+
+API retries follow the same distinction. Retry transient capacity and connection failures. Repair malformed requests, bad credentials, and oversized context instead of sending them again. Choose one retry owner. If the SDK retries and the application retries around it, a nominal three-attempt wrapper on top of an SDK with its own retries can multiply one transient incident into twelve requests. The direct product example in [Anthropic's API error guide](https://platform.claude.com/docs/en/api/errors) describes typed failures and SDK retry defaults. The design rule remains provider-neutral.
+
+<Figure id="20.1" caption="Stage Two puts a fault-containment layer around the same model and tool loop. Every failure has a defined return path, and every tool call still receives its matching result.">
+  <StageTwoRealLoopFigure />
+</Figure>
+
+## Four layers earn their complexity
+
+Add a layer only after naming the failure it prevents.
+
+| Layer | Failure absorbed | Harness response |
+| --- | --- | --- |
+| Request boundary | 429, overload, connection loss, stalled stream | One retry owner, exponential backoff with jitter, an idle watchdog, and a visible retry event. |
+| Tool boundary | Unknown name, invalid arguments, traversal, nonzero exit, timeout | Validate before execution, cap output, kill timed-out process groups, then send an actionable error result. |
+| Stream boundary | Partial text or tool JSON, interruption, unknown event | Render events, require a clean terminal event, preserve the reconstructed assistant message, and close unresolved calls with an error result. |
+| Context boundary | Repeated tool bulk and a growing transcript | Measure, retain a stable cached prefix, clear stale results, compact only when needed, and offload durable facts to files. |
+
+The table is not a feature checklist. A file tool does not need a retry policy. A model request does not need a path resolver. Keeping ownership narrow makes fault injection and diagnosis possible.
+
+## Let tools explain their own failures
+
+A tool is an agent-computer interface. Its schema, error vocabulary, and output budget shape what the model can recover from. The dispatch layer should reject an unknown name, missing field, or path outside the workspace before reaching the local machine. Its errors should identify both the failed premise and the next useful move.
+
+~~~python
+def run_tool_safely(call):
+    try:
+        checked = validate_call(call)
+        require_workspace_path(checked)
+        return tool_result(call.id, execute(checked))
+    except Exception as error:
+        return tool_result(
+            call.id,
+            "Error: {}. Read the target and retry with a valid call.".format(error),
+            is_error=True,
+        )
+~~~
+
+Exact-one replacement illustrates the difference. "old_str not found in config.py; read the current file before retrying" lets the model inspect and repair its assumption. "multiple matches; add surrounding lines" makes ambiguity explicit. A generic exception discards the recovery path.
+
+Cap output at the tool boundary. A line-numbered file read, scoped search, bounded directory list, and middle-truncated shell result all preserve the model's ability to act without allowing one log to consume the task. A persistent shell can be useful, but it needs a timeout that kills its process group and restarts its session. A command allowlist or approval prompt does not provide isolation.
+
+<Callout kind="danger">
+  **A Stage Two permission gate is not a sandbox.** Read tools can run freely and writes can ask for approval, but shell arguments and prompt-injected requests can still cross a weak policy. Treat a workspace check, a confirmation prompt, and a denylist as usability controls. Stage Three adds the operating-system and network isolation that changes the security boundary.
+</Callout>
+
+## Stream the turn, preserve the message
+
+Streaming earns its code through control, not animation. It gives the user a live view of text and tool selection, makes a long turn interruptible, and avoids request-timeout pressure on long generations. The harness should render compact progress events, but append the provider's completed reconstructed assistant message to history. Do not hand-assemble a different message from deltas.
+
+An interrupted stream is not a completed turn. Require a terminal stop event or an explicit stop reason. If the connection ends before that state, preserve the useful partial text for the user, mark the turn interrupted, and avoid executing a partial tool call. Fine-grained tool streams can expose incomplete JSON when generation hits a token limit. Feed that input back as a structured error rather than guessing at the missing bytes.
+
+The [Anthropic streaming guide](https://platform.claude.com/docs/en/build-with-claude/streaming) and its [fine-grained tool-streaming note](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming) are product examples of this event lifecycle. Other providers expose different event names. The harness requirement stays the same: a stream must have an observable, valid completion path.
+
+## Treat context as a working set
+
+Long agent runs fail first at the context boundary. The message list contains requests, plans, file bodies, search output, test logs, and tool results. Resending it untouched costs more each turn and eventually harms the agent's focus before the hard limit arrives.
+
+Use a cost-ordered strategy:
+
+1. Keep tool definitions and system instructions byte-stable so prompt caching can retain the expensive prefix.
+2. Clear old, re-fetchable tool output while retaining the fact that the tool call occurred.
+3. Compact older history into a structured continuation note only when clearing no longer creates enough headroom.
+4. Put durable task state in files such as a work log or notes file, then re-read it on demand.
+
+Compaction is useful and lossy. It rewrites the prefix, can reduce cache reuse, and compresses exact details that later turns may need. Reserve space before the hard limit and include the task, changed files, failed approaches, decisions, and next step in the summary. In a production implementation, count tokens with the target provider rather than estimating with a different tokenizer. [Anthropic's prompt-caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) and [context-editing](https://platform.claude.com/docs/en/build-with-claude/context-editing) APIs are concrete product examples, not prerequisites for the strategy.
+
+## Trace one recovery path
+
+Advance the trace. A model request first receives a simulated overload. Once the harness retries it, an exact edit fails. The error returns with the original call identifier, the next turn reads the file again, and the corrected edit can proceed. The trace makes the key distinction visible: the model changes course because the harness kept the loop alive and made the failure legible.
+
+<Widget name="stage_two_real_loop" hint="Advance one event at a time. Follow the call identifier through retry, tool error, corrective read, context action, and completion.">
+  <StageTwoRealLoopWidget />
+</Widget>
+
+## Run a local hardened loop
+
+The artifact is a self-contained Python implementation of the Stage Two control surface. Its default provider is scripted and offline, so you can exercise real file operations, a real shell child, retry ownership, tool-result pairing, output truncation, path containment, and deterministic context compaction without credentials. It also includes an optional, labelled Anthropic streaming adapter. The adapter requires a current model identifier and SDK, and exits with setup instructions when either is absent.
+
+<RunnableArtifact
+  name="stage_two_real_loop"
+  path="artifacts/ch20-stage-two-real-loop/"
+  runtime="Python 3.11+; zero dependencies for the offline demo"
+  run={["cd artifacts/ch20-stage-two-real-loop", "python3 agent.py --demo --mode accept-edits", "bash check.sh"]}
+  requires="No API key for the demo. The optional Anthropic adapter needs ANTHROPIC_API_KEY, a current model ID, and the anthropic package."
+  href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch20-stage-two-real-loop">
+  The default trace recovers from a simulated overload and a failed exact edit. In accept-edits mode it deliberately leaves the shell verification behind the permission gate. Run it with dangerously-skip-permissions only inside the artifact's disposable demo workspace.
+</RunnableArtifact>
+
+Stage Two is ready for Stage Three when it can complete a realistic multi-file task without a crash, survive injected transient failures, return every tool error to the model, carry task state through a compaction, and report its retry, usage, cache, and stop signals. It remains one process with a local tool suite. MCP extensibility, subagents, cross-session memory, and real sandboxing belong to the next stage.
+
+## Exercises
+
+<ExerciseCard n="01" title="Specify an edit failure">
+  Add an apply-patch style tool to the artifact. Write its schema, workspace check, output cap, and three corrective error messages before writing the execution code. Run each failure case through the tool-result path.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Prove retry ownership">
+  Enable a retry loop in both an SDK client and the outer harness, then inject one transient failure. Count requests, remove one owner, and record the changed request multiplier in the trace.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Compact with intent">
+  Feed a synthetic task enough file output to cross a context threshold. Decide which results can be cleared, write a structured continuation note, and verify that the next tool decision still has the task, changed files, and next test.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Repair an interrupted call">
+  Simulate an interrupt after an assistant emits a tool call. Construct the synthetic matching error result, then explain what makes the next request invalid if that result is omitted.
+</ExerciseCard>
+
+## Sources
+
+- [Anthropic, Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
+- [Anthropic, API errors and retry behavior](https://platform.claude.com/docs/en/api/errors)
+- [Anthropic, Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
+- [Anthropic, Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming)
+- [Anthropic, Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Anthropic, Context editing and compaction](https://platform.claude.com/docs/en/build-with-claude/context-editing)
