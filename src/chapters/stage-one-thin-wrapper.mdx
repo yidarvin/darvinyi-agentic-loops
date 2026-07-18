@@ -1,0 +1,114 @@
+import { StageOneThinWrapperFigure } from "./_figures/StageOneThinWrapperFigure";
+import { StageOneThinWrapperWidget } from "./_widgets/StageOneThinWrapperWidget";
+
+A coding agent begins with a narrow contract: a REPL sends the current conversation and a few tool schemas to a model, performs the requested actions, feeds their results back, and repeats. The model decides what to do next. The wrapper preserves protocol state and touches the local machine. That is enough to fix a test in a supervised workspace, and it makes [the loop](/the-loop) concrete.
+
+<Callout kind="danger">
+  **Stage One runs shell commands with your user privileges.** Treat the artifact as a supervised learning tool for a disposable or contained workspace. Its file helpers stay inside the selected workspace, but its shell is not a sandbox and can still affect the machine.
+</Callout>
+
+## Five pieces, no planner hidden in the harness
+
+The smallest useful wrapper has five moving parts. A model client makes a request. A plain message list carries the conversation. Tool schemas tell the model how it may act. A dispatcher maps requested tool names to local functions. A loop keeps circulating until the model emits text without a tool request.
+
+The division of labor matters. The harness does not prescribe a plan such as “run tests, then read code, then edit.” It exposes a repo-sized action space and returns observations. A tool-use-trained model can choose that sequence itself. [Thorsten Ball’s compact build](https://ampcode.com/how-to-build-an-agent/) and the deliberately austere [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) make the point from different directions: the first useful agent does not need a framework-shaped architecture.
+
+The conversation is the protocol record. Keep it as an append-only list:
+
+~~~python
+messages.append({"role": "user", "content": request})
+response = client.messages.create(messages=messages, tools=tools, ...)
+messages.append({"role": "assistant", "content": response.content})
+~~~
+
+That assistant append must preserve the response blocks verbatim, including tool-use identifiers. When the model asks for several actions, execute them and put every matching result into one immediately following user message. Splitting results across turns breaks the pairing invariant in product APIs that use this pattern. The runnable artifact shows the Anthropic Messages API as one product-specific implementation. The lifecycle itself is provider-neutral.
+
+<Figure id="19.1" caption="The thin wrapper owns state, protocol pairing, dispatch, and termination. The model owns the next move.">
+  <StageOneThinWrapperFigure />
+</Figure>
+
+## The stop condition is a missing action
+
+The loop terminates when the response contains no tool-use block, not when a convenience field happens to say that a turn ended. A response can stop because it reached a token limit while still containing an action. The durable question is smaller: did the model ask the harness to do anything else?
+
+~~~python
+while tool_uses:
+    results = [dispatch(tool.name, tool.input) for tool in tool_uses]
+    messages.append(one_user_message_with(results))
+    response = call_model(messages)
+    tool_uses = response.tool_uses
+~~~
+
+The artifact adds a max-step guard because a loop without a ceiling can spend time and money while repeating itself. It does not add recovery. If the model call fails, the REPL reports the error and returns control to the user. Retrying, streaming, and interruption belong to Stage Two, where their failure modes earn the complexity.
+
+## Four tools cover a repository’s working rhythm
+
+The tool surface is intentionally ordinary.
+
+| Tool | Job in the loop |
+| --- | --- |
+| read_file | Load a named file with line numbers before changing it. |
+| list_files | Discover the local shape of the workspace. |
+| edit_file | Replace one unique exact string, or create a new file. |
+| run_bash | Run tests, search, inspect Git state, and use the Unix toolchain. |
+
+Exact-match editing is a good first constraint. It makes ambiguity visible instead of silently choosing one occurrence, and it asks the model to transmit only the changed span. [Aider’s evaluation of edit formats](https://aider.chat/2023/12/21/unified-diffs.html) shows why targeted patches are worth treating as a first-class tool design problem.
+
+The shell is the leverage point. It also supplies the chapter’s sharp boundary: the model can invoke anything the current user can invoke. A bash-only agent is a valid design fork, as mini-swe-agent demonstrates. This chapter keeps the other three tools because their explicit contracts make the protocol easier to inspect.
+
+## Walk one turn, then notice what is absent
+
+Advance the transcript one transition at a time. The wrapper does not decide how to fix the failing test. It only turns each model decision into an observation that can inform the next decision.
+
+<Widget name="stage_one_thin_wrapper" hint="Advance through one REPL turn. Watch which message is appended and where the loop actually exits.">
+  <StageOneThinWrapperWidget />
+</Widget>
+
+Tool errors should travel back to the model as observations too. A failed exact match is more useful as “old_str matched twice” than as a crashed process. The thin wrapper returns that text in an error-marked result, so the model gets a chance to narrow the edit. It still lacks rich recovery, output discipline, and a way to recognize a repeated bad plan.
+
+<Callout kind="note">
+  A reverse-engineering study estimates that only about 1.6% of one large coding agent’s source was decision logic, with the rest serving as harness. Treat that ratio as a directional illustration, not a measurement: it comes from line counts over a leak-derived bundle. [Dive into Claude Code](https://arxiv.org/abs/2604.14228) documents the method and its caveats.
+</Callout>
+
+## Run the supervised REPL
+
+The artifact is intentionally a provider example, not a portable SDK layer. It keeps the model name in an environment variable so you can select a current tool-capable model rather than inheriting a stale snapshot. Read its safety notes before pointing it at a repository.
+
+<RunnableArtifact
+  name="stage_one_thin_wrapper"
+  path="artifacts/ch19-stage-one-thin-wrapper/"
+  runtime="Python 3.11+ and the Anthropic Python SDK"
+  run={["python3 -m pip install -r requirements.txt", "python3 agent.py --workspace /path/to/disposable-repo"]}
+  requires={["ANTHROPIC_API_KEY", "THIN_WRAPPER_MODEL"]}
+  href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch19-stage-one-thin-wrapper">
+  A minimal REPL with a real message history, four local tools, a tool-result loop, and an offline self-check. It deliberately omits retries, streaming, compaction, permissions, sandboxing, memory, MCP, and evaluation.
+</RunnableArtifact>
+
+## The rest of the harness has a job
+
+Stage One proves that a capable model plus tools can work. It does not make the resulting program safe or durable. Stage Two earns retries, streaming, context budgets, richer tool contracts, and traces by exposing how the thin loop fails on longer runs. Stage Three wraps dispatch in permissions and sandboxing, then adds MCP, memory, and delegation without confusing those layers for the loop itself.
+
+[Anthropic’s guidance on effective agents](https://www.anthropic.com/research/building-effective-agents) frames the practical rule well: start with the smallest mechanism that works, observe its failures, and add structure only where real work demands it. The REPL is that mechanism. The later stages are the cost of letting it operate beyond a close human’s attention.
+
+## Exercises
+
+<ExerciseCard n="01" title="Trace a real turn">
+  Run the artifact in a disposable repository and ask it to fix one failing test. Save the printed tool calls and label the exact moment each assistant block and tool-result message enters the conversation.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Make ambiguity useful">
+  Create a file with the same target string in two places. Ask the agent for an exact replacement, inspect the error result, then refine the prompt or tool description until the model produces a unique match.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Name the first production boundary">
+  Choose one task you would not allow this REPL to perform unattended. State whether the missing control is a Stage Two concern such as context control or a Stage Three concern such as sandboxing, and justify the boundary.
+</ExerciseCard>
+
+## Sources
+
+- [Thorsten Ball, “How to Build an Agent”](https://ampcode.com/how-to-build-an-agent/)
+- [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
+- [Anthropic, “Building Effective Agents”](https://www.anthropic.com/research/building-effective-agents)
+- [Anthropic tool-use implementation guide](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use)
+- [Paul Gauthier, “Unified diffs make GPT-4 Turbo 3X less lazy”](https://aider.chat/2023/12/21/unified-diffs.html)
+- [Liu, Zhao, Shang, and Shen, “Dive into Claude Code”](https://arxiv.org/abs/2604.14228)
