@@ -71,7 +71,10 @@ process starts. There is no global bypass-permissions flag.
    The client starts the direct server in its own session. The profile permits exec
    but denies process forks, preventing a server from daemonizing with `setsid()` and
    escaping lifecycle cleanup; the client also terminates and reaps the original
-   process group on close or protocol abort.
+   process group on close or protocol abort. It also denies MCP reads and mutations
+   for root `.env*` paths and `secrets/**`, matching the policy's secret boundary and
+   preventing an approved server from relocating protected material into an allowed
+   workspace name.
 4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
 5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
@@ -122,11 +125,13 @@ model adapter are deliberate next steps rather than hidden dependencies.
 ## Security boundary and limits
 
 The policy is useful because it makes intent auditable. It is not the containment
-boundary. Seatbelt constrains the subprocess after policy allows it to start. The
-profile has an intentionally narrow writable area and no network. It still needs
-defense in depth: inspect tool definitions, isolate credentials, preserve human
-approval for irreversible actions, and prefer stronger VM isolation for high-value
-secrets or untrusted content.
+boundary. Seatbelt constrains the subprocess after policy allows it to start. For
+MCP children, the generated profile enforces the policy's `.env*` and `secrets/**`
+denials for both reads and mutations, so task-scoped approval cannot expose or
+rename protected workspace material. The profile has an intentionally narrow
+writable area and no network. It still needs defense in depth: inspect tool
+definitions, isolate credentials, preserve human approval for irreversible actions,
+and prefer stronger VM isolation for high-value secrets or untrusted content.
 
 The bundled MCP server is trusted only for demonstration. Treat every external tool
 description and result as untrusted input. The host keeps the lock outside the server's

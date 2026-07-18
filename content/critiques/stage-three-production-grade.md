@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -191,3 +191,21 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 8 against the current chapter, exact figure and widget, artifact, README, policy, and deterministic regressions:
+
+1. Round 1 still has no public sandbox bypass; `.agent-memory` and host memory writes remain descriptor-contained; MCP launch policy runs before `popen`; and definition locks remain host-owned outside the MCP workspace.
+2. Rounds 2 and 3 retain the narrow child environment and reject both static and post-open workspace symlink reads through descriptor-relative no-follow opens.
+3. Round 4 still binds the public launcher to reviewed `/usr/bin/sandbox-exec`, rejects `PATH` shadowing, and bounds FIFO and oversized host reads before decoding.
+4. Round 5 still bounds malformed, partial, and oversized MCP frames and closes, kills, and reaps their process group on protocol failure.
+5. Round 6 retains descriptor-relative memory writes and process-group cleanup for ordinary MCP descendants.
+6. Round 7 retains the independent dispatcher seams in the figure and prose, plus the runnable workspace-local custom-server contract.
+7. Round 8 retains the execution-only Seatbelt rule, fork denial, and direct plus forked `setsid()` containment regression.
+
+1. Updated `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` so `MacOSSandbox._profile()` mirrors the policy's protected workspace namespaces with `file-read*` and `file-write*` denials after its broader workspace grants. Root `.env*` paths and the `secrets/**` subtree are now unavailable to approved MCP children for reads or mutations, which also blocks rename and hard-link alias paths.
+2. Added a deterministic real-Seatbelt public-demo regression in `stage_three_agent.py`. An approved workspace-local MCP server tries direct reads, hard links, and renames for `.env.production` and `secrets/service-token.txt`; the test requires all six attempts to be blocked, both sentinel files to remain unchanged, and no alias or copied content to appear in the workspace.
+3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state that task-scoped approval does not override the kernel-enforced secret read and mutation boundary.
+
+No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
