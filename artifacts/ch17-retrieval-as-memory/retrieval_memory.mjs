@@ -595,6 +595,7 @@ function actionInLeadingConditionalClause(tokens) {
     (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
   );
   const conditionEnd = mainClauseIndex === -1 ? tokens.length : mainClauseIndex;
+  const startsWithLeadingConditional = isLeadingConditionalStart(tokens, mainClauseIndex);
   const leadingParticipialCue =
     LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0]) ||
     (tokens[0] === "in" && tokens[1] === "case");
@@ -604,7 +605,7 @@ function actionInLeadingConditionalClause(tokens) {
       (term, index) => index > cueEnd && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
     ) || null;
   }
-  if (tokens[0] !== "if") return null;
+  if (!startsWithLeadingConditional) return null;
   const passiveAuxiliaryIndex = tokens.findIndex(
     (term, index) =>
       index > 0 &&
@@ -630,11 +631,17 @@ function hasUnrepresentedLeadingConditional(tokens, detectedOperation) {
     (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
   );
   if (mainClauseIndex === -1) return false;
-  const startsWithConditional =
-    tokens[0] === "if" ||
-    LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0]) ||
-    (tokens[0] === "in" && tokens[1] === "case");
+  const startsWithConditional = isLeadingConditionalStart(tokens, mainClauseIndex);
   return startsWithConditional && !detectedOperation;
+}
+
+function isLeadingConditionalStart(tokens, mainClauseIndex) {
+  return (
+    tokens[0] === "if" ||
+    (tokens[0] === "when" && mainClauseIndex > 1) ||
+    LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0]) ||
+    (tokens[0] === "in" && tokens[1] === "case")
+  );
 }
 
 function actionInPassiveGenericQuestion(tokens) {
@@ -1504,6 +1511,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentInCaseDeletedTelemetry,
       "deployment in-case deleted telemetry condition",
+    );
+
+    const deploymentWhenDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-when-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "When telemetry is deleted, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentWhenDeletedTelemetry,
+      "deployment when telemetry is deleted condition",
     );
 
     const thirdPersonPurgingLookup = await runAgent({
