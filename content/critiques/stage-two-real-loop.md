@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -49,3 +49,13 @@ Regression gate: read the complete append-only history with `git log -p -- conte
 Advisories taken: none. The settled Round 1 advisories remain outside this required-fix resolution scope.
 
 Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh`, both documented offline demo modes, and `npm run check` pass.
+
+## Round 3 review (2026-07-18)
+Independent re-review: read the complete append-only history and `git log -p`, the current chapter and research backbone, exact figure and widget, and the full runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran both documented offline modes, `bash artifacts/ch20-stage-two-real-loop/check.sh`, a missing-Anthropic-configuration failure probe, and a final `npm run check`; the final gate passed all seven sections. Checked the linked Anthropic primary docs for retry behavior, client-tool result ordering, streaming completion, prompt caching, and context editing. Re-verified every prior REQUIRED fix: the nine-request arithmetic; context and interrupted-stream figure paths; widget pairing/order; symlink containment, aggregate output caps, and shell-interruption cleanup; the semantic valid-versus-invalid validation branches; and legal compacted Anthropic history. They remain intact.
+
+## Required fixes
+1. **artifacts/ch20-stage-two-real-loop/agent.py:338-372,800-831 --- Ctrl-C at an interactive permission prompt leaves an already-recorded `tool_use` without its matching result.** `input()` raises `KeyboardInterrupt`, which bypasses `run_tool_safely`'s `except Exception`. The assistant message is appended at line 800, while its user result message is appended only after all calls complete at line 831. I patched `builtins.input` to raise `KeyboardInterrupt` and reproduced the escape before any `ToolResult` was produced. This is distinct from, and does not reopen, Round 1's repaired shell-process interruption: it occurs before execution at the permission boundary. Catch and serialize cancellation at the dispatcher or loop boundary as a matching `is_error` result before a safe stop or persistence path, then add the permission-prompt cancellation case to the deterministic self-test.
+2. **src/chapters/_figures/StageTwoRealLoopFigure.tsx:7,102-108 --- the essential valid-versus-invalid validation split is inaccessible.** At the SVG's 760px minimum rendered width, the `fontSize={9}` decision labels render at roughly 7.3 CSS px. `var(--comment)` (`#55707b`) on `var(--surface-2)` (`#141d21`) has 3.25:1 contrast, below the 4.5:1 normal-text floor. These labels distinguish whether validation reaches execution or returns an error result, yet the SVG's `role="img"` `aria-label` does not express that distinction and hides child text from screen readers. Make the decision labels readable at the narrow rendering width with sufficient contrast, and extend the accessible description to state that valid calls execute while invalid or denied calls return a matching error result without execution.
+
+## Advisories
+- No new advisories. The Round 1 advisories remain settled.
