@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -828,3 +828,15 @@ Convergence review: read `prompts/critique-rubric.md`, the complete append-only 
 ## Advisories
 
 - No new advisories. The settled README-formatting, illustrative token-display, and optional rank-grid semantics notes remain non-blocking.
+
+## Round 38 review (2026-07-18)
+
+Convergence review: read `prompts/critique-rubric.md`, the complete append-only critique history through Round 37, the current MDX chapter, exact figure and widget, artifact README, fixture, checker, complete runnable artifact, and research backbone. Re-verified every prior REQUIRED path with the current artifact self-test: invalid dates; irrelevant, unsupported, unknown-identifier, incomplete-scope, and prior destructive-action inputs abstain; deployment packets remain complete-or-abstain; untrusted data stays escaped and role-separated; and the RRF tie, readable teaching labels, telemetry, release-schedule, and widget-paraphrase paths hold. Ran `bash artifacts/ch17-retrieval-as-memory/check.sh` and `npm run check`; the latter exited 0 through all seven stages with `CHECK OK`. Checked the linked primary and official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Anthropic Contextual Retrieval, RAGAS, and OpenAI embeddings against the research backbone. The chapter's consequential claims remain supported. I then reproduced the distinct false-authorization path below in a fresh persistent store.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:593-637` --- a normal leading `when` condition bypasses the fail-closed action boundary and presents deployment policy as sufficient authorization.** From the artifact directory, `node retrieval_memory.mjs --reset --store <fresh-temp>/memory.json --tenant acme --as-of 2026-06-15 --question 'When telemetry is deleted, can I deploy checkout?' --json` returns `decision: "answer with bounded evidence packet"`, `usedTokens: 21`, and only `acme_checkout_policy_2026`. That policy covers an on-call approver and migration verification for checkout deployment. It contains no evidence that deployment is safe or permitted when telemetry is deleted. `actionInLeadingConditionalClause()` and `hasUnrepresentedLeadingConditional()` recognize `if`, participial cues, and `in case`, but not this leading `when` condition; the later `can` clause therefore accepts `deploy` as the only operation. This is distinct from the settled Round 31, 36, and 37 `if`-condition repairs, and it is a concrete security defect in the advertised `--question TEXT` path: it violates the README's fail-closed contract at lines 66-68 by sending a downstream agent an apparently answer-bearing authorization packet. Parse a leading `when` condition into the whole-request action check, or abstain conservatively when it cannot be represented, and add a deterministic regression assertion for this exact query requiring zero evidence, zero used tokens, and the clarification-or-new-query decision.
+
+## Advisories
+
+- No new advisories. The settled README-formatting, illustrative token-display, rank-grid-semantics, and critique-history ordering notes remain non-blocking.
