@@ -586,9 +586,13 @@ function actionInLeadingConditionalPassiveCondition(tokens) {
     (term, index) => index > 0 && ACTION_REQUEST_PREFIXES.has(term),
   );
   const conditionEnd = mainClauseIndex === -1 ? tokens.length : mainClauseIndex;
-  if (LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0])) {
+  const leadingParticipialCue =
+    LEADING_CONDITIONAL_PARTICIPLE_CUES.has(tokens[0]) ||
+    (tokens[0] === "in" && tokens[1] === "case");
+  if (leadingParticipialCue) {
+    const cueEnd = tokens[0] === "in" ? 1 : 0;
     return tokens.find(
-      (term, index) => index > 0 && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
+      (term, index) => index > cueEnd && index < conditionEnd && term.length > 3 && term.endsWith("ed"),
     ) || null;
   }
   if (tokens[0] !== "if") return null;
@@ -1423,6 +1427,21 @@ async function selfTest() {
     assertUnsupportedRequestAbstains(
       deploymentAssumingDeletedTelemetry,
       "deployment assuming deleted telemetry condition",
+    );
+
+    const deploymentInCaseDeletedTelemetry = await runAgent({
+      storePath: resolve(directory, "deployment-in-case-deleted-telemetry-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "In case telemetry data is deleted, can I deploy checkout?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      deploymentInCaseDeletedTelemetry,
+      "deployment in-case deleted telemetry condition",
     );
 
     const thirdPersonPurgingLookup = await runAgent({

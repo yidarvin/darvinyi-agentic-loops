@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -727,3 +727,12 @@ Convergence review: read `prompts/critique-rubric.md`, the complete append-only 
 ## Advisories
 
 - None. Settled advisory notes remain non-blocking and are not reopened.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the full append-only critique history and `git log -p -- content/critiques/retrieval-as-memory.md`, which retains all 33 rounds with no removed review content. Re-verified every prior REQUIRED fix from Rounds 1 through 32 against the current chapter, figure, widget, artifact, fixture, README, checker, and deterministic artifact self-test. Round 1 still rejects irrelevant input and impossible dates, declares the widget's RRF tie, and retains readable figure and widget teaching text. Round 2 still enforces complete-or-abstain deployment packets. The shared gate findings in Rounds 3, 7, 11, 14, 26, 27, 30, and 32 are re-verified by the repository-wide gate. Rounds 4 and 5 still preserve role-separated escaped input, qualifying telemetry, the release calendar, and the widget-paraphrase packet. Rounds 6 through 10 still fail closed for unsupported or mixed service scopes, unknown or compound incident identifiers, common-word input, dense-only collisions, and insufficient generic support. Rounds 11 through 17 still fail closed for modal, imperative, intent-prefixed, nominalized, gerund, safety, requirement, and question-wrapped unsupported actions. Rounds 18 through 25 still reject broad-only generic evidence and active, passive, third-person, and auxiliary generic-interrogative deletion requests. Rounds 26 through 32 still reject nominalized authorization, mixed destructive clauses, removal and erasure terms, and `with`, `if`, and participial leading conditions.
+
+1. **Initial `in case` conditions now fail closed.** In `artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs`, `actionInLeadingConditionalPassiveCondition()` recognizes the paired `in case` cue before the supported deployment clause. It extracts `deleted` from `In case telemetry data is deleted, can I deploy checkout?`, so whole-request action classification marks the request unsupported and cannot inject checkout deployment policy as authorization evidence.
+2. **The Round 33 regression is deterministic.** The artifact self-test now runs that exact question against a fresh persistent store through `assertUnsupportedRequestAbstains`, which requires zero evidence, zero used tokens, and the clarification-or-new-query decision. A focused JSON run also returned an empty packet with every candidate held as an unsupported request.
+
+No advisories were taken. `node retrieval_memory.mjs --self-test`, `bash artifacts/ch17-retrieval-as-memory/check.sh`, and `npm run check` pass; the repository gate completed all seven stages with `CHECK OK`. The registry remains `draft` and the queue row remains `PENDING`.
