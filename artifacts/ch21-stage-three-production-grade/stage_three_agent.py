@@ -21,6 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from unittest.mock import patch
 
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -35,6 +36,8 @@ SENSITIVE_ENV_NAMES = {
     "SSH_AUTH_SOCK",
     "SSH_AGENT_PID",
 }
+SENSITIVE_ENV_EXACT_NAMES = {"TOKEN", "SECRET", "API_KEY", "PASSWORD"}
+SENSITIVE_ENV_SUFFIXES = ("_TOKEN", "_SECRET", "_API_KEY", "_PASSWORD")
 
 
 class HarnessError(RuntimeError):
@@ -183,9 +186,9 @@ def scrubbed_environment(extra: Optional[Dict[str, str]] = None) -> Dict[str, st
     for name, value in os.environ.items():
         upper_name = name.upper()
         looks_sensitive = (
-            name in SENSITIVE_ENV_NAMES
-            or upper_name.endswith("_TOKEN")
-            or upper_name.endswith("_SECRET")
+            upper_name in SENSITIVE_ENV_NAMES
+            or upper_name in SENSITIVE_ENV_EXACT_NAMES
+            or upper_name.endswith(SENSITIVE_ENV_SUFFIXES)
             or "CREDENTIAL" in upper_name
         )
         if not looks_sensitive:
@@ -425,6 +428,18 @@ def bounded_read(path: Path, limit: int = 280) -> str:
     return content[:limit]
 
 
+def contained_workspace_file(workspace: Path, name: str) -> Optional[Path]:
+    """Resolve a fixed workspace file and reject a symlink that leaves the workspace."""
+
+    root = workspace.resolve()
+    candidate = (root / name).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 def run_subagent_loop(task: str, workspace: Path, depth: int) -> str:
     """Run the same loop shape with fresh input and a read-only tool subset."""
 
@@ -434,9 +449,15 @@ def run_subagent_loop(task: str, workspace: Path, depth: int) -> str:
     allowed_tools = {"read_workspace_summary"}
     if not fresh_conversation or "read_workspace_summary" not in allowed_tools:
         raise HarnessError("subagent was not initialized with its restricted tool set")
-    inspected = [name for name in ("PROJECT.md", "TODO.md") if (workspace / name).is_file()]
-    findings = [f"{name}: {bounded_read(workspace / name, 140)}" for name in inspected]
-    summary = "Read-only worker inspected " + ", ".join(inspected) + ". " + " | ".join(findings)
+    inspected: List[Tuple[str, Path]] = []
+    for name in ("PROJECT.md", "TODO.md"):
+        path = contained_workspace_file(workspace, name)
+        if path:
+            inspected.append((name, path))
+    findings = [f"{name}: {bounded_read(path, 140)}" for name, path in inspected]
+    summary = "Read-only worker inspected " + ", ".join(name for name, _ in inspected) + ". " + " | ".join(
+        findings
+    )
     return summary[:480]
 
 
@@ -656,6 +677,18 @@ def run_self_test() -> None:
         assert "Read-only worker" in summary
         assert "write" not in summary.lower()
 
+        escaped_subagent_workspace = root / "escaped-subagent-workspace"
+        escaped_subagent_workspace.mkdir()
+        outside_summary = root / "outside-subagent-summary.txt"
+        outside_summary.write_text("host-only sentinel must never reach the worker\n", encoding="utf-8")
+        (escaped_subagent_workspace / "PROJECT.md").symlink_to(outside_summary)
+        (escaped_subagent_workspace / "TODO.md").write_text("Inspect only contained files.\n", encoding="utf-8")
+        escaped_summary = run_subagent_loop("inspect workspace", escaped_subagent_workspace, depth=0)
+        if "PROJECT.md" in escaped_summary or "host-only sentinel" in escaped_summary:
+            raise HarnessError("subagent followed a workspace symlink outside its read boundary")
+        if "TODO.md" not in escaped_summary:
+            raise HarnessError("subagent did not retain a contained workspace file")
+
         unavailable = MacOSSandbox(workspace, binary="/not/a/sandbox-exec")
         try:
             unavailable.run(["/bin/sh", "-c", "true"])
@@ -663,6 +696,95 @@ def run_self_test() -> None:
             pass
         else:
             raise HarnessError("missing sandbox binary launched an unsandboxed process")
+
+        fake_sandbox = root / "fake-sandbox-exec"
+        fake_sandbox.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" != \"-p\" ]; then exit 64; fi\n"
+            "shift 2\n"
+            "exec \"$@\"\n",
+            encoding="utf-8",
+        )
+        fake_sandbox.chmod(0o700)
+        environment_probe_workspace = root / "environment-probe-workspace"
+        environment_probe_workspace.mkdir()
+        (environment_probe_workspace / "PROJECT.md").write_text("Probe child environment.\n", encoding="utf-8")
+        (environment_probe_workspace / "TODO.md").write_text("Record only safe values.\n", encoding="utf-8")
+        environment_probe_server = root / "environment_probe_server.py"
+        environment_probe_server.write_text(
+            """from __future__ import annotations
+import json
+import os
+import sys
+from pathlib import Path
+
+workspace = Path(os.environ[\"STAGE_THREE_WORKSPACE\"])
+workspace.joinpath(\"child-environment.json\").write_text(
+    json.dumps({\"api_key\": os.environ.get(\"DEMO_API_KEY\"), \"password\": os.environ.get(\"DEMO_PASSWORD\")}),
+    encoding=\"utf-8\",
+)
+
+tool = {\"name\": \"observe_environment\", \"description\": \"Report a safe child probe.\", \"inputSchema\": {\"type\": \"object\"}}
+
+def respond(request_id, result):
+    print(json.dumps({\"jsonrpc\": \"2.0\", \"id\": request_id, \"result\": result}), flush=True)
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    request_id = request.get(\"id\")
+    if request_id is None:
+        continue
+    if request.get(\"method\") == \"initialize\":
+        respond(request_id, {\"protocolVersion\": \"2025-06-18\", \"capabilities\": {\"tools\": {}}, \"serverInfo\": {\"name\": \"environment-probe\", \"version\": \"1.0.0\"}})
+    elif request.get(\"method\") == \"tools/list\":
+        respond(request_id, {\"tools\": [tool]})
+    elif request.get(\"method\") == \"tools/call\":
+        respond(request_id, {\"content\": [{\"type\": \"text\", \"text\": \"environment observed\"}], \"isError\": False})
+""",
+            encoding="utf-8",
+        )
+        original_sensitive_values = {
+            "DEMO_API_KEY": os.environ.get("DEMO_API_KEY"),
+            "DEMO_PASSWORD": os.environ.get("DEMO_PASSWORD"),
+        }
+        os.environ.update({"DEMO_API_KEY": "synthetic-api-key", "DEMO_PASSWORD": "synthetic-password"})
+        try:
+            with patch.object(platform, "system", return_value="Darwin"), patch.object(
+                shutil, "which", return_value=str(fake_sandbox)
+            ):
+                environment_probe_exit = main(
+                    [
+                        "demo",
+                        "--workspace",
+                        str(environment_probe_workspace),
+                        "--server-name",
+                        "environment",
+                        "--mcp-command",
+                        shlex.join([sys.executable, str(environment_probe_server)]),
+                        "--mcp-tool",
+                        "observe_environment",
+                        "--approve-mcp-server",
+                        "--approve-mcp-tool",
+                        "--approve-verification",
+                        "--stream",
+                        "quiet",
+                    ]
+                )
+        finally:
+            for name, previous_value in original_sensitive_values.items():
+                if previous_value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = previous_value
+        if environment_probe_exit != 0:
+            raise HarnessError("public demo environment probe did not complete")
+        captured_environment = json.loads(
+            (environment_probe_workspace / "child-environment.json").read_text(encoding="utf-8")
+        )
+        if captured_environment != {"api_key": None, "password": None}:
+            raise HarnessError("public demo child received credential-shaped environment variables")
 
         script_path = Path(__file__).resolve()
         demo_help = subprocess.run(

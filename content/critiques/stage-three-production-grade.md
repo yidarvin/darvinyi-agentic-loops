@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -38,3 +38,12 @@ Fresh-eyes re-review: read `prompts/critique-rubric.md`, the complete current cr
 ## Advisories
 
 - Round 1's missing direct link for the qualified prompt-approval statistic remains advisory only. It is not re-litigated here.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every Round 1 REQUIRED fix against the current artifact and its deterministic self-test: the public parser still has no sandbox bypass and rejects the former switch; `SafeMemory` still rejects an out-of-workspace `.agent-memory` symlink; MCP server authorization still occurs before `client.start()` and its `popen`; and the definition lock still uses host-owned `AgentState` outside the server-writable workspace, where the malicious-server regression cannot replace it.
+
+1. Broadened `scrubbed_environment()` in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` to remove exact and suffix forms of generic API-key and password variables, in addition to the existing token, secret, credential, and explicit-key rules. The self-test now injects synthetic `DEMO_API_KEY` and `DEMO_PASSWORD`, drives the normal `demo` path through `MacOSSandbox.popen()` with a self-test launcher, and verifies that the child MCP server records neither value.
+2. Added `contained_workspace_file()` and routed the read-only subagent through it before any file test or read. It resolves each fixed candidate and retains it only when it remains below the resolved workspace. The self-test now makes `PROJECT.md` a symlink to an outside sentinel, confirms the worker skips it, and confirms a contained `TODO.md` still appears in the summary.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
