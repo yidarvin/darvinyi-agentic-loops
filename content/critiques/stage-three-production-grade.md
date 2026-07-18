@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -103,3 +103,13 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 4 against the current harness and deterministic regressions: the public parser has no sandbox bypass; memory roots cannot escape through a symlink; policy authorizes MCP launch before `popen`; definition locks remain host-owned outside the writable workspace; the child environment is a narrow allowlist; static and post-open workspace symlink reads are contained; the reviewed Seatbelt executable does not come from `PATH`; and FIFO or oversized workspace and memory files are rejected before a host-side blocking or unbounded read.
+
+1. Replaced the text-mode `select()` plus `readline()` path in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` with a client-owned binary frame buffer. Each JSON-RPC response now has one monotonic deadline, reads in bounded chunks, rejects frames over 64 KiB before decoding, and never treats first-byte arrival as a completed response.
+2. Added fail-closed protocol cleanup in `StdioMcpClient`: an incomplete, oversized, malformed, or otherwise invalid response closes stdin, terminates the MCP child, waits briefly, then kills and reaps it if needed. The old blocking `stderr.read()` error path is gone.
+3. Added deterministic public-demo regressions for a child that flushes a partial `{` frame and a child that emits a completed oversized newline-delimited frame. Each uses the public parser and Seatbelt launcher seam, asserts failure within two seconds, and checks the recorded child PID is no longer running.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.

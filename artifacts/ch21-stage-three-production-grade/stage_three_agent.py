@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from unittest.mock import patch
@@ -32,6 +33,10 @@ SAFE_CHILD_ENV_NAMES = ("LANG", "LC_ALL", "LC_CTYPE", "TZ")
 CHILD_ENV_INJECTIONS = {"STAGE_THREE_WORKSPACE"}
 TRUSTED_SEATBELT_EXECUTABLE = Path("/usr/bin/sandbox-exec")
 MAX_MEMORY_READ_BYTES = 64 * 1024
+MCP_RESPONSE_TIMEOUT_SECONDS = 8.0
+MAX_MCP_RESPONSE_BYTES = 64 * 1024
+MCP_FRAME_READ_BYTES = 4096
+MCP_CHILD_REAP_SECONDS = 1.0
 
 
 class HarnessError(RuntimeError):
@@ -338,7 +343,7 @@ class MacOSSandbox:
             check=False,
         )
 
-    def popen(self, argv: Sequence[str]) -> subprocess.Popen[str]:
+    def popen(self, argv: Sequence[str]) -> subprocess.Popen[bytes]:
         return subprocess.Popen(
             self._command(argv),
             cwd=self.workspace,
@@ -346,8 +351,7 @@ class MacOSSandbox:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+            bufsize=0,
         )
 
 
@@ -374,7 +378,7 @@ class _CheckOnlySandbox:
             check=False,
         )
 
-    def popen(self, argv: Sequence[str]) -> subprocess.Popen[str]:
+    def popen(self, argv: Sequence[str]) -> subprocess.Popen[bytes]:
         return subprocess.Popen(
             list(argv),
             cwd=self.workspace,
@@ -382,8 +386,7 @@ class _CheckOnlySandbox:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+            bufsize=0,
         )
 
 
@@ -428,9 +431,10 @@ class StdioMcpClient:
         self.sandbox = sandbox
         self.lock_path = lock_path
         self.stream = stream
-        self.process: Optional[subprocess.Popen[str]] = None
+        self.process: Optional[subprocess.Popen[bytes]] = None
         self.request_id = 0
         self.registry: Dict[str, Dict[str, Any]] = {}
+        self._response_buffer = bytearray()
 
     def start(self) -> None:
         self.process = self.sandbox.popen(self.command)
@@ -453,36 +457,127 @@ class StdioMcpClient:
         self.registry = pin_tool_definitions(self.lock_path, self.server_name, tools, self.stream)
         self.stream.emit("mcp.connected", server=self.server_name, tools=sorted(self.registry))
 
-    def _require_process(self) -> subprocess.Popen[str]:
+    def _require_process(self) -> subprocess.Popen[bytes]:
         if not self.process or not self.process.stdin or not self.process.stdout:
             raise HarnessError("MCP client is not running")
         return self.process
 
-    def request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _stop_process(self, *, terminate: bool) -> None:
+        """Close a child deterministically, reaping a misbehaving server if needed."""
+
+        process = self.process
+        self.process = None
+        self._response_buffer.clear()
+        if process is None:
+            return
+        try:
+            if process.stdin:
+                try:
+                    process.stdin.close()
+                except (BrokenPipeError, OSError, ValueError):
+                    pass
+            if terminate and process.poll() is None:
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+            timeout = MCP_CHILD_REAP_SECONDS if terminate else 3
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=MCP_CHILD_REAP_SECONDS)
+        finally:
+            for pipe in (process.stdout, process.stderr):
+                if pipe:
+                    try:
+                        pipe.close()
+                    except (OSError, ValueError):
+                        pass
+
+    def _abort_request(self, message: str) -> None:
+        """Fail closed after a protocol-stream violation and reap its child."""
+
+        self._stop_process(terminate=True)
+        raise HarnessError(message)
+
+    def _send_message(self, message: Dict[str, Any], context: str) -> None:
         process = self._require_process()
+        if process.stdin is None:
+            self._abort_request("MCP client request stream is unavailable")
+        payload = (json.dumps(message) + "\n").encode("utf-8")
+        try:
+            written = process.stdin.write(payload)
+            if written != len(payload):
+                self._abort_request(f"MCP request stream accepted a partial write: {context}")
+            process.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            self._abort_request(f"MCP request stream closed while sending: {context}")
+
+    def _read_response_frame(self, method: str) -> bytes:
+        """Read one bounded newline-delimited JSON-RPC frame before its deadline."""
+
+        process = self._require_process()
+        if process.stdout is None:
+            self._abort_request("MCP client response stream is unavailable")
+        response_descriptor = process.stdout.fileno()
+        deadline = time.monotonic() + MCP_RESPONSE_TIMEOUT_SECONDS
+
+        while True:
+            newline = self._response_buffer.find(b"\n")
+            if newline >= 0:
+                if newline > MAX_MCP_RESPONSE_BYTES:
+                    self._abort_request(f"MCP response exceeds {MAX_MCP_RESPONSE_BYTES} bytes: {method}")
+                frame = bytes(self._response_buffer[:newline])
+                del self._response_buffer[: newline + 1]
+                return frame
+            if len(self._response_buffer) > MAX_MCP_RESPONSE_BYTES:
+                self._abort_request(f"MCP response exceeds {MAX_MCP_RESPONSE_BYTES} bytes: {method}")
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._abort_request(f"MCP response timed out before a complete frame: {method}")
+            try:
+                ready, _, _ = select.select([response_descriptor], [], [], remaining)
+            except (OSError, ValueError):
+                self._abort_request(f"MCP response stream failed: {method}")
+            if not ready:
+                self._abort_request(f"MCP response timed out before a complete frame: {method}")
+            try:
+                available = MAX_MCP_RESPONSE_BYTES + 1 - len(self._response_buffer)
+                chunk = os.read(response_descriptor, min(MCP_FRAME_READ_BYTES, available))
+            except BlockingIOError:
+                continue
+            except OSError:
+                self._abort_request(f"MCP response stream failed: {method}")
+            if not chunk:
+                self._abort_request(f"MCP server closed its stream before a complete response: {method}")
+            self._response_buffer.extend(chunk)
+
+    def request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         self.request_id += 1
         request = {"jsonrpc": "2.0", "id": self.request_id, "method": method, "params": params}
-        process.stdin.write(json.dumps(request) + "\n")
-        process.stdin.flush()
-        ready, _, _ = select.select([process.stdout], [], [], 8)
-        if not ready:
-            raise HarnessError(f"MCP request timed out: {method}")
-        line = process.stdout.readline()
-        if not line:
-            stderr = process.stderr.read() if process.stderr else ""
-            raise HarnessError(f"MCP server closed its stream: {stderr.strip()}")
-        response = json.loads(line)
+        self._send_message(request, method)
+        frame = self._read_response_frame(method)
+        try:
+            response = json.loads(frame.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._abort_request(f"MCP response is not valid JSON: {method}")
+        if not isinstance(response, dict):
+            self._abort_request(f"MCP response is not an object: {method}")
         if "error" in response:
-            raise HarnessError(f"MCP error for {method}: {response['error']}")
+            self._abort_request(f"MCP error for {method}: {response['error']}")
         result = response.get("result")
         if not isinstance(result, dict):
-            raise HarnessError(f"MCP response has no result object: {method}")
+            self._abort_request(f"MCP response has no result object: {method}")
         return result
 
     def notify(self, method: str, params: Dict[str, Any]) -> None:
-        process = self._require_process()
-        process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": method, "params": params}) + "\n")
-        process.stdin.flush()
+        self._send_message({"jsonrpc": "2.0", "method": method, "params": params}, method)
 
     def call_tool(self, public_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         entry = self.registry.get(public_name)
@@ -493,16 +588,7 @@ class StdioMcpClient:
         return result
 
     def close(self) -> None:
-        if not self.process:
-            return
-        if self.process.stdin:
-            self.process.stdin.close()
-        try:
-            self.process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-            self.process.wait(timeout=3)
-        self.process = None
+        self._stop_process(terminate=False)
 
 
 def read_contained_workspace_file(workspace: Path, name: str, limit: int = 280) -> Optional[str]:
@@ -1025,6 +1111,76 @@ for line in sys.stdin:
             "database_url": None,
         }:
             raise HarnessError("public demo child received credential-shaped environment variables")
+
+        def assert_public_demo_reaps_bad_mcp_frame(
+            case: str, payload: bytes, expected_error: str
+        ) -> None:
+            frame_workspace = root / f"{case}-frame-workspace"
+            frame_workspace.mkdir()
+            (frame_workspace / "PROJECT.md").write_text("Keep MCP frames bounded.\n", encoding="utf-8")
+            (frame_workspace / "TODO.md").write_text("Reject incomplete protocol data.\n", encoding="utf-8")
+            child_pid_path = frame_workspace / "mcp-child.pid"
+            frame_server = root / f"{case}_frame_server.py"
+            frame_server.write_text(
+                f"""from __future__ import annotations
+import os
+import sys
+import time
+from pathlib import Path
+
+workspace = Path(os.environ[\"STAGE_THREE_WORKSPACE\"])
+workspace.joinpath(\"mcp-child.pid\").write_text(str(os.getpid()), encoding=\"utf-8\")
+sys.stdout.buffer.write({payload!r})
+sys.stdout.buffer.flush()
+time.sleep(5)
+""",
+                encoding="utf-8",
+            )
+            started = time.monotonic()
+            try:
+                with patch.object(platform, "system", return_value="Darwin"), patch.object(
+                    sys.modules[__name__], "TRUSTED_SEATBELT_EXECUTABLE", fake_sandbox
+                ), patch.object(sys.modules[__name__], "MCP_RESPONSE_TIMEOUT_SECONDS", 0.25):
+                    main(
+                        [
+                            "demo",
+                            "--workspace",
+                            str(frame_workspace),
+                            "--server-name",
+                            case,
+                            "--mcp-command",
+                            shlex.join([sys.executable, str(frame_server)]),
+                            "--approve-mcp-server",
+                            "--stream",
+                            "quiet",
+                        ]
+                    )
+            except HarnessError as error:
+                elapsed = time.monotonic() - started
+                if expected_error not in str(error):
+                    raise HarnessError(f"{case} MCP frame raised the wrong failure: {error}") from error
+            else:
+                raise HarnessError(f"public demo accepted a {case} MCP frame")
+            if elapsed > 2:
+                raise HarnessError(f"public demo did not reject a {case} MCP frame in bounded time")
+            if not child_pid_path.is_file():
+                raise HarnessError(f"{case} MCP frame regression did not start its child")
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                pass
+            except PermissionError as error:
+                raise HarnessError(f"{case} MCP child could not be checked for reaping") from error
+            else:
+                raise HarnessError(f"{case} MCP frame child remained running after the public demo failed")
+
+        assert_public_demo_reaps_bad_mcp_frame(
+            "partial", b"{", "timed out before a complete frame"
+        )
+        assert_public_demo_reaps_bad_mcp_frame(
+            "oversized", b"x" * (MAX_MCP_RESPONSE_BYTES + 1) + b"\n", "response exceeds"
+        )
 
         script_path = Path(__file__).resolve()
         demo_help = subprocess.run(
