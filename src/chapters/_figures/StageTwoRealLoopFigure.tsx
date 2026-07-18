@@ -4,7 +4,7 @@ export function StageTwoRealLoopFigure() {
       viewBox="0 0 940 590"
       className="min-w-[760px] w-full"
       role="img"
-      aria-label="A Stage Two coding-agent loop routes a user task through context management, a streamed model turn, tool validation and permission checks, bounded tool execution, and a matching result. Four guard bands recover from transient API errors, invalid tools, interrupted streams, and growing context."
+      aria-label="A Stage Two coding-agent loop routes a user task through context management, a streamed model turn, tool validation and permission checks, bounded tool execution, and a matching result. Valid tool calls execute after validation. Invalid or denied calls bypass execution and return a matching error result. Four guard bands recover from transient API errors, invalid tools, interrupted streams, and growing context."
       fill="none"
     >
       <title>Stage Two fault-containment loop</title>
@@ -99,11 +99,11 @@ export function StageTwoRealLoopFigure() {
         timeout + output cap
       </text>
       <path d="M824 261 V319" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
-      <text x="860" y="294" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">
+      <text x="860" y="294" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="14" fontWeight="600" fill="var(--fg)">
         valid call
       </text>
       <path d="M780 261 V280 H630 V365 H595" stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#stage-two-real-loop-arrow)" />
-      <text x="685" y="275" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="9" fill="var(--comment)">
+      <text x="685" y="275" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="14" fontWeight="600" fill="var(--fg)">
         invalid or denied
       </text>
 

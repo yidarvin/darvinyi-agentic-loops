@@ -368,6 +368,14 @@ def run_tool_safely(tools: WorkspaceTools, gate: PermissionGate, call: ToolCall)
                 True,
             )
         return ToolResult(call.id, handler(**arguments))
+    except KeyboardInterrupt:
+        return ToolResult(
+            call.id,
+            "[Request interrupted by user] {} was cancelled; inspect workspace state before retrying".format(
+                call.name
+            ),
+            True,
+        )
     except Exception as error:
         return ToolResult(call.id, "error running {}: {}".format(call.name, error), True)
 
@@ -916,6 +924,50 @@ def self_test() -> None:
             ToolCall("shell_denied", "run_shell", {"command": "echo should-not-run"}),
         )
         assert denied.is_error and "permission denied" in denied.content
+
+        permission_marker = workspace / "permission-interrupt-marker.txt"
+        permission_command = "{} -c {}".format(
+            shlex.quote(sys.executable),
+            shlex.quote(
+                "from pathlib import Path; Path('permission-interrupt-marker.txt').write_text('unexpected')"
+            ),
+        )
+        permission_provider = ScriptedProvider(transient_failures=0)
+        permission_provider.turns = [
+            _tool_turn(
+                "request approval for a cancellable shell call",
+                ToolCall("permission_interrupt_01", "run_shell", {"command": permission_command}),
+            ),
+            ProviderTurn(
+                content=[{"type": "text", "text": "permission interruption result received"}],
+                calls=[],
+                stop_reason="end_turn",
+            ),
+        ]
+        with patch("builtins.input", side_effect=KeyboardInterrupt):
+            permission_report = run_agent(
+                permission_provider,
+                tools,
+                PermissionGate("default", interactive=True),
+                ContextManager("handle a cancelled permission prompt", clear_at_chars=10_000, compact_at_chars=20_000),
+                "Run a shell command after approval.",
+                emit=silent,
+                sleep_fn=no_sleep,
+                max_steps=2,
+            )
+        permission_result = permission_report.tool_results[0]
+        assert permission_report.completed and permission_result.tool_use_id == "permission_interrupt_01"
+        assert permission_result.is_error and "[Request interrupted by user]" in permission_result.content
+        permission_result_blocks = [
+            message["content"]
+            for message in permission_report.history
+            if message.get("role") == "user" and isinstance(message.get("content"), list)
+        ]
+        assert len(permission_result_blocks) == 1
+        assert permission_result_blocks[0][0]["tool_use_id"] == "permission_interrupt_01"
+        assert permission_result_blocks[0][0]["is_error"] is True
+        _assert_legal_anthropic_history(permission_report.history)
+        assert not permission_marker.exists()
 
         output_command = "{} -c {}".format(
             shlex.quote(sys.executable), shlex.quote("print('x' * 400)")

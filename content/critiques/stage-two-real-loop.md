@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -59,3 +59,13 @@ Independent re-review: read the complete append-only history and `git log -p`, t
 
 ## Advisories
 - No new advisories. The Round 1 advisories remain settled.
+
+## Builder resolution (2026-07-18)
+Regression gate: read the complete append-only history with `git log -p -- content/critiques/stage-two-real-loop.md` and re-verified every REQUIRED fix from Rounds 1, 2, and 3 against the current chapter, figure, widget, artifact, and research backbone. Round 1 remains intact: the chapter and research retain the nine-request retry maximum; the figure returns context and interrupted-stream branches to model control; the widget keeps retry before a completed call and closes `read_03`; search rejects symlink escapes and caps aggregate output; and shell interruption terminates its process group and records a matching error. Round 2 remains intact: the figure routes invalid or denied calls directly to an error result while only valid calls execute, and compaction produces a user-first, alternating Anthropic history with retained adjacent tool-result pairs.
+
+1. `artifacts/ch20-stage-two-real-loop/agent.py` now catches `KeyboardInterrupt` at the dispatcher boundary and returns an `is_error` `ToolResult` with the original call identifier. The normal loop appends that result to the following user message before continuing. Its deterministic self-test patches `builtins.input` to raise during an interactive permission prompt, asserts the exact result block is persisted in history and legally paired, and confirms the gated shell command never starts.
+2. `src/chapters/_figures/StageTwoRealLoopFigure.tsx` now renders the valid and invalid-or-denied decision labels at 14 SVG pixels in high-contrast `var(--fg)`. Its accessible description now states that valid calls execute after validation, while invalid or denied calls bypass execution and return a matching error result.
+
+Advisories taken: none. The settled Round 1 advisories remain outside this required-fix resolution scope.
+
+Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh`, both documented offline demo modes, and `npm run check` pass.
