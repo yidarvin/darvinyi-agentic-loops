@@ -87,7 +87,15 @@ const GENERIC_LOOKUP_STARTERS = new Set([
   "why",
 ]);
 const SUPPORTED_ACTION_TERMS = new Set(["deploy", "deployment", "release", "ship"]);
-const UNREPRESENTABLE_ACTION_TERMS = new Set(["delete", "deleting", "deletion"]);
+const UNREPRESENTABLE_ACTION_TERMS = new Set([
+  "delete",
+  "deleting",
+  "deletion",
+  "purge",
+  "purges",
+  "purged",
+  "purging",
+]);
 
 async function main() {
   if (hasFlag("--help")) {
@@ -446,6 +454,10 @@ function requestedServices(tokens) {
 }
 
 function classifyActionRequest(tokens) {
+  // Inspect the full request before accepting any supported operation. A later
+  // destructive clause must not inherit authorization from an earlier deploy.
+  if (tokens.some((term) => UNREPRESENTABLE_ACTION_TERMS.has(term))) return { supported: false };
+
   const intentIndex = tokens.findIndex((term) => ACTION_REQUEST_PREFIXES.has(term));
   if (intentIndex !== -1) {
     const operation = firstActionTerm(tokens, intentIndex + 1);
@@ -473,8 +485,6 @@ function classifyActionRequest(tokens) {
   if (genericInterrogativeOperation) {
     return { supported: SUPPORTED_ACTION_TERMS.has(genericInterrogativeOperation) };
   }
-
-  if (tokens.some((term) => UNREPRESENTABLE_ACTION_TERMS.has(term))) return { supported: false };
 
   const firstTerm = firstActionTerm(tokens, 0);
   if (!firstTerm || GENERIC_LOOKUP_STARTERS.has(firstTerm)) return { supported: true };
@@ -1252,6 +1262,33 @@ async function selfTest() {
       rrfK: DEFAULT_RRF_K,
     });
     assertUnsupportedRequestAbstains(requirementPurging, "question-form purging operation");
+
+    const mixedSupportedAndDestructiveAction = await runAgent({
+      storePath: resolve(directory, "mixed-supported-destructive-action-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "How do I deploy checkout after deleting telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(
+      mixedSupportedAndDestructiveAction,
+      "mixed supported and destructive action request",
+    );
+
+    const thirdPersonPurgingLookup = await runAgent({
+      storePath: resolve(directory, "third-person-purging-lookup-memory.json"),
+      fixturesPath: resolve("fixtures/memories.json"),
+      reset: true,
+      tenant: "acme",
+      asOf: DEFAULT_AS_OF,
+      question: "Where did someone purge checkout telemetry data?",
+      budget: DEFAULT_BUDGET,
+      rrfK: DEFAULT_RRF_K,
+    });
+    assertUnsupportedRequestAbstains(thirdPersonPurgingLookup, "third-person purging lookup");
 
     const releaseBilling = await runAgent({
       storePath: resolve(directory, "release-billing-memory.json"),
