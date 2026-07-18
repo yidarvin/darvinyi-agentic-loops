@@ -68,8 +68,10 @@ process starts. There is no global bypass-permissions flag.
 3. It starts an approved `mcp_demo_server.py` inside Seatbelt, performs `initialize`,
    discovers `tools/list`, maps the tool to `mcp__demo__read_project_brief`, and pins
    its normalized definition hash in host-owned state outside the server workspace.
-   The client starts the server in its own process group and terminates and reaps that
-   group on close or protocol abort.
+   The client starts the direct server in its own session. The profile permits exec
+   but denies process forks, preventing a server from daemonizing with `setsid()` and
+   escaping lifecycle cleanup; the client also terminates and reaps the original
+   process group on close or protocol abort.
 4. It records the MCP tool result as untrusted data rather than treating it as an
    instruction.
 5. It runs a fresh, read-only depth-one worker. The parent receives only the worker's
@@ -91,6 +93,8 @@ named zero-argument tool. The supported custom-source contract is deliberately
 narrow: put the Python server script inside the selected `--workspace` and invoke it
 by a workspace-relative path. That source is inside the Seatbelt-readable workspace;
 an arbitrary external absolute path is not a supported extension and fails closed.
+Supported custom servers are single-process: the profile allows execution but rejects
+forks so task-scoped approval cannot leave a detached workspace writer behind.
 The exact server command appears in a distinct launch-policy decision before the
 server starts. The server is still launched through the same fail-closed sandbox, and
 its tool definitions still need to match the host-owned lock file. A non-demo server

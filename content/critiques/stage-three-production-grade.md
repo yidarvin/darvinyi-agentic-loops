@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -169,3 +169,13 @@ Fresh-eyes convergence review: read `prompts/critique-rubric.md`, the complete a
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 7 against the current chapter, exact figure and widget, artifact, README, and deterministic regressions: the public parser still has no sandbox bypass; memory roots and host writes remain descriptor-contained; launch authorization precedes `popen`; definition locks remain host-owned outside the writable workspace; the child environment remains a narrow allowlist; static and post-open workspace-symlink reads stay contained; the reviewed Seatbelt executable is not resolved through `PATH`; FIFO, oversized, partial, and malformed inputs fail in bounded time; ordinary MCP descendants remain reaped; and the independent-seam figure plus workspace-local custom-server contract remain accurate and runnable.
+
+1. Replaced the broad Seatbelt `(allow process*)` rule in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` with execution-only permission and an explicit `(deny process-fork)`. The direct MCP process still starts as a session leader, so it cannot call `setsid()` itself, and the profile now prevents it from creating a child that could form a new session outside group cleanup.
+2. Added a deterministic, real-Seatbelt public-demo regression in `stage_three_agent.py`. It runs a workspace-local MCP server through the public parser, attempts direct `setsid()` plus `fork()` followed by child `setsid()`, requires both boundary attempts to be denied, and proves no detached PID or delayed workspace marker survives after the harness returns. The regression runs only on the artifact's supported macOS Seatbelt path; the portable self-test also asserts the non-detachable profile contract.
+3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to state the actual single-process custom-server contract and the combined fork prohibition plus process-group cleanup boundary.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.

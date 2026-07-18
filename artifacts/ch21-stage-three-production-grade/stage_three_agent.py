@@ -513,7 +513,8 @@ class MacOSSandbox:
         return f"""(version 1)
 (deny default)
 (import \"system.sb\")
-(allow process*)
+(allow process-exec)
+(deny process-fork)
 (allow file-read*
   {read_rules})
 (allow file-write* (subpath \"{profile_path(self.workspace)}\"))
@@ -539,6 +540,9 @@ class MacOSSandbox:
         )
 
     def popen(self, argv: Sequence[str]) -> subprocess.Popen[bytes]:
+        # The direct child becomes a session leader. The Seatbelt profile permits
+        # exec but denies process-fork, so an approved server cannot create a
+        # descendant that calls setsid() to escape this lifecycle boundary.
         return subprocess.Popen(
             self._command(argv),
             cwd=self.workspace,
@@ -1215,6 +1219,14 @@ def run_self_test() -> None:
         else:
             raise HarnessError("missing sandbox binary launched an unsandboxed process")
 
+        process_profile = MacOSSandbox(workspace, binary="/not/a/sandbox-exec")._profile()
+        if (
+            "(allow process-exec)" not in process_profile
+            or "(deny process-fork)" not in process_profile
+            or "(allow process*)" in process_profile
+        ):
+            raise HarnessError("Seatbelt profile does not enforce the non-detachable MCP process boundary")
+
         fake_sandbox = root / "fake-sandbox-exec"
         fake_sandbox.write_text(
             "#!/bin/sh\n"
@@ -1499,6 +1511,133 @@ time.sleep(5)
                     raise HarnessError(f"{label} could not be checked for reaping") from error
                 time.sleep(0.01)
             raise HarnessError(f"{label} remained running after MCP cleanup")
+
+        def assert_public_demo_blocks_detached_mcp_child(sandbox_binary: Path) -> None:
+            """Exercise fork-plus-setsid against the real public Seatbelt boundary."""
+
+            detached_workspace = root / "detached-mcp-child-workspace"
+            detached_workspace.mkdir()
+            (detached_workspace / "PROJECT.md").write_text(
+                "A server must not outlive its approved harness run.\n", encoding="utf-8"
+            )
+            (detached_workspace / "TODO.md").write_text(
+                "Reject daemonized MCP children.\n", encoding="utf-8"
+            )
+            fork_result_path = detached_workspace / "fork-result.txt"
+            direct_setsid_path = detached_workspace / "direct-setsid-result.txt"
+            detached_pid_path = detached_workspace / "detached-child.pid"
+            post_return_marker = detached_workspace / "detached-child-post-return.txt"
+            detached_server = detached_workspace / "detaching_server.py"
+            detached_server.write_text(
+                """from __future__ import annotations
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+workspace = Path(os.environ["STAGE_THREE_WORKSPACE"])
+fork_result = workspace / "fork-result.txt"
+direct_setsid = workspace / "direct-setsid-result.txt"
+detached_pid = workspace / "detached-child.pid"
+post_return_marker = workspace / "detached-child-post-return.txt"
+tool = {
+    "name": "probe_lifecycle",
+    "description": "Prove the server cannot daemonize outside MCP cleanup.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+}
+
+try:
+    os.setsid()
+except OSError as error:
+    direct_setsid.write_text(f"denied:{error.errno}", encoding="utf-8")
+else:
+    direct_setsid.write_text("unexpected-success", encoding="utf-8")
+
+try:
+    child_pid = os.fork()
+except OSError as error:
+    fork_result.write_text(f"denied:{error.errno}", encoding="utf-8")
+else:
+    if child_pid == 0:
+        os.setsid()
+        detached_pid.write_text(str(os.getpid()), encoding="utf-8")
+        time.sleep(0.3)
+        post_return_marker.write_text("escaped", encoding="utf-8")
+        os._exit(0)
+    fork_result.write_text(f"forked:{child_pid}", encoding="utf-8")
+
+def respond(request_id, result):
+    print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    request_id = request.get("id")
+    if request_id is None:
+        continue
+    if request.get("method") == "initialize":
+        respond(request_id, {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "lifecycle-probe", "version": "1.0.0"},
+        })
+    elif request.get("method") == "tools/list":
+        respond(request_id, {"tools": [tool]})
+    elif request.get("method") == "tools/call":
+        respond(request_id, {"content": [{"type": "text", "text": "lifecycle contained"}], "isError": False})
+""",
+                encoding="utf-8",
+            )
+
+            detached_pid: Optional[int] = None
+            try:
+                with patch.object(platform, "system", return_value="Darwin"), patch.object(
+                    sys.modules[__name__], "TRUSTED_SEATBELT_EXECUTABLE", sandbox_binary
+                ):
+                    detached_exit = main(
+                        [
+                            "demo",
+                            "--workspace",
+                            str(detached_workspace),
+                            "--server-name",
+                            "lifecycle",
+                            "--mcp-command",
+                            "python3 ./detaching_server.py",
+                            "--mcp-tool",
+                            "probe_lifecycle",
+                            "--approve-mcp-server",
+                            "--approve-mcp-tool",
+                            "--approve-verification",
+                            "--stream",
+                            "quiet",
+                        ]
+                    )
+                if detached_exit != 0:
+                    raise HarnessError("public demo lifecycle probe did not complete")
+                if not direct_setsid_path.is_file() or not direct_setsid_path.read_text(encoding="utf-8").startswith(
+                    "denied:"
+                ):
+                    raise HarnessError("MCP direct child escaped its dedicated session")
+                if not fork_result_path.is_file() or not fork_result_path.read_text(encoding="utf-8").startswith(
+                    "denied:"
+                ):
+                    raise HarnessError("Seatbelt allowed an MCP server to fork a detachable child")
+                if detached_pid_path.exists():
+                    detached_pid = int(detached_pid_path.read_text(encoding="utf-8"))
+
+                time.sleep(0.5)
+                if detached_pid is not None:
+                    assert_process_exited(detached_pid, "detached MCP descendant")
+                if post_return_marker.exists():
+                    raise HarnessError("detached MCP descendant wrote after the public demo returned")
+            finally:
+                if detached_pid is not None:
+                    try:
+                        os.kill(detached_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
         def assert_public_demo_blocks_forked_memory_race() -> None:
             race_workspace = root / "forked-memory-race-workspace"
@@ -1950,6 +2089,7 @@ for line in sys.stdin:
 
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
+            assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():
