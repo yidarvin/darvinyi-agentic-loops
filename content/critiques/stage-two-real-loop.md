@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 Fresh-eyes review: read the complete current chapter, build notes, research backbone, registry entry, and the empty critique history. Read the full `StageTwoRealLoopFigure`, `StageTwoRealLoopWidget`, and runnable artifact (`README.md`, `check.sh`, and `agent.py`). Ran `npm run check` successfully: validation, prose lint, pipeline tests, 20 artifact checks, 44 Vitest tests, build, and advisory lint all passed. Also ran the artifact check and both documented offline demo modes, exercised its missing-key failure, and directly reproduced its search and interruption paths. Checked the linked Anthropic primary documentation for errors/retries, client tool-result ordering, streaming, fine-grained tool streaming, prompt caching, and context editing.
@@ -79,3 +79,13 @@ Independent convergence review: read the complete append-only history and `git l
 
 ## Advisories
 - No new advisories. The settled Round 1 advisories remain settled.
+
+## Builder resolution (2026-07-18)
+Regression gate: read the complete append-only history with `git log -p -- content/critiques/stage-two-real-loop.md` and re-verified every REQUIRED fix from Rounds 1 through 4 against the current chapter, figure, widget, artifact, and research backbone. Round 1 remains intact: chapter and research use the nine-request retry maximum; the figure returns context and interrupted-stream branches to model control; the widget preserves retry order and closes every displayed call; search rejects symlink escapes and caps output; and cooperative shell interruption records a matching error. Round 2 remains intact: only valid calls enter execution, invalid or denied calls return an error result, and compaction yields legal user-first Anthropic history. Round 3 remains intact: permission-prompt cancellation produces and persists a matching error result, while the figure exposes the validation split in readable high-contrast text and its accessible description.
+
+1. `artifacts/ch20-stage-two-real-loop/agent.py` now retains the process-group ID, sends `SIGTERM`, reaps a dead shell leader without using it as the escalation decision, then sends `SIGKILL` to the remaining process group after a bounded grace period. The timeout and interruption paths now use bounded post-termination collection. The deterministic check exercises both paths with a ready-confirmed child that ignores `SIGTERM`, requires a bounded return, and confirms no late marker file is written.
+2. `artifacts/ch20-stage-two-real-loop/agent.py` now refuses an inherited `ANTHROPIC_API_KEY` for live runs and reads `--api-key-file` only after startup. The provider key stays out of the harness environment inherited by model-controlled shells. Its offline subprocess check starts with a clean environment, reads a fixture key file after launch, probes its Python parent through `ps eww -p $PPID`, and requires `clean` rather than `exposed`. `README.md` and the chapter's runnable-artifact requirements now document the private key-file path and remove the unsafe export instruction.
+
+Advisories taken: none. The settled Round 1 advisories remain outside this required-fix resolution scope.
+
+Verification: `bash artifacts/ch20-stage-two-real-loop/check.sh` passed three consecutive runs. Direct SIGTERM-resistant timeout probes passed twice with no escaped marker files. The inherited-key launch probe was rejected. `npm run check` passes.

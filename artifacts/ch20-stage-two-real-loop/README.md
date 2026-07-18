@@ -28,7 +28,7 @@ That mode is intentionally named as a warning. It is acceptable only for the art
 - File paths resolve inside that workspace or return a model-visible error result.
 - replace_once rejects absent and ambiguous text with corrective messages.
 - search_files and run_shell enforce aggregate character caps with a visible middle-truncation marker.
-- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips ANTHROPIC_API_KEY from its child environment, and kills the full process group on timeout or interruption.
+- run_shell starts a new process group, has no standard input, combines standard error with standard output, strips any accidental ANTHROPIC_API_KEY from its child environment, and kills the full process group on timeout or interruption.
 - Every tool call produces a result with its original identifier. Errors and permission denials use the same result path.
 - Context management first clears stale tool bodies while retaining call identifiers. Its demonstration compaction produces a structured continuation summary.
 
@@ -38,19 +38,19 @@ The shell tool is still not a sandbox. It can execute arbitrary commands with th
 
 The optional provider adapts the loop to the Anthropic Python SDK. It uses streaming, records text deltas, requires a clean terminal stream event before dispatch, and sets SDK retries to zero so the harness owns transient retries.
 
-Install a current SDK and use a current tool-capable model identifier:
+Install a current SDK, create a mode-0600 file containing only the API key, and use a current tool-capable model identifier. Do not export ANTHROPIC_API_KEY: the harness refuses an inherited key so a model-controlled shell cannot recover the live credential from its parent process environment.
 
 ~~~sh
 python3 -m pip install anthropic
-export ANTHROPIC_API_KEY=your-key
 python3 agent.py \
   --provider anthropic \
+  --api-key-file /path/to/private-anthropic-key \
   --model your-current-tool-capable-model \
   --workspace /path/to/disposable-repository \
   --task "Read the failing test, make the smallest safe fix, then run that test."
 ~~~
 
-The program exits with a clear setup error if the package, key, model, task, or workspace is missing. Run a live provider only in a disposable or otherwise contained repository. A production implementation should use the provider's token-counting endpoint and a real sandbox before it handles untrusted work.
+The program reads the key file only after startup and keeps it out of the process environment. It exits with a clear setup error if the package, key file, model, task, or workspace is missing. Run a live provider only in a disposable or otherwise contained repository. A production implementation should use the provider's token-counting endpoint and a real sandbox before it handles untrusted work.
 
 ## Run the checks
 
@@ -58,7 +58,7 @@ The program exits with a clear setup error if the package, key, model, task, or 
 bash check.sh
 ~~~
 
-The check is offline and credential-free. It verifies syntax, file reads, bounded search output, symlink and traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, shell timeout and interruption recovery, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
+The check is offline and credential-free. It verifies syntax, file reads, bounded search output, symlink and traversal rejection, exact-edit ambiguity, permission denial, bounded retry, shell output truncation, cleanup of cooperative and SIGTERM-resistant shell children, after-start provider-key handling, tool-result identifier pairing, deterministic compaction, and the full scripted recovery path.
 
 ## Design boundary
 

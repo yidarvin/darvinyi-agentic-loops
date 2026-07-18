@@ -32,6 +32,8 @@ MAX_FILE_CHARS = 10_000
 MAX_TOOL_OUTPUT_CHARS = 30_000
 MAX_LIST_RESULTS = 100
 DEFAULT_SHELL_TIMEOUT_SECONDS = 20.0
+PROCESS_GROUP_GRACE_SECONDS = 0.1
+PROCESS_GROUP_REAP_SECONDS = 0.5
 TRANSIENT_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504, 529}
 READ_TOOLS = {"list_files", "read_file", "search_files"}
 WRITE_TOOLS = {"replace_once"}
@@ -51,6 +53,24 @@ class TransientModelError(RuntimeError):
 
 class FatalModelError(RuntimeError):
     """A model request needs repair instead of another retry."""
+
+
+def read_api_key_file(raw_path: str | None) -> str:
+    """Read a live-provider key after startup without inheriting it from the environment."""
+    if "ANTHROPIC_API_KEY" in os.environ:
+        raise ConfigurationError(
+            "refusing inherited ANTHROPIC_API_KEY; remove it and provide --api-key-file instead"
+        )
+    if not raw_path:
+        raise ConfigurationError("--api-key-file is required for --provider anthropic")
+    key_path = Path(raw_path).expanduser()
+    try:
+        api_key = key_path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ConfigurationError("could not read --api-key-file {}: {}".format(key_path, error)) from error
+    if not api_key:
+        raise ConfigurationError("--api-key-file must contain a non-empty API key")
+    return api_key
 
 
 @dataclass(frozen=True)
@@ -280,16 +300,14 @@ class WorkspaceTools:
         try:
             output, _ = process.communicate(timeout=self.shell_timeout_seconds)
         except KeyboardInterrupt:
-            self._stop_process_group(process)
-            output, _ = process.communicate()
+            output = self._stop_and_collect_process_group(process)
             raise ToolFailure(
                 "[Request interrupted by user] command interrupted; its process group was terminated\n{}".format(
                     middle_clip(output or "", self.max_output_chars)
                 )
             )
         except subprocess.TimeoutExpired:
-            self._stop_process_group(process)
-            output, _ = process.communicate()
+            output = self._stop_and_collect_process_group(process)
             raise ToolFailure(
                 "command timed out after {:.1f}s; its process group was terminated\n{}".format(
                     self.shell_timeout_seconds, middle_clip(output or "", self.max_output_chars)
@@ -302,21 +320,47 @@ class WorkspaceTools:
         return "(exit 0)\n{}".format(output)
 
     @staticmethod
-    def _stop_process_group(process: subprocess.Popen[str]) -> None:
+    def _stop_process_group(
+        process: subprocess.Popen[str], *, grace_seconds: float = PROCESS_GROUP_GRACE_SECONDS
+    ) -> None:
         if os.name != "posix":
-            process.kill()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
             return
+        process_group_id = process.pid
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(process_group_id, signal.SIGTERM)
         except ProcessLookupError:
             return
+        if grace_seconds:
+            time.sleep(grace_seconds)
+        # Escalate by process group, not by leader state. The shell can exit after
+        # SIGTERM while a background child keeps the group, output pipe, and command alive.
+        # Poll only to reap a dead shell leader before macOS evaluates the remaining group.
+        # It never decides whether escalation is needed.
+        process.poll()
         try:
-            process.wait(timeout=0.2)
+            os.killpg(process_group_id, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def _stop_and_collect_process_group(self, process: subprocess.Popen[str]) -> str:
+        self._stop_process_group(process)
+        try:
+            output, _ = process.communicate(timeout=PROCESS_GROUP_REAP_SECONDS)
         except subprocess.TimeoutExpired:
+            self._stop_process_group(process, grace_seconds=0.0)
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                return
+                output, _ = process.communicate(timeout=PROCESS_GROUP_REAP_SECONDS)
+            except subprocess.TimeoutExpired as error:
+                raise ToolFailure(
+                    "command cleanup exceeded {:.1f}s after process-group termination".format(
+                        PROCESS_GROUP_REAP_SECONDS
+                    )
+                ) from error
+        return output or ""
 
 
 class PermissionGate:
@@ -687,7 +731,7 @@ class AnthropicProvider:
         if not model:
             raise ConfigurationError("the Anthropic provider needs --model with a current tool-capable model ID")
         if not api_key:
-            raise ConfigurationError("set ANTHROPIC_API_KEY before using --provider anthropic")
+            raise ConfigurationError("provide a non-empty --api-key-file before using --provider anthropic")
         try:
             import anthropic
         except ImportError as error:
@@ -987,6 +1031,51 @@ def self_test() -> None:
         assert timeout_result.is_error and "process group was terminated" in timeout_result.content
         assert timeout_result.tool_use_id == "timeout_01"
 
+        def resistant_child_command(ready_name: str, marker_name: str) -> str:
+            child = (
+                "import signal, time; from pathlib import Path; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "Path({!r}).write_text('ready'); time.sleep(1.0); Path({!r}).write_text('unexpected')"
+            ).format(ready_name, marker_name)
+            return "{} -c {} & while [ ! -f {} ]; do sleep 0.01; done; wait".format(
+                shlex.quote(sys.executable), shlex.quote(child), shlex.quote(ready_name)
+            )
+
+        def wait_for_file(path: Path, timeout_seconds: float = 0.5) -> None:
+            deadline = time.monotonic() + timeout_seconds
+            while not path.exists():
+                if time.monotonic() >= deadline:
+                    raise AssertionError("resistant child did not become ready: {}".format(path))
+                time.sleep(0.01)
+
+        resistant_tools = WorkspaceTools(
+            workspace,
+            max_file_chars=80,
+            max_output_chars=100,
+            shell_timeout_seconds=0.2,
+        )
+        timeout_resistant_marker = workspace / "timeout-resistant-marker.txt"
+        timeout_resistant_ready = workspace / "timeout-resistant-ready.txt"
+        timeout_resistant_started = time.monotonic()
+        timeout_resistant_result = run_tool_safely(
+            resistant_tools,
+            PermissionGate("dangerously-skip-permissions", interactive=False),
+            ToolCall(
+                "timeout_resistant_01",
+                "run_shell",
+                {
+                    "command": resistant_child_command(
+                        timeout_resistant_ready.name, timeout_resistant_marker.name
+                    )
+                },
+            ),
+        )
+        timeout_resistant_elapsed = time.monotonic() - timeout_resistant_started
+        assert timeout_resistant_result.is_error and "process group was terminated" in timeout_resistant_result.content
+        assert timeout_resistant_elapsed < 0.75, "resistant timeout cleanup was not bounded"
+        time.sleep(1.1)
+        assert not timeout_resistant_marker.exists(), "SIGTERM-resistant timeout child escaped the process group"
+
         interrupt_marker = workspace / "interrupted-marker.txt"
         interrupt_command = "{} -c {}".format(
             shlex.quote(sys.executable),
@@ -1040,6 +1129,103 @@ def self_test() -> None:
         assert recorded_results[0][0]["tool_use_id"] == "interrupt_01"
         assert recorded_results[0][0]["is_error"] is True
         assert not interrupt_marker.exists()
+
+        interrupt_resistant_marker = workspace / "interrupt-resistant-marker.txt"
+        interrupt_resistant_ready = workspace / "interrupt-resistant-ready.txt"
+        interrupt_resistant_provider = ScriptedProvider(transient_failures=0)
+        interrupt_resistant_provider.turns = [
+            _tool_turn(
+                "run a SIGTERM-resistant cancellable child",
+                ToolCall(
+                    "interrupt_resistant_01",
+                    "run_shell",
+                    {
+                        "command": resistant_child_command(
+                            interrupt_resistant_ready.name, interrupt_resistant_marker.name
+                        )
+                    },
+                ),
+            ),
+            ProviderTurn(
+                content=[{"type": "text", "text": "interrupted resistant shell result received"}],
+                calls=[],
+                stop_reason="end_turn",
+            ),
+        ]
+        interrupted_resistant_once = {"value": False}
+
+        def interrupt_after_resistant_child_is_ready(process: Any, *args: Any, **kwargs: Any) -> Any:
+            if not interrupted_resistant_once["value"]:
+                interrupted_resistant_once["value"] = True
+                wait_for_file(interrupt_resistant_ready)
+                raise KeyboardInterrupt
+            return original_communicate(process, *args, **kwargs)
+
+        interrupt_resistant_started = time.monotonic()
+        with patch.object(
+            subprocess.Popen, "communicate", new=interrupt_after_resistant_child_is_ready
+        ):
+            interrupted_resistant_report = run_agent(
+                interrupt_resistant_provider,
+                resistant_tools,
+                PermissionGate("dangerously-skip-permissions", interactive=False),
+                ContextManager("interrupt a resistant shell child", clear_at_chars=10_000, compact_at_chars=20_000),
+                "Run a cancellable shell command.",
+                emit=silent,
+                sleep_fn=no_sleep,
+                max_steps=2,
+            )
+        interrupt_resistant_elapsed = time.monotonic() - interrupt_resistant_started
+        interrupted_resistant_result = interrupted_resistant_report.tool_results[0]
+        assert interrupted_resistant_report.completed and interrupted_resistant_result.is_error
+        assert "[Request interrupted by user]" in interrupted_resistant_result.content
+        assert interrupt_resistant_elapsed < 0.75, "resistant interrupt cleanup was not bounded"
+        time.sleep(1.1)
+        assert not interrupt_resistant_marker.exists(), "SIGTERM-resistant interrupted child escaped the process group"
+
+        key_file = outside / "anthropic-key.txt"
+        key_file.write_text("stage-two-fixture\n", encoding="utf-8")
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "stage-two-fixture"}):
+            try:
+                read_api_key_file(str(key_file))
+            except ConfigurationError as error:
+                assert "refusing inherited ANTHROPIC_API_KEY" in str(error)
+            else:
+                raise AssertionError("live-provider key loading accepted an inherited environment secret")
+
+        key_probe_code = "\n".join(
+            [
+                "import agent, shlex, sys",
+                "class ProbeProvider:",
+                "    def __init__(self, model, api_key, emit):",
+                "        assert api_key == open(sys.argv[1], encoding='utf-8').read().strip()",
+                "        self.api_key = api_key",
+                "        self.index = 0",
+                "    def next_turn(self, history):",
+                "        if self.index == 0:",
+                "            self.index += 1",
+                "            needle = 'ANTHROPIC_API_KEY=' + self.api_key",
+                "            command = 'ps eww -p $PPID | grep -Fq {} && printf exposed || printf clean'.format(shlex.quote(needle))",
+                "            call = agent.ToolCall('key_probe_01', 'run_shell', {'command': command})",
+                "            return agent._tool_turn('probe the harness parent environment', call)",
+                "        result = history[-1]['content'][0]",
+                "        assert not result['is_error'] and 'clean' in result['content'] and 'exposed' not in result['content']",
+                "        return agent.ProviderTurn(content=[{'type': 'text', 'text': 'parent environment is clean'}], calls=[], stop_reason='end_turn')",
+                "agent.AnthropicProvider = ProbeProvider",
+                "raise SystemExit(agent.main(['agent.py', '--provider', 'anthropic', '--api-key-file', sys.argv[1], '--workspace', sys.argv[2], '--task', 'probe', '--model', 'fixture-model', '--mode', 'dangerously-skip-permissions', '--max-steps', '2']))",
+            ]
+        )
+        key_probe = subprocess.run(
+            [sys.executable, "-c", key_probe_code, str(key_file), str(workspace)],
+            cwd=Path(__file__).resolve().parent,
+            env={"PATH": os.defpath},
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        assert key_probe.returncode == 0, key_probe.stderr
+        assert "[result] ok key_probe_01 -> (exit 0) | clean" in key_probe.stdout
 
     attempts = {"count": 0}
 
@@ -1107,6 +1293,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--model", help="current model ID for the optional Anthropic provider")
     parser.add_argument("--task", help="task for the optional live provider")
     parser.add_argument(
+        "--api-key-file",
+        help="private API-key file read after startup for the optional Anthropic provider",
+    )
+    parser.add_argument(
         "--mode",
         choices=["default", "accept-edits", "dangerously-skip-permissions"],
         default="default",
@@ -1133,7 +1323,7 @@ def main(argv: list[str]) -> int:
             raise ConfigurationError("--workspace is required for --provider anthropic")
         if not args.task:
             raise ConfigurationError("--task is required for --provider anthropic")
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        api_key = read_api_key_file(args.api_key_file)
         provider = AnthropicProvider(args.model or "", api_key, console_emit)
         tools = WorkspaceTools(Path(args.workspace))
         gate = PermissionGate(args.mode, interactive=sys.stdin.isatty())

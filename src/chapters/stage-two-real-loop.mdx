@@ -102,7 +102,7 @@ The artifact is a self-contained Python implementation of the Stage Two control 
   path="artifacts/ch20-stage-two-real-loop/"
   runtime="Python 3.11+; zero dependencies for the offline demo"
   run={["cd artifacts/ch20-stage-two-real-loop", "python3 agent.py --demo --mode accept-edits", "bash check.sh"]}
-  requires="No API key for the demo. The optional Anthropic adapter needs ANTHROPIC_API_KEY, a current model ID, and the anthropic package."
+  requires="No API key for the demo. The optional Anthropic adapter needs a private key file passed with --api-key-file, a current model ID, and the anthropic package."
   href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch20-stage-two-real-loop">
   The default trace recovers from a simulated overload and a failed exact edit. In accept-edits mode it deliberately leaves the shell verification behind the permission gate. Run it with dangerously-skip-permissions only inside the artifact's disposable demo workspace.
 </RunnableArtifact>
