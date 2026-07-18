@@ -8,6 +8,7 @@ the dispatch, policy, memory, MCP, and sandbox seams intact.
 from __future__ import annotations
 
 import argparse
+import errno
 import fnmatch
 import hashlib
 import json
@@ -16,9 +17,11 @@ import platform
 import select
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from unittest.mock import patch
@@ -26,18 +29,8 @@ from unittest.mock import patch
 
 PROTOCOL_VERSION = "2025-06-18"
 MAX_DEPTH = 1
-SENSITIVE_ENV_NAMES = {
-    "ANTHROPIC_API_KEY",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "GITHUB_TOKEN",
-    "OPENAI_API_KEY",
-    "SSH_AUTH_SOCK",
-    "SSH_AGENT_PID",
-}
-SENSITIVE_ENV_EXACT_NAMES = {"TOKEN", "SECRET", "API_KEY", "PASSWORD"}
-SENSITIVE_ENV_SUFFIXES = ("_TOKEN", "_SECRET", "_API_KEY", "_PASSWORD")
+SAFE_CHILD_ENV_NAMES = ("LANG", "LC_ALL", "LC_CTYPE", "TZ")
+CHILD_ENV_INJECTIONS = {"STAGE_THREE_WORKSPACE"}
 
 
 class HarnessError(RuntimeError):
@@ -182,20 +175,17 @@ class PermissionPolicy:
 
 
 def scrubbed_environment(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-    clean: Dict[str, str] = {}
-    for name, value in os.environ.items():
-        upper_name = name.upper()
-        looks_sensitive = (
-            upper_name in SENSITIVE_ENV_NAMES
-            or upper_name in SENSITIVE_ENV_EXACT_NAMES
-            or upper_name.endswith(SENSITIVE_ENV_SUFFIXES)
-            or "CREDENTIAL" in upper_name
-        )
-        if not looks_sensitive:
+    """Build a minimal, credential-free environment for untrusted children."""
+
+    clean = {"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"}
+    for name in SAFE_CHILD_ENV_NAMES:
+        value = os.environ.get(name)
+        if value is not None:
             clean[name] = value
-    clean["PYTHONDONTWRITEBYTECODE"] = "1"
-    if extra:
-        clean.update(extra)
+    for name, value in (extra or {}).items():
+        if name not in CHILD_ENV_INJECTIONS:
+            raise HarnessError(f"unsupported child environment injection: {name}")
+        clean[name] = value
     return clean
 
 
@@ -423,21 +413,48 @@ class StdioMcpClient:
         self.process = None
 
 
-def bounded_read(path: Path, limit: int = 280) -> str:
-    content = path.read_text(encoding="utf-8").strip().replace("\n", " ")
-    return content[:limit]
+def read_contained_workspace_file(workspace: Path, name: str, limit: int = 280) -> Optional[str]:
+    """Read one fixed workspace file through a no-follow descriptor.
 
+    The caller never retains a checked pathname. The directory descriptor pins the
+    workspace, ``O_NOFOLLOW`` rejects a replacement symlink, and the same opened
+    regular-file descriptor supplies the bytes returned to the subagent.
+    """
 
-def contained_workspace_file(workspace: Path, name: str) -> Optional[Path]:
-    """Resolve a fixed workspace file and reject a symlink that leaves the workspace."""
+    if Path(name).name != name:
+        raise HarnessError(f"workspace reader accepts only a direct filename: {name}")
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    if not no_follow:
+        raise HarnessError("O_NOFOLLOW is required for host-side workspace reads")
 
     root = workspace.resolve()
-    candidate = (root / name).resolve()
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
-        candidate.relative_to(root)
-    except ValueError:
-        return None
-    return candidate if candidate.is_file() else None
+        root_descriptor = os.open(root, directory_flags)
+    except OSError as error:
+        raise HarnessError(f"unable to open workspace read boundary: {root}") from error
+    try:
+        if not stat.S_ISDIR(os.fstat(root_descriptor).st_mode):
+            raise HarnessError(f"workspace read boundary is not a directory: {root}")
+        try:
+            file_descriptor = os.open(name, os.O_RDONLY | no_follow, dir_fd=root_descriptor)
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+                return None
+            raise HarnessError(f"unable to open contained workspace file: {name}") from error
+        try:
+            if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
+                return None
+            reader = os.fdopen(file_descriptor, "r", encoding="utf-8")
+            file_descriptor = -1
+            with reader:
+                content = reader.read().strip().replace("\n", " ")
+            return content[:limit]
+        finally:
+            if file_descriptor >= 0:
+                os.close(file_descriptor)
+    finally:
+        os.close(root_descriptor)
 
 
 def run_subagent_loop(task: str, workspace: Path, depth: int) -> str:
@@ -449,12 +466,12 @@ def run_subagent_loop(task: str, workspace: Path, depth: int) -> str:
     allowed_tools = {"read_workspace_summary"}
     if not fresh_conversation or "read_workspace_summary" not in allowed_tools:
         raise HarnessError("subagent was not initialized with its restricted tool set")
-    inspected: List[Tuple[str, Path]] = []
+    inspected: List[Tuple[str, str]] = []
     for name in ("PROJECT.md", "TODO.md"):
-        path = contained_workspace_file(workspace, name)
-        if path:
-            inspected.append((name, path))
-    findings = [f"{name}: {bounded_read(path, 140)}" for name, path in inspected]
+        content = read_contained_workspace_file(workspace, name, limit=140)
+        if content is not None:
+            inspected.append((name, content))
+    findings = [f"{name}: {content}" for name, content in inspected]
     summary = "Read-only worker inspected " + ", ".join(name for name, _ in inspected) + ". " + " | ".join(
         findings
     )
@@ -689,6 +706,59 @@ def run_self_test() -> None:
         if "TODO.md" not in escaped_summary:
             raise HarnessError("subagent did not retain a contained workspace file")
 
+        racing_subagent_workspace = root / "racing-subagent-workspace"
+        racing_subagent_workspace.mkdir()
+        racing_project = racing_subagent_workspace / "PROJECT.md"
+        racing_project.write_text("Contained project survives the descriptor swap.\n", encoding="utf-8")
+        (racing_subagent_workspace / "TODO.md").write_text("Keep the contained TODO.\n", encoding="utf-8")
+        outside_race_sentinel = root / "outside-race-sentinel.txt"
+        outside_race_sentinel.write_text("host-only race sentinel must never reach the worker\n", encoding="utf-8")
+        replacement_link = racing_subagent_workspace / ".project-replacement"
+        swap_errors: List[Exception] = []
+        swap_completed = threading.Event()
+
+        def replace_project_after_open() -> None:
+            try:
+                replacement_link.symlink_to(outside_race_sentinel)
+                os.replace(replacement_link, racing_project)
+            except Exception as error:
+                swap_errors.append(error)
+            finally:
+                swap_completed.set()
+
+        original_open = os.open
+        swap_threads: List[threading.Thread] = []
+
+        def open_then_swap(
+            path: Any, flags: int, mode: int = 0o777, *, dir_fd: Optional[int] = None
+        ) -> int:
+            if dir_fd is None:
+                descriptor = original_open(path, flags, mode)
+            else:
+                descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+            if str(path) == "PROJECT.md" and dir_fd is not None and not swap_threads:
+                swapper = threading.Thread(target=replace_project_after_open)
+                swap_threads.append(swapper)
+                swapper.start()
+                swapper.join(timeout=3)
+                if swapper.is_alive():
+                    os.close(descriptor)
+                    raise HarnessError("post-open workspace replacement did not complete")
+            return descriptor
+
+        with patch.object(os, "open", side_effect=open_then_swap):
+            racing_summary = run_subagent_loop("inspect a concurrently changed workspace", racing_subagent_workspace, depth=0)
+        if swap_errors:
+            raise HarnessError(f"post-open workspace replacement failed: {swap_errors[0]}")
+        if not swap_completed.is_set() or not swap_threads:
+            raise HarnessError("subagent race regression did not replace PROJECT.md after open")
+        if "Contained project survives the descriptor swap." not in racing_summary:
+            raise HarnessError("subagent reopened PROJECT.md after the atomic replacement")
+        if "host-only race sentinel" in racing_summary:
+            raise HarnessError("subagent race exposed a file outside the workspace")
+        if "TODO.md" not in racing_summary:
+            raise HarnessError("subagent race dropped the contained TODO")
+
         unavailable = MacOSSandbox(workspace, binary="/not/a/sandbox-exec")
         try:
             unavailable.run(["/bin/sh", "-c", "true"])
@@ -720,7 +790,13 @@ from pathlib import Path
 
 workspace = Path(os.environ[\"STAGE_THREE_WORKSPACE\"])
 workspace.joinpath(\"child-environment.json\").write_text(
-    json.dumps({\"api_key\": os.environ.get(\"DEMO_API_KEY\"), \"password\": os.environ.get(\"DEMO_PASSWORD\")}),
+    json.dumps({
+        \"api_key\": os.environ.get(\"DEMO_API_KEY\"),
+        \"password\": os.environ.get(\"DEMO_PASSWORD\"),
+        \"secret_key\": os.environ.get(\"SECRET_KEY\"),
+        \"db_pass\": os.environ.get(\"DB_PASS\"),
+        \"database_url\": os.environ.get(\"DATABASE_URL\"),
+    }),
     encoding=\"utf-8\",
 )
 
@@ -748,8 +824,19 @@ for line in sys.stdin:
         original_sensitive_values = {
             "DEMO_API_KEY": os.environ.get("DEMO_API_KEY"),
             "DEMO_PASSWORD": os.environ.get("DEMO_PASSWORD"),
+            "SECRET_KEY": os.environ.get("SECRET_KEY"),
+            "DB_PASS": os.environ.get("DB_PASS"),
+            "DATABASE_URL": os.environ.get("DATABASE_URL"),
         }
-        os.environ.update({"DEMO_API_KEY": "synthetic-api-key", "DEMO_PASSWORD": "synthetic-password"})
+        os.environ.update(
+            {
+                "DEMO_API_KEY": "synthetic-api-key",
+                "DEMO_PASSWORD": "synthetic-password",
+                "SECRET_KEY": "synthetic-secret-key",
+                "DB_PASS": "synthetic-db-password",
+                "DATABASE_URL": "postgresql://reader:synthetic-password@db.internal/agent",
+            }
+        )
         try:
             with patch.object(platform, "system", return_value="Darwin"), patch.object(
                 shutil, "which", return_value=str(fake_sandbox)
@@ -783,7 +870,13 @@ for line in sys.stdin:
         captured_environment = json.loads(
             (environment_probe_workspace / "child-environment.json").read_text(encoding="utf-8")
         )
-        if captured_environment != {"api_key": None, "password": None}:
+        if captured_environment != {
+            "api_key": None,
+            "password": None,
+            "secret_key": None,
+            "db_pass": None,
+            "database_url": None,
+        }:
             raise HarnessError("public demo child received credential-shaped environment variables")
 
         script_path = Path(__file__).resolve()

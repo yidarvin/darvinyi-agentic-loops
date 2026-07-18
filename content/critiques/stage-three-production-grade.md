@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -60,3 +60,12 @@ Fresh-eyes re-review: read `prompts/critique-rubric.md`, the complete append-onl
 ## Advisories
 
 - Round 1's suggestion to add a direct source link for the qualified prompt-approval statistic remains a settled advisory and is not re-litigated.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every Round 1 and Round 2 REQUIRED fix in the current chapter artifacts and deterministic regressions: the public parser still exposes no sandbox bypass and fails closed without Seatbelt; `SafeMemory` still rejects an out-of-workspace `.agent-memory` symlink; MCP launch authorization still precedes `client.start()` and `popen`; definition locks remain in host-owned `AgentState` outside the server-writable workspace; the former `*_API_KEY` and `*_PASSWORD` cases are absent from MCP child environments; and a static escaping subagent symlink is still excluded.
+
+1. Replaced the inherited-environment denylist in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` with a narrow child allowlist: a fixed system `PATH`, optional locale and time settings, `PYTHONDONTWRITEBYTECODE`, and the controlled `STAGE_THREE_WORKSPACE` injection. The deterministic public-demo child probe now verifies that `DEMO_API_KEY`, `DEMO_PASSWORD`, `SECRET_KEY`, `DB_PASS`, and a credential-bearing `DATABASE_URL` are all absent.
+2. Replaced the subagent's resolve-then-read path flow in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` with a descriptor-relative `O_NOFOLLOW` open below an opened workspace directory, regular-file verification by `fstat`, and a read from that same descriptor. The new deterministic regression atomically replaces `PROJECT.md` with an outside-target symlink after its descriptor opens, then proves the contained content and `TODO.md` remain in the summary while the outside sentinel never appears.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
