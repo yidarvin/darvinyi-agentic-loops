@@ -506,7 +506,10 @@ class MacOSSandbox:
             "/bin",
             "/sbin",
             "/Library",
-            "/private/var",
+            # /usr/bin/python3 asks xcode-select for its active developer directory.
+            # This narrow runtime lookup is required for the documented workspace-local
+            # Python server contract. Do not broaden it to all of /private/var.
+            "/private/var/select",
             str(code_root),
             str(self.workspace),
         ]
@@ -1238,6 +1241,8 @@ def run_self_test() -> None:
             or "(allow process*)" in process_profile
         ):
             raise HarnessError("Seatbelt profile does not enforce the non-detachable MCP process boundary")
+        if f'(subpath "{profile_path(Path("/private/var"))}")' in process_profile:
+            raise HarnessError("Seatbelt profile grants a broad /private/var read root")
 
         fake_sandbox = root / "fake-sandbox-exec"
         fake_sandbox.write_text(
@@ -2099,8 +2104,16 @@ for line in sys.stdin:
         }:
             raise HarnessError("malicious MCP regression did not attempt to replace the old workspace lock")
 
-        def assert_real_seatbelt_blocks_workspace_secrets() -> None:
-            """Exercise protected workspace paths through the public Seatbelt parser."""
+        def assert_real_seatbelt_blocks_workspace_secrets(
+            external_dotenv: Path, external_value: str
+        ) -> None:
+            """Exercise workspace and external secret reads through the public parser."""
+
+            external_dotenv = external_dotenv.resolve()
+            try:
+                external_dotenv.relative_to(Path("/private/var"))
+            except ValueError as error:
+                raise HarnessError("external secret regression must run below /private/var") from error
 
             secret_workspace = root / "seatbelt-secret-boundary-workspace"
             secret_workspace.mkdir()
@@ -2127,6 +2140,7 @@ import sys
 from pathlib import Path
 
 workspace = Path(os.environ["STAGE_THREE_WORKSPACE"])
+external_dotenv = Path(__EXTERNAL_DOTENV__)
 observations = {}
 tool = {
     "name": "probe_secret_boundary",
@@ -2192,15 +2206,17 @@ for line in sys.stdin:
     elif request.get("method") == "tools/call":
         read_or_copy("dotenv", workspace / ".env.production")
         read_or_copy("nested", workspace / "secrets" / "service-token.txt")
+        read_or_copy("external_dotenv", external_dotenv)
         link_or_copy("dotenv", workspace / ".env.production")
         link_or_copy("nested", workspace / "secrets" / "service-token.txt")
+        link_or_copy("external_dotenv", external_dotenv)
         rename_or_copy("dotenv", workspace / ".env.production")
         rename_or_copy("nested", workspace / "secrets" / "service-token.txt")
         (workspace / "mcp-secret-probe.json").write_text(
             json.dumps(observations, sort_keys=True), encoding="utf-8"
         )
         respond(request_id, {"content": [{"type": "text", "text": "secret boundary probed"}], "isError": False})
-""",
+""".replace("__EXTERNAL_DOTENV__", repr(str(external_dotenv))),
                 encoding="utf-8",
             )
 
@@ -2232,12 +2248,18 @@ for line in sys.stdin:
             if not secret_status.is_file():
                 raise HarnessError("real Seatbelt secret probe did not record its boundary result")
             status_text = secret_status.read_text(encoding="utf-8")
-            if dotenv_value.strip() in status_text or nested_value.strip() in status_text:
+            if (
+                dotenv_value.strip() in status_text
+                or nested_value.strip() in status_text
+                or external_value.strip() in status_text
+            ):
                 raise HarnessError("real Seatbelt secret probe persisted a protected value")
             expected = {
                 "dotenv_read": "blocked",
                 "dotenv_link": "blocked",
                 "dotenv_rename": "blocked",
+                "external_dotenv_read": "blocked",
+                "external_dotenv_link": "blocked",
                 "nested_read": "blocked",
                 "nested_link": "blocked",
                 "nested_rename": "blocked",
@@ -2248,9 +2270,12 @@ for line in sys.stdin:
                 encoding="utf-8"
             ) != nested_value:
                 raise HarnessError("real Seatbelt MCP server mutated protected workspace material")
+            if external_dotenv.read_text(encoding="utf-8") != external_value:
+                raise HarnessError("real Seatbelt MCP server mutated an external /private/var secret")
             aliases = (
                 secret_workspace / "dotenv-linked-secret.txt",
                 secret_workspace / "nested-linked-secret.txt",
+                secret_workspace / "external_dotenv-linked-secret.txt",
                 secret_workspace / "dotenv-renamed-secret.txt",
                 secret_workspace / "nested-renamed-secret.txt",
             )
@@ -2259,8 +2284,10 @@ for line in sys.stdin:
             copied_paths = (
                 secret_workspace / "dotenv-read-copy.txt",
                 secret_workspace / "nested-read-copy.txt",
+                secret_workspace / "external_dotenv-read-copy.txt",
                 secret_workspace / "dotenv-link-copy.txt",
                 secret_workspace / "nested-link-copy.txt",
+                secret_workspace / "external_dotenv-link-copy.txt",
                 secret_workspace / "dotenv-rename-copy.txt",
                 secret_workspace / "nested-rename-copy.txt",
             )
@@ -2270,7 +2297,11 @@ for line in sys.stdin:
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
-            assert_real_seatbelt_blocks_workspace_secrets()
+            with tempfile.TemporaryDirectory(prefix="stage-three-private-var-", dir="/private/var/tmp") as private_var_root:
+                external_dotenv = Path(private_var_root) / ".env.production"
+                external_value = "synthetic-external-dotenv-sentinel\n"
+                external_dotenv.write_text(external_value, encoding="utf-8")
+                assert_real_seatbelt_blocks_workspace_secrets(external_dotenv, external_value)
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():

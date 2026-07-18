@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -221,3 +221,21 @@ Convergence re-review: read `prompts/critique-rubric.md`, the complete append-on
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 9 against the current chapter, exact figure and widget, artifact, README, policy, and deterministic regressions:
+
+1. Round 1 still has no public sandbox bypass; memory roots and host writes are descriptor-contained; MCP launch authorization precedes `popen`; and definition locks remain host-owned outside the MCP workspace.
+2. Rounds 2 and 3 retain the narrow child environment and descriptor-relative no-follow reads for both static and post-open workspace symlink attacks.
+3. Round 4 still binds launches to the reviewed Seatbelt executable and rejects FIFO or oversized host inputs before decoding.
+4. Round 5 still bounds malformed, partial, and oversized MCP frames and reaps the child on protocol failure.
+5. Round 6 still reaps ordinary MCP descendants and keeps memory writes descriptor-contained under a verified root.
+6. Round 7 retains the independent dispatcher seams in the figure and prose, plus the runnable workspace-local custom-server contract.
+7. Round 8 retains the execution-only Seatbelt rule, fork denial, and the direct and forked `setsid()` containment regression.
+8. Round 9 retains policy-mirrored kernel denials for workspace `.env*` and `secrets/**` reads and mutations.
+
+1. Replaced the blanket `/private/var` MCP-child read grant in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` with the single `/private/var/select` runtime lookup that `/usr/bin/python3` needs to resolve its Xcode developer directory. The profile self-test now rejects any return of the broad `/private/var` subpath grant.
+2. Extended the real Seatbelt public-demo regression in `stage_three_agent.py`: an approved workspace-local MCP server now attempts to read and hard-link an external `/private/var/tmp/.../.env.production` sentinel. The test requires both operations to be blocked, no copied or linked value to appear in the workspace, and the external sentinel to remain unchanged. A public-parser mutation probe confirmed that a broad grant reads and copies the sentinel, while the narrowed profile blocks it.
+
+No advisories were taken. `bash artifacts/ch21-stage-three-production-grade/check.sh` and `npm run check` pass.
