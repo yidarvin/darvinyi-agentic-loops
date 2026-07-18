@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -76,3 +76,15 @@ Regression gate: re-verified every REQUIRED finding from Rounds 1, 2, and 3 agai
 2. `README.md` replaces the exported-key startup path with an unexported subshell variable and a process-scoped Python environment. `agent.py` captures and removes that environment value before the REPL exposes model-controlled shell commands, while `WorkspaceTools` retains its direct-child scrub. The offline regression probe checks the fixture key is absent from both the REPL parent and its process ancestor as seen through `run_bash`. The README now states the remaining unsandboxed-machine and process-memory boundary directly.
 
 No advisories were taken. `npm run check` passes with `CHECK OK`.
+
+## Round 4 review (2026-07-18)
+
+Fresh-eyes convergence re-review: read the complete three-round history and resolution diffs, the current MDX, exact SVG figure and widget, artifact README, source, check script, requirements, build notes, and research backbone. Re-verified Round 1's no-tool truncation, overlapping-match, and direct-child environment fixes; Round 2's figure-label and full-gate fixes; and Round 3's truncation-with-tool and invoking-shell-ancestor fixes. Ran `bash artifacts/ch19-stage-one-thin-wrapper/check.sh`, exercised both missing-configuration exits, and ran `npm run check` through `CHECK OK`. Checked the linked primary sources, including the current Anthropic stop-reason and tool-call guidance, Ball's build, mini-swe-agent, Anthropic's effective-agents guidance, Aider's evaluation, and the Claude Code study. A visual browser was not attached, so the exact figure and widget were reviewed from source and the passing renderer suite. Finally, reproduced the documented credential launch with a synthetic non-secret fixture only.
+
+## Required fixes
+
+1. **`artifacts/ch19-stage-one-thin-wrapper/agent.py:203-216`, `artifacts/ch19-stage-one-thin-wrapper/README.md:11,30-35`, and `agent.py:376-389`: Round 2's REPL-parent credential boundary does not hold for the documented exec-time launch.** README line 30 places `ANTHROPIC_API_KEY` in Python's initial exec environment. On macOS, `os.environ.pop()` at line 206 removes Python's mapping but does not erase that original environment from `ps eww`. With a fixture-only reproduction of the current artifact path, `create_client()` left `ANTHROPIC_API_KEY` absent from `os.environ`, yet a model-controlled `WorkspaceTools.run_bash` child found the fixture through `ps eww -p "$PPID"` on its Python parent (`exec_time_parent_environment_probe=exposed`). The direct shell-child scrub and Round 3 ancestor cleanup still hold, but neither prevents this direct-parent recovery and network exfiltration. The self-check injects its fixture with `patch.dict` only after Python has started, so it cannot test the supported exec boundary. Replace the environment-prefixed launcher with a credential handoff that never places the key in the agent process's initial environment, such as prompting after Python starts or another non-environment channel, and close that channel before model-controlled tools become available. Add a deterministic real-subprocess regression check using the supported launcher that proves the child, REPL parent, and ancestor `ps` paths cannot see a fixture. Update the README, research backbone, and chapter safety wording to state the corrected boundary.
+
+## Advisories
+
+- The Round 3 non-blocking source-link note remains: the listed `implement-tool-use` URL redirects to Define tools rather than the direct Handle tool calls page. The current stop-reason source still supports the chapter's substantive claim.
