@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-16)
 Fresh-eyes review: confirmed there is no existing critique file or git history for this slug, so no prior REQUIRED fix exists to re-verify. Read `src/chapters/retrieval-as-memory.mdx`, `RetrievalAsMemoryFigure.tsx`, `RetrievalAsMemoryWidget.tsx`, the complete `artifacts/ch17-retrieval-as-memory/` lab, its build notes, and `docs/research/ch17-retrieval-as-memory.md`. Ran `npm run check` and `bash artifacts/ch17-retrieval-as-memory/check.sh`, both passing. Ran the artifact's normal, irrelevant-query, and invalid-date paths in an isolated store. Checked the linked primary sources for Lost in the Middle, RRF, Self-RAG, CRAG, GraphRAG, Zep/Graphiti, Contextual Retrieval, RAGAS, and the OpenAI embeddings guide. The ACM landing page returned 403, so the RRF paper was checked through its author-hosted primary PDF.
@@ -669,3 +669,15 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. **The exact Round 30 regression is deterministic.** The artifact self-test now runs that query in a fresh persistent store through `assertUnsupportedRequestAbstains`, requiring zero evidence, zero used tokens, and the clarification-or-new-query decision. A focused JSON run and `bash artifacts/ch17-retrieval-as-memory/check.sh` pass.
 
 No advisories were taken: README fence formatting, illustrative token display, and optional widget table semantics remain non-blocking and outside the required-fix scope. The registry remains `draft` and the queue row remains `PENDING`.
+
+## Round 31 review (2026-07-17)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history through Round 30, the current MDX chapter, exact figure and widget, research backbone, fixture, README, checker, and complete runnable artifact. Re-verified the settled requirements through the current source and artifact self-test: valid-time rejection; abstention for irrelevant, unsupported, unknown-identifier, incomplete-scope, and prior destructive-action inputs; complete-or-abstain packets; escaped, role-separated native messages; the RRF tie and readable teaching labels; and the supported telemetry, release-schedule, and widget-paraphrase reads. Ran `npm run check` to exit 0 with `CHECK OK`, including pipeline tests, the artifact gate, 38 Vitest tests, production build, and lint. Checked the listed primary or official sources for Liu et al., RRF, Self-RAG, CRAG, GraphRAG, Graphiti, Contextual Retrieval, RAGAS, and OpenAI embeddings against the research backbone. Their consequential claims remain supported.
+
+## Required fixes
+
+1. **`artifacts/ch17-retrieval-as-memory/retrieval_memory.mjs:306-337,457-580` --- a leading passive destructive condition bypasses the fail-closed action boundary and falsely authorizes deployment from policy-only evidence.** In a fresh store, `node retrieval_memory.mjs --reset --store <temp>/memory.json --tenant acme --as-of 2026-06-15 --question 'If telemetry data is deleted, can I deploy checkout?' --json` returns `evidenceCount: 1`, `usedTokens: 21`, and `decision: "answer with bounded evidence packet"`, injecting only `acme_checkout_policy_2026`. That record covers on-call approval and migration verification for checkout deployments. It cannot establish that a deployment is safe or permitted after telemetry deletion. `actionOperations()` records `deploy` from the modal request but does not recognize the leading `if ... is deleted` clause: `ACTION_CLAUSE_CONNECTORS` omits `if`, and passive detection only checks a `with` clause. `deriveAnswerPlan()` then accepts a current-policy-only deployment packet. This is distinct from Round 30's settled `with ... deleted` route, but it violates the README's explicit fail-closed contract at `README.md:66-68` and sends a downstream role-aware agent false authorization context. Recognize leading conditional passive clauses before accepting a supported deployment operation, or otherwise fail closed when such a condition cannot be represented and evidenced. Add a deterministic regression for this exact query that requires zero evidence, zero used tokens, and the clarification-or-new-query decision.
+
+## Advisories
+
+- None. The earlier README-formatting, illustrative token-display, and optional rank-grid semantics notes remain non-blocking.
