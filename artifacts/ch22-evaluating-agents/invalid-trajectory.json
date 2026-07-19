@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    {
+      "id": "bad-trajectory",
+      "prompt": "This fixture must fail schema validation.",
+      "checks": [
+        {
+          "kind": "file_absent",
+          "path": "unused.txt"
+        }
+      ],
+      "trajectory": []
+    }
+  ]
+}

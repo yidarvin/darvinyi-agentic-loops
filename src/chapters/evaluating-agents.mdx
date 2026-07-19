@@ -1,0 +1,119 @@
+import { EvaluatingAgentsFigure } from "./_figures/EvaluatingAgentsFigure";
+import { EvaluatingAgentsWidget } from "./_widgets/EvaluatingAgentsWidget";
+
+Evaluation is the third pillar of an agent system. The model supplies intelligence, the harness supplies capability and reliability, and evaluation tells you whether a change improved either. A polished demo establishes possibility. It does not establish that the coding agent completes work reliably, stays inside its constraints, or costs an acceptable amount when the easy path stops working.
+
+## A demo is a single sample
+
+An agent run is a trajectory through a changing environment. It chooses tools, mutates files or remote state, absorbs tool errors, and may compound one wrong assumption through ten later steps. The result also varies across runs. Treating one successful transcript as evidence confuses a sample with a distribution.
+
+The useful unit is a small contract with four parts:
+
+- A **task** defines the input, clean starting state, and success boundary.
+- A **trial** is one independent attempt at that task.
+- A **trace** records the final state, tool calls, timing, cost, and relevant intermediate evidence.
+- A **grader** turns that evidence into a verdict with reasons.
+
+[Anthropic's agent-evaluation guide](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) uses the same decomposition because it makes failures inspectable. The task states what was promised. The trace shows what happened. The grader explains why the promise did or did not hold.
+
+<Figure id="22.1" caption="A local evaluation flywheel uses isolated trials, layered evidence, and production failures to improve the agent and its harness. Public benchmarks calibrate the loop from outside.">
+  <EvaluatingAgentsFigure />
+</Figure>
+
+## Score the resulting world first
+
+For a coding agent, the strongest default grader checks the resulting world. Did the fail-to-pass test now pass? Did the pass-to-pass suite remain green? Does the database contain the intended record? Is a protected file unchanged? These checks are cheap, reproducible, and hard to reinterpret after a run.
+
+Trajectory evidence still matters, but it has a different job. It diagnoses an outcome failure and catches constraints the final state cannot expose. A successful patch that deleted a protected file, copied a secret into a log, or used an unauthorized tool is not acceptable. Conversely, an exact reference tool sequence is often a brittle release criterion. Two valid agents can reach the same verified state through different tool calls. Grade essential actions, prohibited actions, and action precision or recall when the path matters. Keep outcome verification primary.
+
+<Callout>
+  Product examples such as [Langfuse](https://langfuse.com/), [LangSmith](https://www.langchain.com/langsmith), [Braintrust](https://www.braintrust.dev/), and [Phoenix](https://phoenix.arize.com/) can store traces and attach graders. They are implementation choices. The portable contract is a record that joins task, agent version, environment, trace, grader evidence, and verdict.
+</Callout>
+
+An LLM judge belongs where deterministic checks end: code readability, instruction following, research quality, or a nuanced interaction. Give it a narrow rubric and an allowed "unknown" decision. Then calibrate it against human labels. [MT-Bench](https://arxiv.org/abs/2306.05685) documented position and verbosity biases in model judging. Self-preference and model-version drift add more reasons to treat a judge as an instrument that needs calibration, not as an oracle.
+
+## Reliability moves in the opposite direction
+
+Pass@k answers, "did at least one of k attempts work?" It is suitable when you can cheaply select or verify one good solution. Pass^k answers, "did all k attempts work?" It measures the reliability a user experiences when every run matters.
+
+The distinction is material. With independent 75% single-run success, pass^3 is about 42%, even though a three-attempt search is likely to find one success. [The tau-bench paper](https://arxiv.org/abs/2406.12045) introduced pass^k precisely because tool-using agents can look capable while varying sharply from trial to trial. Report both when you need both kinds of evidence. Never let a rising pass@k disguise a weak pass^k.
+
+## Benchmarks calibrate. Your task bank decides.
+
+[SWE-bench](https://arxiv.org/abs/2310.06770) made real issue-to-patch evaluation concrete, and [SWE-bench Verified](https://openai.com/index/introducing-swe-bench-verified/) added human review to remove many under-specified or broken cases. [Terminal-Bench](https://www.tbench.ai/benchmarks) supplies outcome-verified terminal work. [LiveCodeBench](https://arxiv.org/abs/2403.07974) uses dated problems to reduce contamination. These are valuable external checks.
+
+They are not your release decision. A benchmark number measures a particular model, harness, task subset, dependency image, timeout policy, and exclusion rule. Change the scaffold and the score can change. Saturation and training contamination further weaken a headline as evidence of production value. Use public tasks to locate the frontier and to detect whether your system is wildly off course. Use local tasks to decide whether your agent works on the repositories, tools, permissions, and failure modes that it actually owns.
+
+Start with 20 to 50 cases pulled from manual release checks, support incidents, bug reports, and traces where an operator intervened. A task is ready when two domain experts would independently agree on pass or fail. Build two suites from that bank:
+
+- **Capability suite:** deliberately difficult cases with room to improve. It tells you which bets have paid off.
+- **Regression suite:** solved cases near 100% that run on every meaningful change. It prevents a new prompt, model, tool schema, memory policy, or delegation pattern from silently reopening a known wound.
+
+Give every trial a clean environment. Shared state makes failures correlated and can let an agent inherit a prior trial's work. Store the exact fixture version with the trace so a later change to the evaluator does not rewrite history.
+
+## Read the traces that move the score
+
+Aggregate metrics choose where to look. They do not absolve you from looking. Inspect a sample of passes, failures, and score movers after every meaningful harness change. A jump can indicate a real improvement, a leaking fixture, an overfit grader, or a task that ceased to reproduce.
+
+Classify what you find. Useful tags identify the repair surface: `invalid_arguments`, `context_loss`, `verification_miss`, `environment`, `policy_violation`, `flaky_fixture`, or `grader_defect`. The label is not a postmortem ornament. It determines whether the next change belongs in the model prompt, tool contract, isolation layer, verification loop, task specification, or grader itself.
+
+The dashboard below is illustrative. Run the same four local cases repeatedly. It exposes why a suite can reach pass@3 for every task while only half the tasks survive all three trials.
+
+## Run a small local suite
+
+<Widget name="evaluation_dashboard" hint="Run the suite three times. Compare pass@k with pass^k, then inspect a task's failure tag.">
+  <EvaluatingAgentsWidget />
+</Widget>
+
+## Make production part of the evaluator
+
+Offline evals make changes comparable. Online observability makes them relevant. Keep the layers separate, then connect them:
+
+1. Run isolated capability and regression suites before a model, prompt, tool, skill, memory, or orchestration change lands.
+2. Capture production traces with success, latency, cost, tool errors, and lightweight user feedback.
+3. Cluster recurring failures and turn the representative trace into a clean task with a stable grader.
+4. Re-run the suite, inspect the distribution, and promote a solved capability case into regression coverage when it becomes a contract.
+
+No layer catches everything. Offline suites miss unanticipated traffic. Production monitoring lacks a clean counterfactual. Human review is sparse. LLM judges drift. Together they form a feedback system that can expose failure before it becomes folklore.
+
+This closes the book's construction arc. [Stage Three: Production-Grade](/stage-three-production-grade) supplied a harness with boundaries, recovery, and observability. Skills, MCP servers, delegation, memory, and verification are all hypotheses about better agent behavior until this loop measures them. Evaluation turns those hypotheses into engineering decisions.
+
+## Run the harness
+
+The artifact is a standard-library harness with four local tasks. It creates a fresh temporary workspace for each task and trial, invokes an agent through a small JSON contract, runs deterministic final-state and trajectory graders, emits per-trial traces, and reports pass@1, pass@k, pass^k, cost, steps, and failure-mode tags. The default agent is intentionally imperfect so the report has something real to reveal.
+
+<RunnableArtifact
+  name="evaluating_agents_harness"
+  path="artifacts/ch22-evaluating-agents/"
+  runtime="Python 3.9+; standard library only"
+  run={["cd artifacts/ch22-evaluating-agents", "bash check.sh", "python3 harness.py --runs 3 --report report.json"]}
+  requires="No API key, network connection, or package installation"
+  href="https://github.com/yidarvin/darvinyi-agentic-loops/tree/main/artifacts/ch22-evaluating-agents">
+  Replace the bundled fixture agent with a command of your own when its task interface is stable. The README documents the command protocol, the task schema, and the boundary that a temporary workspace provides isolation but not a security sandbox.
+</RunnableArtifact>
+
+## Sources
+
+- [Anthropic, Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+- [Jimenez et al., SWE-bench](https://arxiv.org/abs/2310.06770) and [OpenAI, Introducing SWE-bench Verified](https://openai.com/index/introducing-swe-bench-verified/)
+- [Yao et al., tau-bench](https://arxiv.org/abs/2406.12045)
+- [Terminal-Bench](https://www.tbench.ai/benchmarks) and [Jain et al., LiveCodeBench](https://arxiv.org/abs/2403.07974)
+- [Zheng et al., Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685)
+
+## Exercises
+
+<ExerciseCard n="01" title="Turn an intervention into a task">
+Take one production trace where an operator corrected the agent. Define the clean fixture, task text, expected final state, forbidden state changes, and the evidence that would make two reviewers agree on the verdict.
+</ExerciseCard>
+
+<ExerciseCard n="02" title="Separate result from route">
+For one MCP tool task, write an outcome grader and a trajectory grader. Name a valid alternate tool route that an exact-sequence grader would reject, then replace that rule with essential-action and forbidden-action checks.
+</ExerciseCard>
+
+<ExerciseCard n="03" title="Choose the repair surface">
+Run the artifact, then classify each failure as agent, harness, environment, task, or grader. Pick the one with the largest effect on pass^3 and write the smallest experiment that could falsify your diagnosis.
+</ExerciseCard>
+
+<ExerciseCard n="04" title="Calibrate a judge">
+Collect 30 traces with human labels for a quality dimension that unit tests cannot see. Design a rubric, swap answer order on paired comparisons, control for length, and decide the agreement threshold required before the judge can gate a release.
+</ExerciseCard>
