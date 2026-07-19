@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import shlex
 import subprocess
 import sys
@@ -185,7 +186,10 @@ def grade_check(workspace: Path, check: dict[str, Any]) -> dict[str, Any]:
         }
 
     if kind == "file_absent":
-        passed = not target.exists()
+        # Check the requested entry rather than its resolved target so a dangling
+        # symlink remains present for an absence grader. workspace_path() above
+        # still validates that the requested path stays inside the workspace.
+        passed = not os.path.lexists(workspace / relative_path)
         return {
             "kind": kind,
             "path": relative_path,

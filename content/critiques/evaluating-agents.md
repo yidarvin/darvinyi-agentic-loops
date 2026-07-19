@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -11,3 +11,12 @@ Fresh-eyes review: confirmed there is no prior critique history; read `src/chapt
 ## Advisories
 
 - `README.md` says malformed check paths fail before an agent is invoked, but check-path containment is evaluated during grading after `invoke_agent`. Correct the ordering claim when touching the artifact. The path still cannot escape the workspace, so this is non-blocking.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified Round 1's sole REQUIRED finding in the current harness and its deterministic artifact self-check. There are no earlier review rounds or prior required fixes to re-verify.
+
+1. `artifacts/ch22-evaluating-agents/harness.py` now keeps `workspace_path()` containment validation, then uses `os.path.lexists(workspace / relative_path)` for `file_absent`. A dangling symlink therefore remains present to the grader instead of resolving to a missing target.
+2. `artifacts/ch22-evaluating-agents/check.sh` now creates `ghost -> missing-target` in a fresh temporary workspace and asserts that `grade_check(..., {"kind": "file_absent", "path": "ghost"})` fails with `file unexpectedly exists`.
+
+No advisories were taken. The README execution-order wording remains an advisory and outside this resolution's required scope. `npm run check` passes after the artifact change.

@@ -97,6 +97,25 @@ assert all("agent_error" not in trial["failure_tags"] for trial in report["trial
 print("binary file output becomes a controlled failed check")
 PY
 
+python3 - "$artifact_dir/harness.py" <<'PY'
+import os
+import runpy
+import sys
+import tempfile
+from pathlib import Path
+
+harness = runpy.run_path(sys.argv[1])
+with tempfile.TemporaryDirectory() as temporary:
+    workspace = Path(temporary)
+    ghost = workspace / "ghost"
+    ghost.symlink_to("missing-target")
+    assert os.path.lexists(ghost), ghost
+    result = harness["grade_check"](workspace, {"kind": "file_absent", "path": "ghost"})
+    assert result["passed"] is False, result
+    assert result["detail"] == "file unexpectedly exists", result
+print("dangling symlink cannot satisfy file_absent")
+PY
+
 if python3 "$artifact_dir/harness.py" --tasks "$artifact_dir/invalid-top-level.json" > /dev/null 2> "$work_dir/invalid-top-level.txt"; then
   echo "invalid top-level task schema unexpectedly passed" >&2
   exit 1
