@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -34,3 +34,13 @@ Independent re-review: read the complete critique history and current `src/chapt
 
 - Carried forward from Round 1: `artifacts/ch22-evaluating-agents/README.md:115-120` says malformed check paths fail before an agent is invoked, but traversal containment is currently evaluated during grading after invocation. This remains non-blocking because the path cannot escape the workspace.
 - `src/chapters/evaluating-agents.mdx:91` currently points to a GitHub `main`-branch artifact URL that returns 404. The local artifact is present and runnable; verify that external link after the chapter is published.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified Round 1's dangling-symlink absence-grader fix and both Round 2 REQUIRED findings against the current harness and deterministic artifact self-check. All three hold: a dangling final symlink is present, a lexically normalized in-workspace path cannot hide an existing entry, and a resolution failure becomes a failed trial with a written report.
+
+1. `artifacts/ch22-evaluating-agents/harness.py` now translates `OSError` and `RuntimeError` from either workspace-path resolution into `HarnessError`. `run_trial()` therefore records a controlled `agent_error` result and lets the report write continue when an agent creates a self-referential symlink.
+2. `artifacts/ch22-evaluating-agents/harness.py` now lexically normalizes the requested relative path with `os.path.normpath()` before `file_absent` calls `os.path.lexists()`, after the existing containment validation. `missing-parent/../ghost` now checks `ghost`, while a dangling `ghost -> missing-target` remains detectable.
+3. `artifacts/ch22-evaluating-agents/negative_agent.py` adds the compatible `symlink-loop` fixture mode. `artifacts/ch22-evaluating-agents/check.sh` asserts its failed `patch-greeting` trial, controlled error tag, and readable report, and adds the normalized-parent-path regression assertion while preserving the direct dangling-symlink assertion.
+
+No advisories were taken. `npm run check` passes: validation, prose lint, pipeline tests, all artifact checks, 48 render tests, production build, and lint.

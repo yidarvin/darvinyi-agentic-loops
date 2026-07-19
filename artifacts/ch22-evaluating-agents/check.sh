@@ -97,6 +97,28 @@ assert all("agent_error" not in trial["failure_tags"] for trial in report["trial
 print("binary file output becomes a controlled failed check")
 PY
 
+python3 "$artifact_dir/harness.py" \
+  --runs 1 \
+  --agent-command "python3 $artifact_dir/negative_agent.py --mode symlink-loop" \
+  --report "$work_dir/symlink-loop.json" > "$work_dir/symlink-loop-output.txt"
+
+python3 - "$work_dir/symlink-loop.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report_path = Path(sys.argv[1])
+assert report_path.is_file(), report_path
+report = json.loads(report_path.read_text(encoding="utf-8"))
+greeting = next(trial for trial in report["trials"] if trial["task_id"] == "patch-greeting")
+assert greeting["outcome_passed"] is False, greeting
+assert greeting["passed"] is False, greeting
+assert "agent_error" in greeting["failure_tags"], greeting
+assert "could not resolve task path: greeting.txt" in greeting["agent"]["summary"], greeting
+assert report["summary"]["pass_at_1"] == 0.75, report["summary"]
+print("self-referential symlink becomes a failed trial with a report")
+PY
+
 python3 - "$artifact_dir/harness.py" <<'PY'
 import os
 import runpy
@@ -113,7 +135,15 @@ with tempfile.TemporaryDirectory() as temporary:
     result = harness["grade_check"](workspace, {"kind": "file_absent", "path": "ghost"})
     assert result["passed"] is False, result
     assert result["detail"] == "file unexpectedly exists", result
-print("dangling symlink cannot satisfy file_absent")
+    ghost.unlink()
+    ghost.write_text("present", encoding="utf-8")
+    result = harness["grade_check"](
+        workspace,
+        {"kind": "file_absent", "path": "missing-parent/../ghost"},
+    )
+    assert result["passed"] is False, result
+    assert result["detail"] == "file unexpectedly exists", result
+print("file_absent rejects dangling symlinks and normalized parent traversal")
 PY
 
 if python3 "$artifact_dir/harness.py" --tasks "$artifact_dir/invalid-top-level.json" > /dev/null 2> "$work_dir/invalid-top-level.txt"; then

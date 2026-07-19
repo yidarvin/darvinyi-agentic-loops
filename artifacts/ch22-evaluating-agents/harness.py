@@ -112,9 +112,13 @@ def load_task_set(path: Path) -> list[dict[str, Any]]:
 def workspace_path(workspace: Path, relative_path: str) -> Path:
     """Resolve a task path and reject traversal outside the fresh workspace."""
 
-    candidate = (workspace / relative_path).resolve()
     try:
-        candidate.relative_to(workspace.resolve())
+        workspace_root = workspace.resolve()
+        candidate = (workspace / relative_path).resolve()
+    except (OSError, RuntimeError) as error:
+        raise HarnessError("could not resolve task path: " + relative_path) from error
+    try:
+        candidate.relative_to(workspace_root)
     except ValueError as error:
         raise HarnessError("task path escapes workspace: " + relative_path) from error
     return candidate
@@ -188,8 +192,10 @@ def grade_check(workspace: Path, check: dict[str, Any]) -> dict[str, Any]:
     if kind == "file_absent":
         # Check the requested entry rather than its resolved target so a dangling
         # symlink remains present for an absence grader. workspace_path() above
-        # still validates that the requested path stays inside the workspace.
-        passed = not os.path.lexists(workspace / relative_path)
+        # still validates that the requested path stays inside the workspace. The
+        # lexical normalization makes missing-parent/../entry address entry.
+        entry_path = workspace / os.path.normpath(relative_path)
+        passed = not os.path.lexists(entry_path)
         return {
             "kind": kind,
             "path": relative_path,

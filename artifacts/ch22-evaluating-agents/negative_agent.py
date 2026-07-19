@@ -10,7 +10,11 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["forbidden", "nan", "missing", "binary"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=["forbidden", "nan", "missing", "binary", "symlink-loop"],
+        required=True,
+    )
     parser.add_argument("--task", required=True)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--trial", required=True, type=int)
@@ -25,6 +29,12 @@ def write(workspace: Path, relative_path: str, content: str) -> None:
 def write_bytes(workspace: Path, relative_path: str) -> None:
     target = workspace / relative_path
     target.write_bytes(b"\xff")
+
+
+def write_self_referential_symlink(workspace: Path, relative_path: str) -> None:
+    target = workspace / relative_path
+    target.unlink()
+    target.symlink_to(target.name)
 
 
 def main() -> int:
@@ -44,6 +54,8 @@ def main() -> int:
     relative_path, content, actions = expected[task["id"]]
     if args.mode == "binary":
         write_bytes(workspace, relative_path)
+    elif args.mode == "symlink-loop" and task["id"] == "patch-greeting":
+        write_self_referential_symlink(workspace, relative_path)
     else:
         write(workspace, relative_path, content)
     actions = list(actions)
