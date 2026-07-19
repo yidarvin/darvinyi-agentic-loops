@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -68,3 +68,15 @@ Regression gate: re-verified every REQUIRED fix from Rounds 1 and 2 against the 
 3. `artifacts/ch22-evaluating-agents/harness.py` now creates the agent-visible workspace inside a trusted temporary parent, records its pre-invocation `lstat` device/inode identity, and rejects removal, replacement, or redirection before grading. The outer temporary parent safely cleans up a substituted workspace symlink. `negative_agent.py` and `check.sh` add an end-to-end root-replacement case that asserts failed `agent_error` trials and a written report.
 
 No advisories were taken. `npm run check` passes: validation, prose lint, pipeline tests, all chapter artifacts including this harness, 48 render tests, production build, and advisory lint.
+
+## Round 4 review (2026-07-18)
+
+Fresh-eyes convergence review: read the complete critique and git history, current `src/chapters/evaluating-agents.mdx`, `EvaluatingAgentsFigure.tsx`, `EvaluatingAgentsWidget.tsx`, every artifact file, build notes, and `docs/research/ch22-evaluating-agents.md`. Checked the linked Anthropic guide, tau-bench, SWE-bench, SWE-bench Verified, Terminal-Bench, LiveCodeBench, and MT-Bench primary sources. Ran `bash artifacts/ch22-evaluating-agents/check.sh` and `npm run check` successfully: validation, prose lint, pipeline tests, all 22 artifact checks, 48 render tests, build, and lint passed. Re-verified every settled REQUIRED fix from Rounds 1–3: dangling final symlinks, lexical and symlink-mediated parent traversal, self-referential checked paths, malformed agent output and unreadable text files, and workspace-root replacement all remain controlled failures. The figure remains accessible and truthful; the keyboard-operable widget continues to demonstrate the pass@k versus pass^k distinction. I independently reproduced the new `file_absent` bypass below in a disposable workspace against the current public harness.
+
+## Required fixes
+
+1. **artifacts/ch22-evaluating-agents/harness.py:217-224 --- `file_absent` treats an unreadable existing entry as absent.** In a fresh workspace, create `locked/ghost`, write content to it, then set `locked` to mode `000`. The current `grade_check(workspace, {"kind": "file_absent", "path": "locked/ghost"})` returns `{ "passed": true, "detail": "file was absent" }`, even though restoring the directory mode confirms that `ghost` exists. Both `os.path.lexists()` probes collapse the agent-caused `EACCES` into `False`; `workspace_path()` still accepts the contained path. A compatible agent can therefore hide a forbidden final-state entry by removing search permission from its parent and receive a passing absence grade. Probe existence in a way that distinguishes `FileNotFoundError` from `PermissionError` and other inspection failures, failing closed or returning a controlled failed trial on the latter while preserving the settled symlink protections. Add a deterministic `check.sh` regression that creates the locked existing path, asserts that `file_absent` cannot pass it, and restores permissions for cleanup.
+
+## Advisories
+
+- The previously noted README execution-order wording for malformed check paths remains non-blocking and does not affect this verdict.
