@@ -490,10 +490,11 @@ def profile_path(path: Path) -> str:
 def reject_protected_workspace_hardlinks(workspace: Path) -> None:
     """Fail closed when a protected file has a writable hard-link alias.
 
-    Seatbelt rules name paths, not inodes. Before any MCP child starts, reject a
-    workspace where a root ``.env*`` entry or a regular file below ``secrets/``
-    has more than one link. Otherwise an approved server could mutate protected
-    content through an allowed name such as ``PROJECT.md``.
+    Seatbelt rules name paths, not inodes. Before any sandboxed workspace writer
+    starts, reject a workspace where a root ``.env*`` entry or a regular file
+    below ``secrets/`` has more than one link. Otherwise an approved process
+    could mutate protected content through an allowed name such as
+    ``PROJECT.md``.
     """
 
     root = workspace.resolve()
@@ -511,7 +512,7 @@ def reject_protected_workspace_hardlinks(workspace: Path) -> None:
             display = path.relative_to(root)
         except ValueError:
             display = path
-        raise HarnessError(f"refusing MCP launch: protected workspace file has a hard-link alias: {display}")
+        raise HarnessError(f"refusing sandboxed workspace write: protected file has a hard-link alias: {display}")
 
     def scan_protected_tree(directory: Path) -> None:
         try:
@@ -1015,6 +1016,7 @@ class ProductionHarness:
             self.stream.emit("subagent.summary", characters=len(summary), summary=summary)
 
             if self._authorize("shell", "verify-workspace", approve_verification):
+                reject_protected_workspace_hardlinks(self.workspace)
                 self.stream.emit("sandbox.started", command="verify-workspace", mode=self.sandbox.mode)
                 result = self.sandbox.run(["/bin/sh", "-c", "printf verified > verification.txt"])
                 self.stream.emit(
@@ -2571,6 +2573,76 @@ for line in sys.stdin:
             ):
                 raise HarnessError("protected inode changed through a pre-existing hard-link alias")
 
+        def assert_real_seatbelt_blocks_verification_hardlink_after_denied_mcp() -> None:
+            """Reject a verification alias even when the custom MCP launch is skipped."""
+
+            alias_workspace = root / "denied-mcp-verification-hardlink-workspace"
+            alias_workspace.mkdir()
+            protected = alias_workspace / ".env.production"
+            sentinel = "denied-mcp-verification-hardlink-sentinel\n"
+            protected.write_text(sentinel, encoding="utf-8")
+            protected_status = protected.stat()
+            verification = alias_workspace / "verification.txt"
+            os.link(protected, verification)
+            (alias_workspace / "PROJECT.md").write_text(
+                "A denied MCP launch must not weaken verification containment.\n", encoding="utf-8"
+            )
+            (alias_workspace / "TODO.md").write_text(
+                "Reject a protected verification alias before the shell starts.\n", encoding="utf-8"
+            )
+            denied_marker = alias_workspace / "denied-server-started.txt"
+            denied_server = alias_workspace / "denied_server.py"
+            denied_server.write_text(
+                "from pathlib import Path\n"
+                "import os\n"
+                "Path(os.environ['STAGE_THREE_WORKSPACE']).joinpath('denied-server-started.txt').write_text(\n"
+                "    'started', encoding='utf-8'\n"
+                ")\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "demo",
+                    "--workspace",
+                    str(alias_workspace),
+                    "--server-name",
+                    "denied-verification",
+                    "--mcp-command",
+                    "python3 ./denied_server.py",
+                    "--mcp-tool",
+                    "rewrite_project",
+                    "--approve-verification",
+                    "--stream",
+                    "ndjson",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode != 2 or "hard-link alias" not in result.stderr:
+                raise HarnessError("public demo did not reject a verification hard-link alias")
+            events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+            if not any(event.get("event") == "mcp.server_skipped" for event in events):
+                raise HarnessError("verification hard-link regression did not skip the denied MCP server")
+            if any(
+                event.get("event") in {"sandbox.started", "sandbox.completed", "run.completed"} for event in events
+            ):
+                raise HarnessError("verification hard-link regression started the sandboxed shell")
+            if denied_marker.exists():
+                raise HarnessError("verification hard-link regression started the denied MCP server")
+            current_status = protected.stat()
+            if (
+                (current_status.st_dev, current_status.st_ino)
+                != (protected_status.st_dev, protected_status.st_ino)
+                or protected.read_text(encoding="utf-8") != sentinel
+                or verification.read_text(encoding="utf-8") != sentinel
+            ):
+                raise HarnessError("verification mutated a protected inode through a pre-existing hard-link alias")
+
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
@@ -2581,6 +2653,7 @@ for line in sys.stdin:
                 assert_real_seatbelt_blocks_workspace_secrets(external_dotenv, external_value)
             assert_real_seatbelt_rejects_preexisting_secret_hardlinks()
             assert_real_seatbelt_blocks_preexisting_secret_hardlink_mutation()
+            assert_real_seatbelt_blocks_verification_hardlink_after_denied_mcp()
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():

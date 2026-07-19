@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -317,3 +317,25 @@ Convergence re-review: read `prompts/critique-rubric.md`, the complete append-on
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 12 against the current chapter, exact figure and widget, artifact, README, policy, demo server, and deterministic regressions:
+
+1. Round 1 still has no public sandbox bypass; descriptor-contained memory roots and host writes reject escapes; MCP launch is authorized before `popen`; and tool-definition locks remain host-owned outside the workspace.
+2. Rounds 2 and 3 retain the narrow child-environment allowlist plus descriptor-relative, no-follow reads that reject static and post-open workspace-symlink escapes.
+3. Round 4 still binds public launches to the reviewed non-`PATH` Seatbelt executable and bounds FIFO or oversized host inputs before decoding.
+4. Round 5 still bounds malformed, partial, and oversized MCP frames and closes, kills, and reaps the MCP process group on protocol failure.
+5. Round 6 retains process-group cleanup for ordinary MCP descendants and descriptor-relative memory writes.
+6. Round 7 retains the independent dispatcher seams in the figure and prose, plus the runnable workspace-local custom-server contract.
+7. Round 8 retains execution-only Seatbelt permissions, fork denial, and the direct plus forked `setsid()` containment regression.
+8. Round 9 retains kernel-enforced `.env*` and `secrets/**` read and mutation denials for MCP children.
+9. Round 10 retains the narrow `/private/var/select` runtime lookup and the external `/private/var` secret regression.
+10. Round 11 retains multi-link rejection in the bounded host and bundled-MCP readers.
+11. Round 12 retains the protected hard-link preflight before an MCP child can start.
+
+1. Kept the Round 12 preflight before `client.start()` and added the same `reject_protected_workspace_hardlinks()` call in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py` after verification approval but before `sandbox.started` or `sandbox.run()`. A denied MCP launch can no longer leave an approved verification shell able to write through a protected hard-link alias.
+2. Generalized the preflight's wording from MCP-specific to any sandboxed workspace writer, matching both guarded process paths.
+3. Added a Darwin-gated, real-Seatbelt public-parser regression: `.env.production` is hard-linked to `verification.txt`, a custom MCP launch is denied, and verification is approved. It requires exit 2, records `mcp.server_skipped`, rejects any sandbox or completion event and denied-server marker, and proves the protected inode and content remain unchanged.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
