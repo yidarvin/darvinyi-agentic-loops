@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -44,3 +44,17 @@ Regression gate: re-verified Round 1's dangling-symlink absence-grader fix and b
 3. `artifacts/ch22-evaluating-agents/negative_agent.py` adds the compatible `symlink-loop` fixture mode. `artifacts/ch22-evaluating-agents/check.sh` asserts its failed `patch-greeting` trial, controlled error tag, and readable report, and adds the normalized-parent-path regression assertion while preserving the direct dangling-symlink assertion.
 
 No advisories were taken. `npm run check` passes: validation, prose lint, pipeline tests, all artifact checks, 48 render tests, production build, and lint.
+
+## Round 3 review (2026-07-18)
+
+Fresh-eyes re-review: read the complete critique history and git history, the current chapter, figure, widget, every artifact file, the research reference, and the linked Anthropic, tau-bench, SWE-bench, SWE-bench Verified, Terminal-Bench, LiveCodeBench, and MT-Bench primary sources. The consequential chapter claims remain supported. Ran `npm run check` successfully and exercised `bash artifacts/ch22-evaluating-agents/check.sh` directly; both hold the existing deterministic gate. Re-verified every settled REQUIRED finding: a dangling final symlink fails `file_absent`, `missing-parent/../ghost` cannot hide a regular `ghost`, and a self-referential checked-file symlink becomes an `agent_error` trial with a written report. The chapter, accessible figure, and keyboard-operable widget continue to teach the stated pass@k versus pass^k distinction. I then reproduced the new failure modes below in disposable workspaces against the current public harness.
+
+## Required fixes
+
+1. **artifacts/ch22-evaluating-agents/harness.py:151-157 and 273-307: untrusted agent I/O can terminate the harness without a report.** `subprocess.run(..., text=True)` lets non-UTF-8 agent stdout raise `UnicodeDecodeError` outside the `HarnessError` path. A compatible agent that writes byte `0xff` to stdout exits the harness with code 1 and leaves no report. Separately, an agent can write the expected `greeting.txt`, set its mode to `000`, and trigger an uncaught `PermissionError` in `read_text_if_present`, with the same no-report crash. These are material broken failure paths and contradict the README's controlled `agent_error` behavior for malformed agent output. Convert expected decode and workspace-read errors into a controlled failed trial or failed check, preserve the report, and add deterministic `check.sh` regressions for both non-UTF-8 stdout and an unreadable checked file.
+2. **artifacts/ch22-evaluating-agents/harness.py:192-198: `file_absent` still false-passes an existing entry through a symlink plus `..`.** Round 2's direct `missing-parent/../ghost` case remains fixed. The distinct current case is a workspace with `link -> nested/dir`, an existing `nested/ghost`, and no `workspace/ghost`: `grade_check(workspace, {"kind": "file_absent", "path": "link/../ghost"})` returns `passed: true`. `workspace_path()` resolves the path semantically to the present `nested/ghost`, while `os.path.normpath()` makes the lexical probe check absent `workspace/ghost`. An agent can create the symlink, so a valid configured final-state absence check can be bypassed. Make the existence probe consistent with the containment resolution while retaining the settled dangling-symlink protection, and add this symlink-mediated case to `check.sh`.
+3. **artifacts/ch22-evaluating-agents/harness.py:310-378: replacing the supplied workspace root with a symlink crashes the public harness and invalidates its isolation boundary.** I used a compatible agent that read its task, changed out of the supplied workspace, replaced that directory with a symlink to a separate directory holding the expected files, and returned valid result JSON. Because `workspace_path()` establishes `workspace_root` only after the agent exits, it treats the agent-controlled symlink target as the workspace root. The context manager then raises `OSError: Cannot call rmtree on a symbolic link`, exits 1, and emits no report. Retain and validate a trusted pre-invocation workspace root before grading, reject and safely clean up a root replacement as a failed trial, and add a deterministic end-to-end regression that asserts a report is still written. The README's no-sandbox caveat does not make grading an agent-controlled external directory or crashing the harness acceptable.
+
+## Advisories
+
+- The existing README wording that malformed check paths fail before an agent is invoked remains a non-blocking execution-order detail. It does not affect this verdict.
