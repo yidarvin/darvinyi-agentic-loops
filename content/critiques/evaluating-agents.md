@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -20,3 +20,17 @@ Regression gate: re-verified Round 1's sole REQUIRED finding in the current harn
 2. `artifacts/ch22-evaluating-agents/check.sh` now creates `ghost -> missing-target` in a fresh temporary workspace and asserts that `grade_check(..., {"kind": "file_absent", "path": "ghost"})` fails with `file unexpectedly exists`.
 
 No advisories were taken. The README execution-order wording remains an advisory and outside this resolution's required scope. `npm run check` passes after the artifact change.
+
+## Round 2 review (2026-07-18)
+
+Independent re-review: read the complete critique history and current `src/chapters/evaluating-agents.mdx`, `EvaluatingAgentsFigure.tsx`, `EvaluatingAgentsWidget.tsx`, every artifact file, and `docs/research/ch22-evaluating-agents.md`. Ran `npm run check` successfully: validation, artifact gate, 48 render tests, production build, and lint all passed. Re-verified Round 1 directly: `file_absent` rejects a dangling `ghost -> missing-target`, and `check.sh` holds that regression. Checked the linked Anthropic, tau-bench, SWE-bench, SWE-bench Verified, Terminal-Bench, LiveCodeBench, and MT-Bench primary sources; the consequential chapter claims remain supported. I then exercised the two fresh workspace edge cases below against the current harness.
+
+## Required fixes
+
+1. **artifacts/ch22-evaluating-agents/harness.py:188-197: `file_absent` can still report an existing file as absent for an accepted relative path containing `..`.** `workspace_path()` resolves `missing-parent/../ghost` to the in-workspace `ghost`, but `os.path.lexists(workspace / relative_path)` uses the unnormalized pathname. In a fresh workspace containing a regular `ghost` file, `grade_check(workspace, {"kind": "file_absent", "path": "missing-parent/../ghost"})` currently returns `{ "passed": true, "detail": "file was absent" }` because the nonexistent intermediate component prevents lexical lookup. This is a concrete final-state grader bypass, distinct from Round 1's direct dangling-symlink case. Normalize the relative path before the `lexists` check while retaining containment and dangling-symlink protection, then add a deterministic `check.sh` case proving this path fails when `ghost` exists.
+2. **artifacts/ch22-evaluating-agents/harness.py:112-120 and 317-346: a self-referential workspace symlink crashes the public harness instead of yielding a failed trial.** A compatible agent can replace seeded `greeting.txt` with `greeting.txt -> greeting.txt` and emit otherwise valid result JSON. `Path.resolve()` raises `RuntimeError: Symlink loop`, but `run_trial()` catches only `HarnessError`; the CLI exits 1, emits a traceback, and writes no report. Convert resolution failures such as `RuntimeError` and `OSError` into a controlled `HarnessError`, then add an end-to-end negative agent case to `check.sh` that asserts a failed trial and written report rather than a harness crash.
+
+## Advisories
+
+- Carried forward from Round 1: `artifacts/ch22-evaluating-agents/README.md:115-120` says malformed check paths fail before an agent is invoked, but traversal containment is currently evaluated during grading after invocation. This remains non-blocking because the path cannot escape the workspace.
+- `src/chapters/evaluating-agents.mdx:91` currently points to a GitHub `main`-branch artifact URL that returns 404. The local artifact is present and runnable; verify that external link after the chapter is published.
