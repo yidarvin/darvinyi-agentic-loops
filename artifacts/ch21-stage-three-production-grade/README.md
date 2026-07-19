@@ -29,12 +29,14 @@ python3 stage_three_agent.py demo \
   --stream ndjson
 ```
 
-The demo writes `.agent-memory/` and `verification.txt` under the chosen workspace.
-It keeps `mcp-tool-lock.json` in a sibling `.stage-three-agent-state/` directory that
-the sandboxed server cannot write. The memory file records durable project context;
-the host-owned lock records pinned tool definitions. The verification file proves that
-the approved process could write inside the workspace. It cannot write outside the
-workspace when the Seatbelt profile starts.
+The demo creates `.agent-memory/` and publishes `verification.txt` under the chosen
+workspace. It keeps `mcp-tool-lock.json` in a sibling `.stage-three-agent-state/`
+directory that the sandboxed server cannot write. The memory file records durable
+project context; the host-owned lock records pinned tool definitions. The verification
+file records `verified` emitted by the approved Seatbelt process, then the harness
+publishes that output through a descriptor-relative, no-follow replacement. An old
+symlink or hard-link alias therefore cannot redirect the verification write outside
+the workspace.
 
 The NDJSON stream includes events such as:
 
@@ -68,6 +70,10 @@ process starts. There is no global bypass-permissions flag.
 3. It starts an approved `mcp_demo_server.py` inside Seatbelt, performs `initialize`,
    discovers `tools/list`, maps the tool to `mcp__demo__read_project_brief`, and pins
    its normalized definition hash in host-owned state outside the server workspace.
+   The state root is opened through a no-follow directory descriptor, and lock files
+   are read and published through that pinned descriptor with random exclusive staging
+   names. A workspace-adjacent state-root symlink or an old predictable temp-file link
+   therefore fails closed instead of redirecting a host write.
    The client starts the direct server in its own session. The profile permits exec
    but denies process forks, preventing a server from daemonizing with `setsid()` and
    escaping lifecycle cleanup; the client also terminates and reaps the original
@@ -85,9 +91,10 @@ process starts. There is no global bypass-permissions flag.
    capped summary, not a tool transcript.
 6. It evaluates every permission rule in `deny`, `ask`, `allow` order. A denial always
    wins over a broader allow rule.
-7. It launches the one approved shell command through Seatbelt. The generated profile
-   allows writes only below `--workspace`, denies network, and scrubs common
-   credential-shaped environment variables from child processes.
+7. It launches the one approved verification shell command through Seatbelt, then
+   publishes its expected output with the same descriptor-contained file discipline.
+   The generated profile allows writes only below `--workspace`, denies network, and
+   scrubs common credential-shaped environment variables from child processes.
 
 `check.sh` runs deterministic invariants, including a regression that forces Seatbelt
 unavailable and proves the public demo cannot launch a child. On macOS with Seatbelt,
@@ -132,15 +139,15 @@ The policy is useful because it makes intent auditable. It is not the containmen
 boundary. Seatbelt constrains the subprocess after policy allows it to start. For
 MCP children, the generated profile enforces the policy's `.env*` and `secrets/**`
 denials for both reads and mutations. Before launch, the harness rejects any
-pre-existing multi-link `.env*` or `secrets/**` file, preventing a writable allowed
-pathname from aliasing a protected inode. The bundled MCP server and host-owned
-readers also reject pre-existing multi-link inputs before reading them, because
-pathname rules alone cannot establish file provenance. Custom server code must apply
-the same content-safe read rule to every workspace file it consumes. The profile has
-an intentionally narrow writable area and no network. It still needs defense in
-depth: inspect tool definitions, isolate credentials, preserve human approval for
-irreversible actions, and prefer stronger VM isolation for high-value secrets or
-untrusted content.
+pre-existing multi-link `.env*` or `secrets/**` file and rejects symlinks anywhere
+in those protected namespaces. That prevents a writable allowed pathname from
+aliasing a protected inode. The bundled MCP server and host-owned readers also reject
+pre-existing multi-link inputs before reading them, because pathname rules alone
+cannot establish file provenance. Custom server code must apply the same content-safe
+read rule to every workspace file it consumes. The profile has an intentionally
+narrow writable area and no network. It still needs defense in depth: inspect tool
+definitions, isolate credentials, preserve human approval for irreversible actions,
+and prefer stronger VM isolation for high-value secrets or untrusted content.
 
 The bundled MCP server is trusted only for demonstration. Treat every external tool
 description and result as untrusted input. The host keeps the lock outside the server's

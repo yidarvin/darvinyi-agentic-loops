@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -352,3 +352,25 @@ Convergence re-review: read `prompts/critique-rubric.md`, the complete append-on
 ## Advisories
 
 - None.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: read the complete append-only critique history and `git log -p -- content/critiques/stage-three-production-grade.md`. Re-verified every REQUIRED fix from Rounds 1 through 13 against the current chapter, exact figure and widget, artifact, README, policy, and deterministic public-demo regressions:
+
+1. Round 1 retains the removed public sandbox bypass, descriptor-contained memory roots and host writes, policy authorization before MCP launch, and host-owned definition locking outside the MCP workspace.
+2. Rounds 2 and 3 retain the narrow child environment plus descriptor-relative, no-follow reads for static and post-open workspace-symlink attacks.
+3. Round 4 retains the reviewed non-`PATH` Seatbelt executable and bounded FIFO or oversized host reads.
+4. Round 5 retains bounded malformed, partial, and oversized MCP-frame handling with child cleanup.
+5. Round 6 retains process-group cleanup and descriptor-relative memory writes.
+6. Round 7 retains the independent MCP, memory, and subagent seams in the figure and prose, along with the runnable workspace-local custom-server contract.
+7. Round 8 retains execution-only Seatbelt permission, fork denial, and the detached-child containment regression.
+8. Round 9 retains kernel-enforced `.env*` and `secrets/**` read and mutation denials for MCP children.
+9. Round 10 retains the narrow `/private/var/select` runtime lookup and external-secret regression.
+10. Round 11 retains multi-link rejection for bounded host and bundled-MCP reads.
+11. Rounds 12 and 13 retain the protected hard-link preflight before both MCP and verification writers.
+
+1. Replaced the pathname-based host-state lock path in `artifacts/ch21-stage-three-production-grade/stage_three_agent.py`. `AgentState` now resolves only its parent, opens the final state-root component with a no-follow directory descriptor, and reads or publishes the definition lock through that pinned descriptor. Publication uses a random, exclusive no-follow staging file and descriptor-relative `os.replace`, so neither a workspace-adjacent state-root symlink nor a pre-existing `mcp-tool-lock.json.tmp` symlink can redirect a host write. New deterministic and real public-demo regressions preserve external sentinels in both cases.
+2. Hardened `reject_protected_workspace_hardlinks()` to reject symlinks in root `.env*` entries and throughout `secrets/**`. The verification process now emits `verified` to stdout inside Seatbelt, and the harness safely publishes `verification.txt` through its existing descriptor-relative no-follow replacement path. The new real public-demo regression combines a protected `.env.production` symlink with a hard-linked verification alias, confirms the denied MCP server is skipped, no verification shell starts, and the external sentinel is unchanged.
+3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to document the pinned state-root lock boundary, the descriptor-contained verification publication, and protected-symlink rejection.
+
+No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.

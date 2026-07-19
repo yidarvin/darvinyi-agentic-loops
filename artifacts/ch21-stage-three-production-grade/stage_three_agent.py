@@ -87,12 +87,6 @@ def definition_hash(tool: Dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 
 
-def write_json(path: Path, value: Any) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
 def read_bounded_regular_file(root: Path, relative_path: str, byte_limit: int) -> Optional[str]:
     """Read a bounded regular file below a directory descriptor without following links.
 
@@ -421,26 +415,204 @@ class AgentState:
 
     def __init__(self, workspace: Path, root: Path) -> None:
         self.workspace = workspace.resolve()
-        self.root = root.resolve()
-        self._reject_workspace_root()
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.root = self.root.resolve()
-        self._reject_workspace_root()
+        requested_root = Path(root)
+        if not requested_root.is_absolute():
+            requested_root = Path.cwd() / requested_root
+        state_name = requested_root.name
+        if state_name in ("", ".", ".."):
+            raise AgentStateEscape(f"invalid agent state root: {root}")
 
-    def _reject_workspace_root(self) -> None:
+        # Resolve only the parent. The final state-root component must be opened
+        # with O_NOFOLLOW below, otherwise a workspace-adjacent symlink can turn
+        # a host-owned lock write into an arbitrary host write.
+        self.root = requested_root.parent.resolve() / state_name
         try:
             self.root.relative_to(self.workspace)
         except ValueError:
-            return
-        raise AgentStateEscape(f"agent state must stay outside the workspace: {self.root}")
+            pass
+        else:
+            raise AgentStateEscape(f"agent state must stay outside the workspace: {self.root}")
+
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        non_blocking = getattr(os, "O_NONBLOCK", 0)
+        directory_flag = getattr(os, "O_DIRECTORY", 0)
+        if not no_follow or not non_blocking or not directory_flag:
+            raise AgentStateEscape("descriptor-relative no-follow state storage is required")
+        directory_flags = os.O_RDONLY | directory_flag | no_follow | non_blocking
+
+        try:
+            parent_descriptor = os.open(self.root.parent, directory_flags)
+        except OSError as error:
+            raise AgentStateEscape(f"unable to open agent state parent: {self.root.parent}") from error
+        root_descriptor: Optional[int] = None
+        try:
+            if not stat.S_ISDIR(os.fstat(parent_descriptor).st_mode):
+                raise AgentStateEscape(f"agent state parent is not a directory: {self.root.parent}")
+            try:
+                os.mkdir(state_name, mode=0o700, dir_fd=parent_descriptor)
+            except FileExistsError:
+                pass
+            except OSError as error:
+                raise AgentStateEscape(f"unable to create agent state root: {self.root}") from error
+            try:
+                root_descriptor = os.open(state_name, directory_flags, dir_fd=parent_descriptor)
+            except OSError as error:
+                raise AgentStateEscape(f"agent state root is not a verified directory: {self.root}") from error
+            if not stat.S_ISDIR(os.fstat(root_descriptor).st_mode):
+                raise AgentStateEscape(f"agent state root is not a directory: {self.root}")
+            self._root_descriptor = root_descriptor
+            root_descriptor = None
+        finally:
+            if root_descriptor is not None:
+                os.close(root_descriptor)
+            os.close(parent_descriptor)
+
+    def _file_name(self, raw_path: str) -> str:
+        relative = Path(raw_path)
+        if (
+            relative.is_absolute()
+            or len(relative.parts) != 1
+            or relative.parts[0] in ("", ".", "..")
+        ):
+            raise AgentStateEscape(f"agent state path escapes root: {raw_path}")
+        return relative.parts[0]
+
+    def _require_root_descriptor(self) -> int:
+        descriptor = getattr(self, "_root_descriptor", None)
+        if descriptor is None:
+            raise AgentStateEscape("agent state storage is closed")
+        return descriptor
 
     def path_for(self, raw_path: str) -> Path:
-        candidate = (self.root / raw_path.lstrip("/")).resolve()
+        """Return a display path only. State I/O stays descriptor-relative."""
+
+        return self.root / self._file_name(raw_path)
+
+    def read_json(self, raw_path: str) -> Dict[str, str]:
+        """Read one bounded, single-link state file without following aliases."""
+
+        name = self._file_name(raw_path)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        non_blocking = getattr(os, "O_NONBLOCK", 0)
+        if not no_follow or not non_blocking:
+            raise AgentStateEscape("descriptor-relative no-follow state reads are required")
         try:
-            candidate.relative_to(self.root)
-        except ValueError as error:
-            raise AgentStateEscape(f"agent state path escapes root: {raw_path}") from error
-        return candidate
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | no_follow | non_blocking,
+                dir_fd=self._require_root_descriptor(),
+            )
+        except OSError as error:
+            if error.errno == errno.ENOENT:
+                return {}
+            raise AgentStateEscape(f"unable to open host-owned state file: {name}") from error
+        try:
+            file_status = os.fstat(descriptor)
+            if not stat.S_ISREG(file_status.st_mode) or file_status.st_nlink > 1:
+                raise AgentStateEscape(f"host-owned state file is not a single-link regular file: {name}")
+            chunks: List[bytes] = []
+            total = 0
+            while total <= MAX_MEMORY_READ_BYTES:
+                try:
+                    chunk = os.read(descriptor, MAX_MEMORY_READ_BYTES + 1 - total)
+                except OSError as error:
+                    raise AgentStateEscape(f"unable to read host-owned state file: {name}") from error
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_MEMORY_READ_BYTES:
+                    raise AgentStateEscape(f"host-owned state file exceeds {MAX_MEMORY_READ_BYTES} bytes: {name}")
+                chunks.append(chunk)
+            try:
+                parsed = json.loads(b"".join(chunks).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise AgentStateEscape(f"host-owned state file is not valid JSON: {name}") from error
+            if not isinstance(parsed, dict) or not all(
+                isinstance(key, str) and isinstance(value, str) for key, value in parsed.items()
+            ):
+                raise AgentStateEscape(f"host-owned state file has an invalid lock shape: {name}")
+            return parsed
+        finally:
+            os.close(descriptor)
+
+    def write_json(self, raw_path: str, value: Dict[str, str]) -> None:
+        """Atomically publish state through a pinned directory descriptor."""
+
+        name = self._file_name(raw_path)
+        encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        non_blocking = getattr(os, "O_NONBLOCK", 0)
+        if not no_follow or not non_blocking:
+            raise AgentStateEscape("descriptor-relative no-follow state writes are required")
+
+        root_descriptor = self._require_root_descriptor()
+        temporary_name: Optional[str] = None
+        temporary_descriptor: Optional[int] = None
+        try:
+            for _ in range(16):
+                candidate = f".{name}.write-{os.urandom(8).hex()}"
+                try:
+                    temporary_descriptor = os.open(
+                        candidate,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow | non_blocking,
+                        0o600,
+                        dir_fd=root_descriptor,
+                    )
+                    temporary_name = candidate
+                    break
+                except FileExistsError:
+                    continue
+                except OSError as error:
+                    raise AgentStateEscape(f"unable to stage host-owned state file: {name}") from error
+            else:
+                raise AgentStateEscape(f"unable to allocate a host-owned state staging file: {name}")
+
+            temporary_status = os.fstat(temporary_descriptor)
+            if not stat.S_ISREG(temporary_status.st_mode) or temporary_status.st_nlink != 1:
+                raise AgentStateEscape(f"host-owned state staging file is unsafe: {name}")
+
+            remaining = memoryview(encoded)
+            while remaining:
+                try:
+                    written = os.write(temporary_descriptor, remaining)
+                except OSError as error:
+                    raise AgentStateEscape(f"unable to write host-owned state file: {name}") from error
+                if written <= 0:
+                    raise AgentStateEscape(f"host-owned state write made no progress: {name}")
+                remaining = remaining[written:]
+            os.fsync(temporary_descriptor)
+
+            named_status = os.stat(temporary_name, dir_fd=root_descriptor, follow_symlinks=False)
+            if (
+                (named_status.st_dev, named_status.st_ino)
+                != (temporary_status.st_dev, temporary_status.st_ino)
+                or not stat.S_ISREG(named_status.st_mode)
+                or named_status.st_nlink != 1
+            ):
+                raise AgentStateEscape(f"host-owned state staging file changed before publish: {name}")
+            os.replace(
+                temporary_name,
+                name,
+                src_dir_fd=root_descriptor,
+                dst_dir_fd=root_descriptor,
+            )
+            temporary_name = None
+        except OSError as error:
+            raise AgentStateEscape(f"unable to publish host-owned state file: {name}") from error
+        finally:
+            if temporary_descriptor is not None:
+                os.close(temporary_descriptor)
+            if temporary_name is not None:
+                try:
+                    os.unlink(temporary_name, dir_fd=root_descriptor)
+                except OSError:
+                    pass
+
+    def close(self) -> None:
+        descriptor = getattr(self, "_root_descriptor", None)
+        if descriptor is not None:
+            self._root_descriptor = None
+            os.close(descriptor)
 
 
 class PermissionPolicy:
@@ -488,13 +660,13 @@ def profile_path(path: Path) -> str:
 
 
 def reject_protected_workspace_hardlinks(workspace: Path) -> None:
-    """Fail closed when a protected file has a writable hard-link alias.
+    """Fail closed when protected paths have writable aliases.
 
     Seatbelt rules name paths, not inodes. Before any sandboxed workspace writer
-    starts, reject a workspace where a root ``.env*`` entry or a regular file
-    below ``secrets/`` has more than one link. Otherwise an approved process
-    could mutate protected content through an allowed name such as
-    ``PROJECT.md``.
+    starts, reject protected symlinks plus a workspace where a root ``.env*``
+    entry or a regular file below ``secrets/`` has more than one link. Otherwise
+    an approved process could mutate protected content through an allowed name
+    such as ``PROJECT.md``.
     """
 
     root = workspace.resolve()
@@ -514,12 +686,22 @@ def reject_protected_workspace_hardlinks(workspace: Path) -> None:
             display = path
         raise HarnessError(f"refusing sandboxed workspace write: protected file has a hard-link alias: {display}")
 
+    def reject_if_symlink(path: Path, status: os.stat_result) -> None:
+        if not stat.S_ISLNK(status.st_mode):
+            return
+        try:
+            display = path.relative_to(root)
+        except ValueError:
+            display = path
+        raise HarnessError(f"refusing sandboxed workspace write: protected path is a symlink: {display}")
+
     def scan_protected_tree(directory: Path) -> None:
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
                     path = Path(entry.path)
                     status = status_for(path)
+                    reject_if_symlink(path, status)
                     if stat.S_ISREG(status.st_mode):
                         reject_if_multi_link(path, status)
                     elif stat.S_ISDIR(status.st_mode):
@@ -536,12 +718,15 @@ def reject_protected_workspace_hardlinks(workspace: Path) -> None:
     for path, name in root_entries:
         status = status_for(path)
         if name.startswith(".env"):
+            reject_if_symlink(path, status)
             if stat.S_ISREG(status.st_mode):
                 reject_if_multi_link(path, status)
             elif stat.S_ISDIR(status.st_mode):
                 scan_protected_tree(path)
-        elif name == "secrets" and stat.S_ISDIR(status.st_mode):
-            scan_protected_tree(path)
+        elif name == "secrets":
+            reject_if_symlink(path, status)
+            if stat.S_ISDIR(status.st_mode):
+                scan_protected_tree(path)
 
 
 class MacOSSandbox:
@@ -666,11 +851,9 @@ class _CheckOnlySandbox:
 
 
 def pin_tool_definitions(
-    lock_path: Path, server_name: str, tools: List[Dict[str, Any]], stream: EventStream
+    state: AgentState, server_name: str, tools: List[Dict[str, Any]], stream: EventStream
 ) -> Dict[str, Dict[str, Any]]:
-    locks: Dict[str, str] = {}
-    if lock_path.exists():
-        locks = json.loads(lock_path.read_text(encoding="utf-8"))
+    locks = state.read_json("mcp-tool-lock.json")
 
     registry: Dict[str, Dict[str, Any]] = {}
     updated = dict(locks)
@@ -686,7 +869,7 @@ def pin_tool_definitions(
         registry[public_name] = {"original_name": original_name, "definition": tool}
         stream.emit("mcp.tool_pinned", tool=public_name, definition_hash=current_hash[:12])
 
-    write_json(lock_path, updated)
+    state.write_json("mcp-tool-lock.json", updated)
     return registry
 
 
@@ -698,13 +881,13 @@ class StdioMcpClient:
         server_name: str,
         command: Sequence[str],
         sandbox: MacOSSandbox,
-        lock_path: Path,
+        state: AgentState,
         stream: EventStream,
     ) -> None:
         self.server_name = server_name
         self.command = list(command)
         self.sandbox = sandbox
-        self.lock_path = lock_path
+        self.state = state
         self.stream = stream
         self.process: Optional[subprocess.Popen[bytes]] = None
         self.request_id = 0
@@ -729,7 +912,7 @@ class StdioMcpClient:
         tools = listed.get("tools")
         if not isinstance(tools, list):
             raise HarnessError("MCP server returned no tools list")
-        self.registry = pin_tool_definitions(self.lock_path, self.server_name, tools, self.stream)
+        self.registry = pin_tool_definitions(self.state, self.server_name, tools, self.stream)
         self.stream.emit("mcp.connected", server=self.server_name, tools=sorted(self.registry))
 
     def _require_process(self) -> subprocess.Popen[bytes]:
@@ -986,7 +1169,7 @@ class ProductionHarness:
             self.server_name,
             self.mcp_command,
             self.sandbox,
-            self.state.path_for("mcp-tool-lock.json"),
+            self.state,
             self.stream,
         )
         try:
@@ -1018,19 +1201,33 @@ class ProductionHarness:
             if self._authorize("shell", "verify-workspace", approve_verification):
                 reject_protected_workspace_hardlinks(self.workspace)
                 self.stream.emit("sandbox.started", command="verify-workspace", mode=self.sandbox.mode)
-                result = self.sandbox.run(["/bin/sh", "-c", "printf verified > verification.txt"])
+                result = self.sandbox.run(["/bin/sh", "-c", "printf verified"])
+                if result.returncode != 0:
+                    raise HarnessError("sandboxed verification command failed")
+                if result.stdout != "verified":
+                    raise HarnessError("sandboxed verification command returned an unexpected result")
+                try:
+                    write_contained_regular_file(
+                        self.workspace,
+                        "verification.txt",
+                        result.stdout,
+                        if_missing=False,
+                    )
+                except MemoryEscape as error:
+                    raise HarnessError("unable to publish verification output safely") from error
                 self.stream.emit(
                     "sandbox.completed",
                     command="verify-workspace",
                     returncode=result.returncode,
                     stderr=result.stderr.strip()[:180],
                 )
-                if result.returncode != 0:
-                    raise HarnessError("sandboxed verification command failed")
             else:
                 self.stream.emit("tool.skipped", tool="shell", reason="permission was not granted")
         finally:
-            client.close()
+            try:
+                client.close()
+            finally:
+                self.state.close()
         self.stream.emit("run.completed", task=task)
 
 
@@ -1124,14 +1321,38 @@ def run_self_test() -> None:
             raise HarnessError("agent state symlink back into the workspace was accepted")
 
         original = [{"name": "read_project_brief", "description": "Read brief", "inputSchema": {"type": "object"}}]
-        pin_tool_definitions(lock_path, "demo", original, stream)
+        pin_tool_definitions(state, "demo", original, stream)
         changed = [{"name": "read_project_brief", "description": "Changed brief", "inputSchema": {"type": "object"}}]
         try:
-            pin_tool_definitions(lock_path, "demo", changed, stream)
+            pin_tool_definitions(state, "demo", changed, stream)
         except ToolDefinitionChanged:
             pass
         else:
             raise HarnessError("changed MCP definition was accepted")
+        state.close()
+
+        outside_state = root / "outside-agent-state"
+        outside_state.mkdir()
+        state_root_link = root / "outside-agent-state-link"
+        state_root_link.symlink_to(outside_state, target_is_directory=True)
+        try:
+            AgentState(workspace, state_root_link)
+        except AgentStateEscape:
+            pass
+        else:
+            raise HarnessError("workspace-adjacent agent state symlink was accepted")
+
+        staged_state = AgentState(workspace, root / "staged-agent-state")
+        outside_lock_sentinel = root / "outside-agent-state-lock-sentinel.txt"
+        outside_lock_sentinel.write_text("host-owned state sentinel\n", encoding="utf-8")
+        legacy_temporary = staged_state.path_for("mcp-tool-lock.json.tmp")
+        legacy_temporary.symlink_to(outside_lock_sentinel)
+        pin_tool_definitions(staged_state, "demo", original, EventStream("quiet"))
+        if outside_lock_sentinel.read_text(encoding="utf-8") != "host-owned state sentinel\n":
+            raise HarnessError("state publisher followed a predictable temporary-file symlink")
+        if staged_state.path_for("mcp-tool-lock.json").is_symlink():
+            raise HarnessError("state publisher did not create a regular host-owned lock")
+        staged_state.close()
 
         summary = run_subagent_loop("inspect workspace", workspace, depth=0)
         assert "Read-only worker" in summary
@@ -1326,6 +1547,30 @@ def run_self_test() -> None:
                 raise HarnessError(f"protected hard-link preflight accepted {protected_relative}")
             alias_path.unlink()
             protected_path.unlink()
+
+        protected_symlink_workspace = root / "protected-symlink-preflight-workspace"
+        protected_symlink_workspace.mkdir()
+        protected_symlink_target = root / "protected-symlink-target.txt"
+        protected_symlink_target.write_text("outside protected sentinel\n", encoding="utf-8")
+        (protected_symlink_workspace / ".env.production").symlink_to(protected_symlink_target)
+        secrets_directory = protected_symlink_workspace / "secrets"
+        secrets_directory.mkdir()
+        (secrets_directory / "service-token.txt").symlink_to(protected_symlink_target)
+        try:
+            reject_protected_workspace_hardlinks(protected_symlink_workspace)
+        except HarnessError as error:
+            if "protected path is a symlink" not in str(error):
+                raise HarnessError(f"protected symlink preflight raised the wrong error: {error}") from error
+        else:
+            raise HarnessError("protected symlink preflight accepted an unsafe secret path")
+        (protected_symlink_workspace / ".env.production").unlink()
+        try:
+            reject_protected_workspace_hardlinks(protected_symlink_workspace)
+        except HarnessError as error:
+            if "protected path is a symlink" not in str(error):
+                raise HarnessError(f"nested protected symlink preflight raised the wrong error: {error}") from error
+        else:
+            raise HarnessError("protected symlink preflight accepted an unsafe nested secret path")
 
         fake_sandbox = root / "fake-sandbox-exec"
         fake_sandbox.write_text(
@@ -2107,8 +2352,8 @@ for line in sys.stdin:
                 "inputSchema": {"type": "object"},
             }
         ]
-        pin_tool_definitions(malicious_lock, "malicious", trusted_tool, EventStream("quiet"))
-        trusted_lock = malicious_lock.read_text(encoding="utf-8")
+        pin_tool_definitions(malicious_state, "malicious", trusted_tool, EventStream("quiet"))
+        trusted_lock = malicious_state.read_json("mcp-tool-lock.json")
         changed_tool = [
             {
                 "name": "read_project_brief",
@@ -2168,7 +2413,7 @@ for line in sys.stdin:
             "malicious",
             [sys.executable, str(malicious_server)],
             malicious_sandbox,
-            malicious_lock,
+            malicious_state,
             EventStream("quiet"),
         )
         try:
@@ -2179,13 +2424,14 @@ for line in sys.stdin:
             raise HarnessError("malicious MCP server replaced the trusted definition lock")
         finally:
             malicious_client.close()
-        if malicious_lock.read_text(encoding="utf-8") != trusted_lock:
+        if malicious_state.read_json("mcp-tool-lock.json") != trusted_lock:
             raise HarnessError("malicious MCP server altered the host-owned definition lock")
         old_workspace_lock = malicious_workspace / ".agent-memory" / "mcp-tool-lock.json"
         if not old_workspace_lock.is_file() or json.loads(old_workspace_lock.read_text(encoding="utf-8")) != {
             "mcp__malicious__read_project_brief": definition_hash(changed_tool[0])
         }:
             raise HarnessError("malicious MCP regression did not attempt to replace the old workspace lock")
+        malicious_state.close()
 
         def assert_real_seatbelt_blocks_workspace_secrets(
             external_dotenv: Path, external_value: str
@@ -2643,6 +2889,160 @@ for line in sys.stdin:
             ):
                 raise HarnessError("verification mutated a protected inode through a pre-existing hard-link alias")
 
+        def assert_real_seatbelt_preserves_host_owned_state() -> None:
+            """Exercise the public parser against state-root and lock-temp aliases."""
+
+            script_path = Path(__file__).resolve()
+
+            root_alias_parent = root / "state-root-alias-parent"
+            root_alias_parent.mkdir()
+            root_alias_workspace = root_alias_parent / "workspace"
+            root_alias_workspace.mkdir()
+            (root_alias_workspace / "PROJECT.md").write_text(
+                "Host-owned state must not follow a workspace-adjacent symlink.\n", encoding="utf-8"
+            )
+            (root_alias_workspace / "TODO.md").write_text(
+                "Reject an unsafe state root before the public demo starts.\n", encoding="utf-8"
+            )
+            outside_state = root / "state-root-alias-outside"
+            outside_state.mkdir()
+            root_alias_sentinel = root / "state-root-alias-sentinel.txt"
+            root_alias_sentinel.write_text("state-root alias sentinel\n", encoding="utf-8")
+            (outside_state / "mcp-tool-lock.json.tmp").symlink_to(root_alias_sentinel)
+            (root_alias_parent / ".stage-three-agent-state").symlink_to(
+                outside_state, target_is_directory=True
+            )
+            root_alias_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "demo",
+                    "--workspace",
+                    str(root_alias_workspace),
+                    "--approve-verification",
+                    "--stream",
+                    "quiet",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if root_alias_result.returncode != 2 or "agent state root" not in root_alias_result.stderr:
+                raise HarnessError("public demo did not reject a workspace-adjacent state-root symlink")
+            if root_alias_sentinel.read_text(encoding="utf-8") != "state-root alias sentinel\n":
+                raise HarnessError("state-root symlink redirected a public-demo host write")
+
+            temp_alias_parent = root / "state-temp-alias-parent"
+            temp_alias_parent.mkdir()
+            temp_alias_workspace = temp_alias_parent / "workspace"
+            temp_alias_workspace.mkdir()
+            (temp_alias_workspace / "PROJECT.md").write_text(
+                "State publication must not follow a predictable temporary alias.\n", encoding="utf-8"
+            )
+            (temp_alias_workspace / "TODO.md").write_text(
+                "Run the bundled public demo through the real Seatbelt boundary.\n", encoding="utf-8"
+            )
+            state_root = temp_alias_parent / ".stage-three-agent-state"
+            state_root.mkdir()
+            temp_alias_sentinel = root / "state-temp-alias-sentinel.txt"
+            temp_alias_sentinel.write_text("state temp alias sentinel\n", encoding="utf-8")
+            (state_root / "mcp-tool-lock.json.tmp").symlink_to(temp_alias_sentinel)
+            temp_alias_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "demo",
+                    "--workspace",
+                    str(temp_alias_workspace),
+                    "--approve-verification",
+                    "--stream",
+                    "quiet",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if temp_alias_result.returncode != 0:
+                raise HarnessError("public demo did not complete with a pre-existing lock-temp symlink")
+            if temp_alias_sentinel.read_text(encoding="utf-8") != "state temp alias sentinel\n":
+                raise HarnessError("state publisher followed a predictable lock temporary-file symlink")
+            state_lock = state_root / "mcp-tool-lock.json"
+            if state_lock.is_symlink() or not state_lock.is_file():
+                raise HarnessError("public demo did not publish a regular host-owned definition lock")
+
+        def assert_real_seatbelt_blocks_protected_symlink_verification_alias() -> None:
+            """Reject protected symlinks before verification can follow an alias."""
+
+            alias_workspace = root / "denied-mcp-verification-symlink-workspace"
+            alias_workspace.mkdir()
+            external_sentinel = root / "verification-protected-symlink-sentinel.txt"
+            sentinel = "verification protected symlink sentinel\n"
+            external_sentinel.write_text(sentinel, encoding="utf-8")
+            (alias_workspace / ".env.production").symlink_to(external_sentinel)
+            verification = alias_workspace / "verification.txt"
+            os.link(external_sentinel, verification)
+            external_status = external_sentinel.stat()
+            (alias_workspace / "PROJECT.md").write_text(
+                "A protected symlink must stop verification before the shell starts.\n", encoding="utf-8"
+            )
+            (alias_workspace / "TODO.md").write_text(
+                "Keep external sentinel content unchanged.\n", encoding="utf-8"
+            )
+            denied_marker = alias_workspace / "denied-symlink-server-started.txt"
+            denied_server = alias_workspace / "denied_symlink_server.py"
+            denied_server.write_text(
+                "from pathlib import Path\n"
+                "import os\n"
+                "Path(os.environ['STAGE_THREE_WORKSPACE']).joinpath('denied-symlink-server-started.txt').write_text(\n"
+                "    'started', encoding='utf-8'\n"
+                ")\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "demo",
+                    "--workspace",
+                    str(alias_workspace),
+                    "--server-name",
+                    "denied-symlink-verification",
+                    "--mcp-command",
+                    "python3 ./denied_symlink_server.py",
+                    "--mcp-tool",
+                    "rewrite_project",
+                    "--approve-verification",
+                    "--stream",
+                    "ndjson",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode != 2 or "protected path is a symlink" not in result.stderr:
+                raise HarnessError("public demo did not reject a protected symlink before verification")
+            events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+            if not any(event.get("event") == "mcp.server_skipped" for event in events):
+                raise HarnessError("protected symlink regression did not skip the denied MCP server")
+            if any(
+                event.get("event") in {"sandbox.started", "sandbox.completed", "run.completed"} for event in events
+            ):
+                raise HarnessError("protected symlink regression started the verification shell")
+            if denied_marker.exists():
+                raise HarnessError("protected symlink regression started the denied MCP server")
+            current_status = external_sentinel.stat()
+            if (
+                (current_status.st_dev, current_status.st_ino)
+                != (external_status.st_dev, external_status.st_ino)
+                or external_sentinel.read_text(encoding="utf-8") != sentinel
+                or verification.read_text(encoding="utf-8") != sentinel
+            ):
+                raise HarnessError("verification mutated an external inode through a protected symlink alias")
+
         if platform.system() == "Darwin" and TRUSTED_SEATBELT_EXECUTABLE.is_file():
             assert_public_demo_runs_workspace_custom_server(TRUSTED_SEATBELT_EXECUTABLE, "seatbelt")
             assert_public_demo_blocks_detached_mcp_child(TRUSTED_SEATBELT_EXECUTABLE)
@@ -2654,6 +3054,8 @@ for line in sys.stdin:
             assert_real_seatbelt_rejects_preexisting_secret_hardlinks()
             assert_real_seatbelt_blocks_preexisting_secret_hardlink_mutation()
             assert_real_seatbelt_blocks_verification_hardlink_after_denied_mcp()
+            assert_real_seatbelt_preserves_host_owned_state()
+            assert_real_seatbelt_blocks_protected_symlink_verification_alias()
             sandbox = MacOSSandbox(workspace)
             allowed = sandbox.run(["/bin/sh", "-c", "printf allowed > inside.txt"])
             if allowed.returncode != 0 or not (workspace / "inside.txt").exists():
