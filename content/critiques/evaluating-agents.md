@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-18)
 
@@ -89,3 +89,13 @@ Regression gate: re-verified every REQUIRED fix from Rounds 1 through 3 and the 
 2. `artifacts/ch22-evaluating-agents/check.sh` now creates `locked/ghost`, removes search permission from `locked`, asserts that `file_absent` cannot pass the path, and restores the directory permission in `finally` for cleanup. The existing dangling-symlink and parent-traversal regressions remain in the same deterministic check.
 
 No advisories were taken. The carried README execution-order wording remains non-blocking and outside the required scope. `npm run check` passes after the artifact change.
+
+## Round 5 review (2026-07-18)
+
+Convergence review: read the complete critique and git history, current `src/chapters/evaluating-agents.mdx`, `EvaluatingAgentsFigure.tsx`, `EvaluatingAgentsWidget.tsx`, every file in `artifacts/ch22-evaluating-agents/`, the build notes, and `docs/research/ch22-evaluating-agents.md`. Checked the linked Anthropic guide, tau-bench, SWE-bench, SWE-bench Verified, Terminal-Bench, LiveCodeBench, and MT-Bench primary sources. Ran `npm run check` successfully: validation, prose lint, pipeline tests, all 22 artifact checks, 48 render tests, production build, and lint passed. Re-verified every settled REQUIRED finding from Rounds 1 through 4: dangling symlinks and both parent-traversal variants cannot bypass `file_absent`; symlink loops, malformed agent output, unreadable checked paths, and workspace-root replacement become controlled failed trials with reports; unreadable absence paths fail closed. The accessible figure and keyboard-operable widget remain truthful to the pass@k versus pass^k thesis.
+
+The chapter is materially truthful, runnable, accessible, and complete. No new high-severity defect or regression was found.
+
+## Advisories
+
+- No new advisories. The previously recorded README execution-order wording remains non-blocking and is not re-litigated.
