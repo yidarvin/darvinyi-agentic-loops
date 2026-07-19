@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: revise
 
 ## Round 1 review (2026-07-18)
 
@@ -339,3 +339,16 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Added a Darwin-gated, real-Seatbelt public-parser regression: `.env.production` is hard-linked to `verification.txt`, a custom MCP launch is denied, and verification is approved. It requires exit 2, records `mcp.server_skipped`, rejects any sandbox or completion event and denied-server marker, and proves the protected inode and content remain unchanged.
 
 No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
+
+## Round 14 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history and its Git history, the current MDX, exact figure and widget, full Chapter 21 artifact, README, policy, demo server, check script, and research backbone. Checked the linked MCP, Anthropic, and Claude Code primary sources, and ran `npm run check` successfully. Re-verified every prior REQUIRED control in the current artifact and its regressions: no public sandbox bypass; descriptor-contained memory and host reads; launch authorization before `popen`; host-owned definition pinning; the fixed child environment; bounded frames and lifecycle cleanup; independent figure seams; the workspace-local custom-server contract; fork denial; secret pathname and external `/private/var` denials; and the Round 11 through Round 13 hard-link protections. The figure, widget, sources, exercises, and runnable-artifact grammar still hold. I then reproduced the two host-write escapes below through the public macOS Seatbelt command in disposable workspaces.
+
+## Required fixes
+
+1. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- a pre-existing state-root and lock-temp symlink can overwrite an arbitrary host-writable file.** The public command derives state from `workspace.parent / ".stage-three-agent-state"` (line 2721). `AgentState` resolves that path and only rejects a root that resolves *inside* the workspace (lines 422-443), while `write_json()` follows its predictable `mcp-tool-lock.json.tmp` pathname before replacing it (lines 90-93). In a disposable public bundled-demo run, I made the sibling state entry a symlink to an external directory and made that directory's `mcp-tool-lock.json.tmp` a symlink to an external sentinel. The demo exited 0 and overwrote the sentinel with the definition-lock JSON. This is distinct from Round 1's settled server-writable-lock finding: the final lock remains outside the sandboxed server workspace, but the unsandboxed host writer itself follows an attacker-prepared alias. Establish the state root through a verified no-follow directory boundary and publish locks with descriptor-relative, no-follow temporary files; add a public-demo regression covering both state-root and temp-lock symlinks and requiring the external sentinel to remain unchanged.
+2. **`artifacts/ch21-stage-three-production-grade/stage_three_agent.py` --- the approved verification process can still modify an outside-workspace inode through a pre-existing alias.** `reject_protected_workspace_hardlinks()` only rejects multi-link *regular* entries under root `.env*` and `secrets/**` (lines 490-544); it skips a protected symlink and never validates `verification.txt`. I ran the public Seatbelt demo with `.env.production` symlinked to an external sentinel and `verification.txt` hard-linked to that same inode, denied the custom MCP launch, and approved verification. It emitted `mcp.server_skipped`, `sandbox.started`, `sandbox.completed` with return code 0, and `run.completed`, while the external sentinel changed to `verified`. This is distinct from Round 13's resolved regular protected-file case: its preflight remains present but does not cover this symlink-plus-allowed-target alias. Reject protected symlinks and make the verification output a descriptor-contained safe replacement, or fail closed on an existing symlink or multi-link target; add the real-Seatbelt regression and require failure before the shell starts with the external inode unchanged.
+
+## Advisories
+
+- None.
