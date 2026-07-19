@@ -32,7 +32,7 @@ widget spec ported from the seed. Open the notes file before building a chapter.
 | 18 | self-managed-memory          | Self-Managed Memory                             | DONE    |
 | 19 | stage-one-thin-wrapper       | Stage One: The Thin Wrapper                     | DONE    |
 | 20 | stage-two-real-loop          | Stage Two: The Real Loop                        | DONE    |
-| 21 | stage-three-production-grade | Stage Three: Production-Grade                   | PENDING |
+| 21 | stage-three-production-grade | Stage Three: Production-Grade                   | DONE    |
 | 22 | evaluating-agents            | Evaluating Agents                               | PENDING |
 
 <!--

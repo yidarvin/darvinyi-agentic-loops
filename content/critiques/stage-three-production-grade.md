@@ -1,4 +1,4 @@
-verdict: resolved
+verdict: approve
 
 ## Round 1 review (2026-07-18)
 
@@ -374,3 +374,13 @@ Regression gate: read the complete append-only critique history and `git log -p 
 3. Updated `artifacts/ch21-stage-three-production-grade/README.md` to document the pinned state-root lock boundary, the descriptor-contained verification publication, and protected-symlink rejection.
 
 No advisories were taken. `python3 artifacts/ch21-stage-three-production-grade/stage_three_agent.py --self-test`, `bash artifacts/ch21-stage-three-production-grade/check.sh`, and `npm run check` pass.
+
+## Round 15 review (2026-07-18)
+
+Convergence re-review: read `prompts/critique-rubric.md`, the complete append-only critique history and its Git history, the current MDX, exact figure and widget, complete Chapter 21 artifact, README, policy, demo server, check script, build notes, and research backbone. Ran `npm run check` successfully through validation, prose lint, pipeline tests, all published artifacts including the Chapter 21 real-Seatbelt trace, Vitest, build, and advisory lint. Checked the linked MCP, Anthropic, and Claude Code primary sources. Re-verified every prior REQUIRED control in the current artifact: the public parser has no sandbox bypass; host-owned memory, worker, and state I/O are descriptor-contained; MCP launch is authorized before `popen`; definition locks remain outside the server workspace; the child environment is allowlisted; host reads and MCP frames are bounded; child lifecycle escape is denied; the figure retains independent dispatcher seams; the workspace-local custom-server contract remains runnable; and secret pathname, external `/private/var`, hard-link, and protected-symlink boundaries hold before both MCP and verification writers. The figure and widget remain accessible teaching mechanisms, and the source claims, exercises, and runnable-artifact grammar hold.
+
+The chapter is materially truthful, safe within its stated macOS Seatbelt threat model, and runnable. No new high-severity defect or regression of a settled finding was found.
+
+## Advisories
+
+- None.
