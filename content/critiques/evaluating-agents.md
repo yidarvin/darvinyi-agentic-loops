@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -58,3 +58,13 @@ Fresh-eyes re-review: read the complete critique history and git history, the cu
 ## Advisories
 
 - The existing README wording that malformed check paths fail before an agent is invoked remains a non-blocking execution-order detail. It does not affect this verdict.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified every REQUIRED fix from Rounds 1 and 2 against the current artifact and its deterministic self-check. A dangling final symlink still fails `file_absent`; `missing-parent/../ghost` cannot hide an existing entry; and a self-referential checked-file symlink becomes an `agent_error` trial with a written report. The chapter, accessible figure, and keyboard-operable widget remain unchanged and continue to teach the pass@k versus pass^k distinction. The research audit found no factual-backbone correction to make.
+
+1. `artifacts/ch22-evaluating-agents/harness.py` now captures subprocess output as bytes, decodes agent stdout explicitly inside the `HarnessError` path, and decodes stderr only as a replacement-safe diagnostic. `read_text_if_present()` now treats `OSError`, including an unreadable file, and invalid UTF-8 as a failed text check. `negative_agent.py` and `check.sh` add deterministic non-UTF-8-stdout and mode-000 checked-file regressions, each asserting a completed JSON report rather than a harness crash.
+2. `artifacts/ch22-evaluating-agents/harness.py` now checks both the requested filesystem entry and the containment-validated resolved target for `file_absent`. This preserves the Round 1 dangling-symlink protection and Round 2 normalized-parent-path protection while rejecting `link/../ghost` when the symlink traversal reaches an existing file. `check.sh` adds that symlink-mediated regression.
+3. `artifacts/ch22-evaluating-agents/harness.py` now creates the agent-visible workspace inside a trusted temporary parent, records its pre-invocation `lstat` device/inode identity, and rejects removal, replacement, or redirection before grading. The outer temporary parent safely cleans up a substituted workspace symlink. `negative_agent.py` and `check.sh` add an end-to-end root-replacement case that asserts failed `agent_error` trials and a written report.
+
+No advisories were taken. `npm run check` passes: validation, prose lint, pipeline tests, all chapter artifacts including this harness, 48 render tests, production build, and advisory lint.

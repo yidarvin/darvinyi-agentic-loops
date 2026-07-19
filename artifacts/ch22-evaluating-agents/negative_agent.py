@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import sys
 from pathlib import Path
 
 
@@ -12,7 +15,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["forbidden", "nan", "missing", "binary", "symlink-loop"],
+        choices=[
+            "forbidden",
+            "nan",
+            "missing",
+            "binary",
+            "symlink-loop",
+            "non-utf8-stdout",
+            "unreadable",
+            "replace-workspace",
+        ],
         required=True,
     )
     parser.add_argument("--task", required=True)
@@ -37,8 +49,23 @@ def write_self_referential_symlink(workspace: Path, relative_path: str) -> None:
     target.symlink_to(target.name)
 
 
+def replace_workspace(workspace: Path, relative_path: str, content: str) -> None:
+    """Replace the supplied root with a symlink while returning valid agent JSON."""
+
+    replacement = workspace.parent / "replacement"
+    replacement.mkdir()
+    write(replacement, relative_path, content)
+    os.chdir(workspace.parent)
+    shutil.rmtree(workspace)
+    workspace.symlink_to(replacement, target_is_directory=True)
+
+
 def main() -> int:
     args = parse_args()
+    if args.mode == "non-utf8-stdout":
+        sys.stdout.buffer.write(b"\xff")
+        return 0
+
     task = json.loads(Path(args.task).read_text(encoding="utf-8"))
     workspace = Path(args.workspace)
     expected = {
@@ -56,8 +83,13 @@ def main() -> int:
         write_bytes(workspace, relative_path)
     elif args.mode == "symlink-loop" and task["id"] == "patch-greeting":
         write_self_referential_symlink(workspace, relative_path)
+    elif args.mode == "unreadable":
+        write(workspace, relative_path, content)
+        (workspace / relative_path).chmod(0)
     else:
         write(workspace, relative_path, content)
+    if args.mode == "replace-workspace":
+        replace_workspace(workspace, relative_path, content)
     actions = list(actions)
     if args.mode == "forbidden" and task["id"] == "preserve-boundary":
         actions.append("write:protected.txt")

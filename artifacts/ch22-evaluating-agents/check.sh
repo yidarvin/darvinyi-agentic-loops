@@ -99,6 +99,43 @@ PY
 
 python3 "$artifact_dir/harness.py" \
   --runs 1 \
+  --agent-command "python3 $artifact_dir/negative_agent.py --mode non-utf8-stdout" \
+  --report "$work_dir/non-utf8.json" > /dev/null
+
+python3 - "$work_dir/non-utf8.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report_path = Path(sys.argv[1])
+assert report_path.is_file(), report_path
+report = json.loads(report_path.read_text(encoding="utf-8"))
+assert report["summary"]["pass_at_1"] == 0.0, report["summary"]
+assert all("agent_error" in trial["failure_tags"] for trial in report["trials"]), report["trials"]
+assert all("agent stdout must be valid UTF-8" in trial["agent"]["summary"] for trial in report["trials"]), report["trials"]
+print("non-UTF-8 agent stdout becomes a failed trial with a report")
+PY
+
+python3 "$artifact_dir/harness.py" \
+  --runs 1 \
+  --agent-command "python3 $artifact_dir/negative_agent.py --mode unreadable" \
+  --report "$work_dir/unreadable.json" > /dev/null
+
+python3 - "$work_dir/unreadable.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert report["summary"]["pass_at_1"] == 0.0, report["summary"]
+assert all(trial["outcome_passed"] is False for trial in report["trials"]), report["trials"]
+assert all("agent_error" not in trial["failure_tags"] for trial in report["trials"]), report["trials"]
+assert all(trial["checks"] for trial in report["trials"]), report["trials"]
+print("unreadable checked files become controlled failed checks")
+PY
+
+python3 "$artifact_dir/harness.py" \
+  --runs 1 \
   --agent-command "python3 $artifact_dir/negative_agent.py --mode symlink-loop" \
   --report "$work_dir/symlink-loop.json" > "$work_dir/symlink-loop-output.txt"
 
@@ -143,7 +180,37 @@ with tempfile.TemporaryDirectory() as temporary:
     )
     assert result["passed"] is False, result
     assert result["detail"] == "file unexpectedly exists", result
-print("file_absent rejects dangling symlinks and normalized parent traversal")
+    ghost.unlink()
+    nested = workspace / "nested"
+    (nested / "dir").mkdir(parents=True)
+    (nested / "ghost").write_text("present", encoding="utf-8")
+    (workspace / "link").symlink_to("nested/dir", target_is_directory=True)
+    result = harness["grade_check"](
+        workspace,
+        {"kind": "file_absent", "path": "link/../ghost"},
+    )
+    assert result["passed"] is False, result
+    assert result["detail"] == "file unexpectedly exists", result
+print("file_absent rejects dangling symlinks and semantic parent traversal")
+PY
+
+python3 "$artifact_dir/harness.py" \
+  --runs 1 \
+  --agent-command "python3 $artifact_dir/negative_agent.py --mode replace-workspace" \
+  --report "$work_dir/replaced-workspace.json" > /dev/null
+
+python3 - "$work_dir/replaced-workspace.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report_path = Path(sys.argv[1])
+assert report_path.is_file(), report_path
+report = json.loads(report_path.read_text(encoding="utf-8"))
+assert report["summary"]["pass_at_1"] == 0.0, report["summary"]
+assert all("agent_error" in trial["failure_tags"] for trial in report["trials"]), report["trials"]
+assert all("workspace root was replaced by agent" in trial["agent"]["summary"] for trial in report["trials"]), report["trials"]
+print("a replaced workspace root becomes a failed trial with a report")
 PY
 
 if python3 "$artifact_dir/harness.py" --tasks "$artifact_dir/invalid-top-level.json" > /dev/null 2> "$work_dir/invalid-top-level.txt"; then

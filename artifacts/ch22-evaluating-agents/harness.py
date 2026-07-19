@@ -14,6 +14,7 @@ import json
 import math
 import os
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -124,6 +125,30 @@ def workspace_path(workspace: Path, relative_path: str) -> Path:
     return candidate
 
 
+def workspace_identity(workspace: Path) -> tuple[int, int]:
+    """Capture the directory identity the harness created before agent invocation."""
+
+    try:
+        metadata = workspace.lstat()
+    except OSError as error:
+        raise HarnessError("could not inspect workspace root") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise HarnessError("workspace root is not a directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def assert_trusted_workspace(workspace: Path, expected_identity: tuple[int, int]) -> None:
+    """Reject a root that an agent removed, replaced, or redirected after launch."""
+
+    try:
+        metadata = workspace.lstat()
+    except OSError as error:
+        raise HarnessError("workspace root was replaced by agent") from error
+    actual_identity = (metadata.st_dev, metadata.st_ino)
+    if not stat.S_ISDIR(metadata.st_mode) or actual_identity != expected_identity:
+        raise HarnessError("workspace root was replaced by agent")
+
+
 def seed_workspace(workspace: Path, task: dict[str, Any]) -> None:
     initial_files = task.get("initial_files", {})
     if not isinstance(initial_files, dict):
@@ -149,11 +174,11 @@ def agent_view(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_text_if_present(path: Path) -> str | None:
-    if not path.is_file():
-        return None
     try:
+        if not path.is_file():
+            return None
         return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -190,12 +215,13 @@ def grade_check(workspace: Path, check: dict[str, Any]) -> dict[str, Any]:
         }
 
     if kind == "file_absent":
-        # Check the requested entry rather than its resolved target so a dangling
-        # symlink remains present for an absence grader. workspace_path() above
-        # still validates that the requested path stays inside the workspace. The
-        # lexical normalization makes missing-parent/../entry address entry.
-        entry_path = workspace / os.path.normpath(relative_path)
-        passed = not os.path.lexists(entry_path)
+        # Inspect both the requested entry and the resolved target. The first probe
+        # keeps a dangling final symlink present to the grader. The second follows
+        # intermediate symlinks and normalizes parent segments, matching the path
+        # semantics that workspace_path() already validated.
+        requested_entry_exists = os.path.lexists(workspace / relative_path)
+        resolved_target_exists = os.path.lexists(target)
+        passed = not requested_entry_exists and not resolved_target_exists
         return {
             "kind": kind,
             "path": relative_path,
@@ -284,7 +310,6 @@ def invoke_agent(
             invocation,
             cwd=workspace,
             capture_output=True,
-            text=True,
             timeout=timeout,
             check=False,
         )
@@ -292,19 +317,27 @@ def invoke_agent(
         raise HarnessError("could not start agent command: " + command[0]) from error
     except subprocess.TimeoutExpired as error:
         raise HarnessError("agent timed out after " + str(timeout) + " seconds") from error
+    except OSError as error:
+        raise HarnessError("could not invoke agent command: " + command[0]) from error
     duration_seconds = time.perf_counter() - started
 
+    stderr = process.stderr.decode("utf-8", errors="replace").strip()
     if process.returncode != 0:
-        detail = process.stderr.strip() or process.stdout.strip() or "agent returned no diagnostic output"
+        stdout = process.stdout.decode("utf-8", errors="replace").strip()
+        detail = stderr or stdout or "agent returned no diagnostic output"
         raise HarnessError("agent exited " + str(process.returncode) + ": " + detail)
 
     try:
-        result = json.loads(process.stdout.strip())
+        stdout = process.stdout.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise HarnessError("agent stdout must be valid UTF-8") from error
+    try:
+        result = json.loads(stdout.strip())
     except json.JSONDecodeError as error:
         raise HarnessError("agent stdout must contain one JSON object: " + str(error)) from error
     if not isinstance(result, dict):
         raise HarnessError("agent stdout JSON must be an object")
-    return result, duration_seconds, process.stderr.strip()
+    return result, duration_seconds, stderr
 
 
 def run_trial(
@@ -314,14 +347,18 @@ def run_trial(
     timeout: float,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="agent-eval-" + task["id"] + "-") as temporary:
-        workspace = Path(temporary)
+        temporary_root = Path(temporary)
+        workspace = temporary_root / "workspace"
+        workspace.mkdir()
         seed_workspace(workspace, task)
         task_path = workspace / "agent_task.json"
         task_path.write_text(json.dumps(agent_view(task), indent=2, sort_keys=True), encoding="utf-8")
+        trusted_identity = workspace_identity(workspace)
         failure_tags: list[str] = []
 
         try:
             raw_result, duration_seconds, stderr = invoke_agent(command, task_path, workspace, trial, timeout)
+            assert_trusted_workspace(workspace, trusted_identity)
             actions = normalize_actions(raw_result)
             turns = normalize_number(raw_result, "turns")
             cost_usd = normalize_number(raw_result, "cost_usd")
