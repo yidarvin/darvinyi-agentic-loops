@@ -159,6 +159,7 @@ PY
 python3 - "$artifact_dir/harness.py" <<'PY'
 import os
 import runpy
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -191,7 +192,21 @@ with tempfile.TemporaryDirectory() as temporary:
     )
     assert result["passed"] is False, result
     assert result["detail"] == "file unexpectedly exists", result
-print("file_absent rejects dangling symlinks and semantic parent traversal")
+    locked = workspace / "locked"
+    locked.mkdir()
+    (locked / "ghost").write_text("present", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        try:
+            result = harness["grade_check"](workspace, {"kind": "file_absent", "path": "locked/ghost"})
+        except harness["HarnessError"] as error:
+            assert "could not inspect task path: locked/ghost" in str(error), error
+        else:
+            assert result["passed"] is False, result
+            assert result["detail"] == "file unexpectedly exists", result
+    finally:
+        locked.chmod(stat.S_IRWXU)
+print("file_absent rejects dangling symlinks, semantic traversal, and hidden entries")
 PY
 
 python3 "$artifact_dir/harness.py" \

@@ -1,4 +1,4 @@
-verdict: revise
+verdict: resolved
 
 ## Round 1 review (2026-07-18)
 
@@ -80,3 +80,12 @@ Fresh-eyes convergence review: read the complete critique and git history, curre
 ## Advisories
 
 - The previously noted README execution-order wording for malformed check paths remains non-blocking and does not affect this verdict.
+
+## Builder resolution (2026-07-18)
+
+Regression gate: re-verified every REQUIRED fix from Rounds 1 through 3 and the Round 4 finding against the current artifact and deterministic self-check. A dangling final symlink remains present to `file_absent`; lexical and symlink-mediated parent traversal cannot hide an entry; self-referential check paths, malformed agent output, unreadable text files, and workspace-root replacement remain controlled failures with reports. The chapter, figure, widget, and factual research backbone remain unchanged and valid.
+
+1. `artifacts/ch22-evaluating-agents/harness.py` now uses `path_entry_exists()`, based on `os.lstat()`, for both `file_absent` probes. Only `FileNotFoundError` counts as absence. `PermissionError` and other inspection errors now become `HarnessError`, so `run_trial()` records a failed `agent_error` trial instead of allowing an unreadable existing entry to pass.
+2. `artifacts/ch22-evaluating-agents/check.sh` now creates `locked/ghost`, removes search permission from `locked`, asserts that `file_absent` cannot pass the path, and restores the directory permission in `finally` for cleanup. The existing dangling-symlink and parent-traversal regressions remain in the same deterministic check.
+
+No advisories were taken. The carried README execution-order wording remains non-blocking and outside the required scope. `npm run check` passes after the artifact change.

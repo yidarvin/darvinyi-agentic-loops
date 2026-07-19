@@ -182,6 +182,18 @@ def read_text_if_present(path: Path) -> str | None:
         return None
 
 
+def path_entry_exists(path: Path, relative_path: str) -> bool:
+    """Inspect a path entry without converting an inspection failure into absence."""
+
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise HarnessError("could not inspect task path: " + relative_path) from error
+    return True
+
+
 def grade_check(workspace: Path, check: dict[str, Any]) -> dict[str, Any]:
     kind = check.get("kind")
     relative_path = check.get("path")
@@ -218,9 +230,10 @@ def grade_check(workspace: Path, check: dict[str, Any]) -> dict[str, Any]:
         # Inspect both the requested entry and the resolved target. The first probe
         # keeps a dangling final symlink present to the grader. The second follows
         # intermediate symlinks and normalizes parent segments, matching the path
-        # semantics that workspace_path() already validated.
-        requested_entry_exists = os.path.lexists(workspace / relative_path)
-        resolved_target_exists = os.path.lexists(target)
+        # semantics that workspace_path() already validated. Only a missing entry
+        # counts as absent; unreadable paths fail closed instead of passing.
+        requested_entry_exists = path_entry_exists(workspace / relative_path, relative_path)
+        resolved_target_exists = path_entry_exists(target, relative_path)
         passed = not requested_entry_exists and not resolved_target_exists
         return {
             "kind": kind,
